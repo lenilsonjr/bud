@@ -1,0 +1,70 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.54902,0.80000,0.54902,1.00000",
+      "srgb:0.30588,0.54118,0.33333,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1
+      }
+    }
+  },
+  "fill-specializations": [
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.14118,0.26275,0.16863,1.00000",
+          "srgb:0.05490,0.10980,0.07451,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Leaf",
+      "layers": [
+        {
+          "name": "bud-leaf",
+          "image-name": "bud-leaf.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "srgb:0.72549,0.65098,0.90196,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
