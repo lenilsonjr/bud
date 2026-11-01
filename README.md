@@ -1,4 +1,10 @@
-# Bud · SwiftUI prototype
+<p align="center">
+  <img src="Design/marketing-icon-1024.png" alt="Bud app icon" width="120">
+</p>
+
+<h1 align="center">Bud</h1>
+
+<p align="center"><em>Grow your own thoughts</em></p>
 
 A bare-bones native port of the orbit canvas: buds that are notes or to-dos, nested without limit,
 on a flat web of orbits you drag around. No warehouses, no triggers.
@@ -62,6 +68,6 @@ add `Bud.icon` to the targets and point `ASSETCATALOG_COMPILER_APPICON_NAME` at 
 
 ## Status
 
-Early prototype. The model and layout are covered by tests and build on Linux as well as macOS.
+Early days, under active development. The model and layout are covered by tests and build on Linux as well as macOS.
 The SwiftUI views target macOS 14 and iOS 17 and are still being shaken out on device. tvOS and a
 watch companion are planned once the canvas has a focus-engine / small-screen interaction model.
