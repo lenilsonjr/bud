@@ -1,0 +1,83 @@
+# Signed internal TestFlight delivery for iOS and macOS, in parallel.
+#
+#   push to develop  → lane beta    → TestFlight, auto build number
+#   push a v* tag     → lane release → TestFlight, marketing version = the tag
+#   manual (Actions)  → lane beta
+#
+# Required repo (or org) secrets — identical for every app except BUNDLE_ID_PREFIX:
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT (base64 of the ADMIN .p8), APPLE_TEAM_ID, BUNDLE_ID_PREFIX
+# (scripts/setup-secrets.sh sets all five on a repo.)
+name: TestFlight
+
+on:
+  push:
+    branches: [develop]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: testflight-${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    strategy:
+      fail-fast: false        # a macOS hiccup must not block the iOS ship (or vice versa)
+      matrix:
+        platform: [ios, mac]
+    runs-on: macos-26         # iOS 26 SDK; Xcode also carries the iOS 17 / macOS 14 SDKs
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write signing config (gitignored, from secrets)
+        run: |
+          cat > Config/BundleIdSecrets.xcconfig <<EOF
+          BUNDLE_ID_PREFIX = ${{ secrets.BUNDLE_ID_PREFIX }}
+          DEVELOPMENT_TEAM = ${{ secrets.APPLE_TEAM_ID }}
+          EOF
+
+      - name: Resolve app id + lane + version
+        id: plan
+        run: |
+          SLUG=$(grep -E '^[[:space:]]*APP_SLUG[[:space:]]*=' Config/BundleId.xcconfig | tail -1 | sed -E 's/.*=[[:space:]]*//' | tr -d '[:space:]')
+          echo "app_bundle_id=${{ secrets.BUNDLE_ID_PREFIX }}.${SLUG}" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "lane=release" >> "$GITHUB_OUTPUT"
+            echo "marketing=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "lane=beta" >> "$GITHUB_OUTPUT"
+            echo "marketing=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Write ASC API key for xcodebuild auth
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "${{ secrets.ASC_KEY_CONTENT }}" | openssl base64 -d -A > "$KEY"
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+
+      - name: Set up Ruby + fastlane
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Deliver to TestFlight (${{ matrix.platform }})
+        env:
+          ASC_KEY_ID:            ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:         ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT:       ${{ secrets.ASC_KEY_CONTENT }}
+          APPLE_TEAM_ID:         ${{ secrets.APPLE_TEAM_ID }}
+          APP_BUNDLE_ID:         ${{ steps.plan.outputs.app_bundle_id }}
+          APP_MARKETING_VERSION: ${{ steps.plan.outputs.marketing }}
+          APP_CHANGELOG:         "Build from ${{ github.ref_name }} @ ${{ github.sha }}"
+        run: bundle exec fastlane ${{ matrix.platform }} ${{ steps.plan.outputs.lane }}

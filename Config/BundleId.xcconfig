@@ -1,0 +1,11 @@
+// Tracked wrapper. These placeholder defaults let a clean checkout generate + compile under a
+// throwaway identity. Your real reverse-DNS prefix and Apple Team ID live in the gitignored
+// Config/BundleIdSecrets.xcconfig (see BundleIdSecrets.example.xcconfig); in CI they arrive from the
+// BUNDLE_ID_PREFIX / APPLE_TEAM_ID secrets (the workflow writes BundleIdSecrets.xcconfig).
+//
+// APP_SLUG is the per-app leaf of the bundle id ($(BUNDLE_ID_PREFIX).$(APP_SLUG)). It is TRACKED, so
+// every build (local + CI, all platforms) agrees on it.
+BUNDLE_ID_PREFIX = com.example
+APP_SLUG = bud
+DEVELOPMENT_TEAM =
+#include? "BundleIdSecrets.xcconfig"

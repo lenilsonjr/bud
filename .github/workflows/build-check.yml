@@ -1,0 +1,40 @@
+# Compile gate — builds both apps (no signing, no secrets) on PRs so a broken change can't merge.
+name: Build check
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            scheme: "Bud iOS"
+            destination: "generic/platform=iOS"
+          - platform: macOS
+            scheme: "Bud macOS"
+            destination: "generic/platform=macOS"
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build ${{ matrix.platform }} (no signing)
+        run: >-
+          xcodebuild -project Bud.xcodeproj -scheme "${{ matrix.scheme }}" -configuration Debug
+          -destination '${{ matrix.destination }}'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build

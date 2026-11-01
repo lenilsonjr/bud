@@ -1,0 +1,112 @@
+# TestFlight delivery for Bud — iOS (iPhone+iPad) and macOS, both from the one XcodeGen project,
+# both via an App Store Connect API key (cloud-managed automatic signing; no match repo, no cert
+# files). The key MUST have the ADMIN role, or the distribution export fails "Cloud signing permission
+# error" in CI.
+#
+# Delivery relies on an internal beta group created with hasAccessToAllBuilds=true, so every processed
+# build is auto-available to internal testers and the lane never submits for external review.
+#
+#   fastlane ios beta     push to develop → iOS TestFlight,   auto build number
+#   fastlane ios release  push a v* tag   → iOS TestFlight,   marketing version from the tag
+#   fastlane mac beta     push to develop → macOS TestFlight, auto build number
+#   fastlane mac release  push a v* tag   → macOS TestFlight, marketing version from the tag
+
+default_platform(:ios)
+
+APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID")
+TEAM_ID        = ENV.fetch("APPLE_TEAM_ID")
+PROJECT        = "Bud.xcodeproj"
+
+def asc_login
+  app_store_connect_api_key(
+    key_id:                ENV.fetch("ASC_KEY_ID"),
+    issuer_id:             ENV.fetch("ASC_ISSUER_ID"),
+    key_content:           ENV.fetch("ASC_KEY_CONTENT"),
+    is_key_content_base64: true,
+    in_house:              false
+  )
+end
+
+# Authenticate the ARCHIVE phase to the portal with the ASC key: gym does NOT auto-inject auth into
+# the archive (only the export), so a clean CI runner fails "No Accounts" without this. Do NOT also add
+# it to export_xcargs — gym injects it on export and a second copy errors "may only be provided once".
+def xcode_auth
+  "-allowProvisioningUpdates " \
+  "-authenticationKeyPath #{ENV.fetch('ASC_KEY_PATH')} " \
+  "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
+  "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+end
+
+def version_xcargs(next_build)
+  a = ["CURRENT_PROJECT_VERSION=#{next_build}"]
+  a << "MARKETING_VERSION=#{ENV['APP_MARKETING_VERSION']}" unless ENV["APP_MARKETING_VERSION"].to_s.empty?
+  a << xcode_auth
+  a.join(" ")
+end
+
+# TestFlight build numbers are per-platform; floor 0 (→ build 1) for the very first build on a platform.
+def next_build_for(asc_platform)
+  (latest_testflight_build_number(app_identifier: APP_IDENTIFIER, platform: asc_platform) rescue 0).to_i + 1
+end
+
+platform :ios do
+  before_all { asc_login }
+
+  desc "develop → iOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_ios(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "tag v* → iOS TestFlight (marketing version from the tag)"
+  lane(:release) { deliver_ios(ENV["APP_CHANGELOG"] || "Tagged release build.") }
+
+  def deliver_ios(changelog)
+    gym(
+      project:          PROJECT,
+      scheme:           "Bud iOS",
+      configuration:    "Release",
+      export_method:    "app-store",
+      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
+      xcargs:           version_xcargs(next_build_for("IOS")),
+      output_directory: "build",
+      output_name:      "Bud-iOS.ipa",
+      clean:            true
+    )
+    upload_to_testflight(
+      app_identifier:                    APP_IDENTIFIER,
+      distribute_external:               false,
+      skip_submission:                   true,     # group's hasAccessToAllBuilds auto-delivers
+      changelog:                         changelog,
+      skip_waiting_for_build_processing: false
+    )
+  end
+end
+
+platform :mac do
+  before_all { asc_login }
+
+  desc "develop → macOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_mac(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "tag v* → macOS TestFlight (marketing version from the tag)"
+  lane(:release) { deliver_mac(ENV["APP_CHANGELOG"] || "Tagged release build.") }
+
+  def deliver_mac(changelog)
+    # macOS app-store export produces a signed .pkg (not an .ipa).
+    gym(
+      project:          PROJECT,
+      scheme:           "Bud macOS",
+      configuration:    "Release",
+      export_method:    "app-store",
+      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
+      xcargs:           version_xcargs(next_build_for("MAC_OS")),
+      output_directory: "build",
+      clean:            true
+    )
+    upload_to_testflight(
+      app_identifier:                    APP_IDENTIFIER,
+      app_platform:                      "osx",
+      pkg:                               lane_context[SharedValues::PKG_OUTPUT_PATH] || Dir["build/*.pkg"].first,
+      distribute_external:               false,
+      skip_submission:                   true,
+      changelog:                         changelog,
+      skip_waiting_for_build_processing: false
+    )
+  end
+end

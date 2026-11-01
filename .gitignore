@@ -5,3 +5,24 @@
 xcuserdata/
 .DS_Store
 Package.resolved
+
+# XcodeGen output + per-target generated Info.plists (generated from project.yml, never committed).
+Resources/Info-iOS.plist
+Resources/Info-macOS.plist
+Resources/Bud-macOS.entitlements
+
+# Build artifacts.
+build/
+DerivedData/
+*.ipa
+*.pkg
+*.dSYM
+*.dSYM.zip
+
+# Local signing identity (BYO; never commit). App Store Connect keys never belong in the repo.
+Config/BundleIdSecrets.xcconfig
+*.p8
+
+# Ruby
+vendor/bundle/
+.bundle/

@@ -1,0 +1,110 @@
+name: Bud
+options:
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+# One place defines BUNDLE_ID_PREFIX / APP_SLUG / DEVELOPMENT_TEAM, inherited by every target.
+configFiles:
+  Debug: Config/BundleId.xcconfig
+  Release: Config/BundleId.xcconfig
+# The app targets consume the local BudKit Swift package (Package.swift at the repo root) — the model,
+# layout, and SwiftUI views are shared verbatim, never copied.
+packages:
+  BudKit:
+    path: .
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+    # Same bundle id across platforms → one unified App Store Connect record (iOS + macOS enabled).
+    PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).$(APP_SLUG)
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+targets:
+  Bud-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - App
+      - Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_NAME: Bud
+        TARGETED_DEVICE_FAMILY: "1,2"     # iPhone + iPad
+    dependencies:
+      - package: BudKit
+        product: BudKit
+    info:
+      path: Resources/Info-iOS.plist
+      properties:
+        CFBundleName: Bud
+        CFBundleDisplayName: Bud
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Baked in so TestFlight never shows a Missing-Compliance gate (no non-exempt crypto).
+        ITSAppUsesNonExemptEncryption: false
+  Bud-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - App
+      - Resources/Assets.xcassets
+    entitlements:
+      path: Resources/Bud-macOS.entitlements
+      properties:
+        # App Sandbox is mandatory for Mac App Store / TestFlight. Bud only touches its own container
+        # (Application Support), so no extra file entitlements are needed.
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_NAME: Bud
+        ENABLE_HARDENED_RUNTIME: YES       # required alongside sandbox for distribution
+    dependencies:
+      - package: BudKit
+        product: BudKit
+    info:
+      path: Resources/Info-macOS.plist
+      properties:
+        CFBundleName: Bud
+        CFBundleDisplayName: Bud
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        NSHumanReadableCopyright: ""
+        ITSAppUsesNonExemptEncryption: false
+schemes:
+  Bud iOS:
+    build:
+      targets:
+        Bud-iOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Bud macOS:
+    build:
+      targets:
+        Bud-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
