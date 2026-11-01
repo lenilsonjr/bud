@@ -1,0 +1,16 @@
+// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "Bud",
+    platforms: [.macOS(.v14), .iOS(.v17)],
+    products: [
+        .library(name: "BudKit", targets: ["BudKit"]),
+        .executable(name: "BudMac", targets: ["BudMac"]),
+    ],
+    targets: [
+        .target(name: "BudKit"),
+        .executableTarget(name: "BudMac", dependencies: ["BudKit"]),
+        .testTarget(name: "BudKitTests", dependencies: ["BudKit"]),
+    ]
+)
