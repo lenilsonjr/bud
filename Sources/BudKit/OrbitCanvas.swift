@@ -32,8 +32,6 @@ public struct OrbitCanvas: View {
                     .contentShape(Rectangle())
                     .gesture(panGesture)
                     .onTapGesture { focused = true }
-                WiresLayer(layout: layout, camera: camera, scale: scale)
-                    .allowsHitTesting(false)
                 ForEach(layout.order, id: \.self) { id in
                     if let placed = layout.cards[id] {
                         CardView(
@@ -152,37 +150,6 @@ public struct OrbitCanvas: View {
 
     private func stepOut() {
         withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.back() }
-    }
-}
-
-/// Wires from parent to child and a faint orbit around every bud with children.
-struct WiresLayer: View {
-    let layout: Layout
-    let camera: CGPoint
-    let scale: CGFloat
-
-    var body: some View {
-        Canvas { context, size in
-            func sp(_ p: CGPoint) -> CGPoint {
-                CGPoint(x: size.width / 2 + (p.x - camera.x) * scale, y: size.height / 2 + (p.y - camera.y) * scale)
-            }
-            let visible = CGRect(origin: .zero, size: size).insetBy(dx: -400, dy: -400)
-            for orbit in layout.orbits.values {
-                let c = sp(orbit.center)
-                let rect = CGRect(x: c.x - orbit.rx * scale, y: c.y - orbit.ry * scale, width: 2 * orbit.rx * scale, height: 2 * orbit.ry * scale)
-                guard rect.intersects(visible) else { continue }
-                context.stroke(Path(ellipseIn: rect), with: .color(Theme.orbit), lineWidth: 1)
-            }
-            for edge in layout.edges {
-                guard let a = layout.position(of: edge.from), let b = layout.position(of: edge.to) else { continue }
-                let p = sp(a), q = sp(b)
-                guard visible.contains(p) || visible.contains(q) else { continue }
-                var path = Path()
-                path.move(to: p)
-                path.addLine(to: q)
-                context.stroke(path, with: .color(Theme.wire), lineWidth: 1)
-            }
-        }
     }
 }
 
