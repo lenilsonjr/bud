@@ -61,6 +61,7 @@ struct TrashPage: View {
                 .buttonStyle(.bordered)
             Button("Delete") { store.modal = .deleteForever(id: branch.id) }
                 .buttonStyle(.bordered)
+                .foregroundStyle(Theme.rose)
         }
         .textRole(.label)
         .padding(.vertical, 10)
