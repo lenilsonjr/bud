@@ -57,6 +57,15 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(captured.id)?.parent, inboxID)
     }
 
+    func testTheInboxCountDropsWhenACaptureIsMovedOut() throws {
+        let store = BudStore(fileURL: nil)
+        let before = store.tree.inbox().count
+        let captured = try XCTUnwrap(store.tree.inbox().first)
+        let target = try XCTUnwrap(store.tree.children(of: rootID).first)
+        XCTAssertTrue(store.move(captured.id, under: target.id))
+        XCTAssertEqual(store.tree.inbox().count, before - 1)
+    }
+
     func testMoveUnderItsOwnDescendantIsRefusedWithoutAToast() throws {
         let store = BudStore(fileURL: nil)
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
