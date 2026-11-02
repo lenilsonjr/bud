@@ -183,6 +183,10 @@ struct TopBar: View {
         .padding(.trailing, 4)
         .padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.leafLine, lineWidth: 1))
+        #if os(iOS)
+        // On an iPad the pill keeps its label ahead of the breadcrumb and the rest of the bar.
+        .layoutPriority(2)
+        #endif
     }
 
     /// The next step's title, cut at 28 characters with an ellipsis so the pill keeps its shape.
@@ -204,7 +208,12 @@ struct TopBar: View {
             .padding(.leading, 10)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
+            #if os(iOS)
+            // On an iPad the field gives way before the pill's label does.
+            .frame(minWidth: 110, maxWidth: 180)
+            #else
             .frame(width: 180)
+            #endif
             .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.md))
             .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(Theme.line, lineWidth: 1))
             .contentShape(Rectangle())

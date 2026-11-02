@@ -57,14 +57,41 @@ struct TreeRow: View {
             .strikethrough(bud.isDone)
             .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
         if kids > 0 {
-            text
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .clipped()
-                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+            FadingTitle(text: text)
         } else {
             text
         }
+    }
+}
+
+/// A title that is drawn whole while it fits and fades out only where it would run under the
+/// count beside it.
+private struct FadingTitle<Label: View>: View {
+    let text: Label
+    @State private var textWidth: CGFloat = 0
+    @State private var availableWidth: CGFloat = 0
+
+    var body: some View {
+        text
+            .fixedSize(horizontal: true, vertical: false)
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { textWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in textWidth = width }
+            })
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { availableWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in availableWidth = width }
+            })
+            .clipped()
+            .mask(fade)
+    }
+
+    private var fade: LinearGradient {
+        let fades = TitleFade.needsFade(textWidth: textWidth, availableWidth: availableWidth)
+        return LinearGradient(
+            stops: [.init(color: .black, location: 0), .init(color: .black, location: fades ? 0.85 : 1), .init(color: fades ? .clear : .black, location: 1)],
+            startPoint: .leading, endPoint: .trailing)
     }
 }
 #endif
