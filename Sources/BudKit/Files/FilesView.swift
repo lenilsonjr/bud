@@ -20,8 +20,10 @@ struct FilesView: View {
             Group {
                 if let lens = store.lens {
                     LensPage(store: store, lens: lens)
-                } else {
+                } else if store.center == rootID {
                     OutlinePage(store: store)
+                } else {
+                    DocumentView(id: store.center, store: store)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -75,7 +77,7 @@ struct OutlinePage: View {
     }
 }
 
-private struct PageRow: View {
+struct PageRow: View {
     let bud: Bud
     let tree: Tree
 
