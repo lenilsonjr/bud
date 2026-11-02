@@ -41,6 +41,9 @@ struct TopBar: View {
                 .help("Add here")
             } else {
                 if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
+                #if os(macOS)
+                SyncDot(devices: store.devices)
+                #endif
                 goAnywhere
                 if store.surface == .canvas { zoom }
                 Button(action: onAdd) {
@@ -54,11 +57,13 @@ struct TopBar: View {
                     .foregroundStyle(Theme.text2)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
+                    .overlay(alignment: .topTrailing) { SyncBadge(devices: store.devices).offset(x: 3, y: -2) }
             }
             .buttonStyle(.plain)
             .help("Settings")
             #endif
         }
+        .task { await store.devices.start() }
         .padding(.leading, compact ? 12 : leadingInset)
         .padding(.trailing, compact ? 8 : 14)
         .frame(height: 52)
