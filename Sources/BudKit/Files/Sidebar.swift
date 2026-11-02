@@ -25,6 +25,7 @@ struct Sidebar: View {
                                 onSelect: { store.center = bud.id; store.inboxOpen = false },
                                 onDisclose: { toggle(bud.id) }
                             )
+                            .budMenu(bud.id, store: store)
                             .id(bud.id)
                         }
                     }

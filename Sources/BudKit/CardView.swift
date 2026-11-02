@@ -80,7 +80,7 @@ struct CardView: View {
         .background(chipBackground(bud))
         .contentShape(RoundedRectangle(cornerRadius: Radius.md))
         .onTapGesture(perform: onTap)
-        .onLongPressGesture(minimumDuration: 0.4, perform: onOpen)
+        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
     }
 
     private func chipBackground(_ bud: Bud) -> some View {

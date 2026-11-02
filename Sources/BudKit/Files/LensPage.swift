@@ -109,6 +109,7 @@ struct ListRow: View {
         .contentShape(Rectangle())
         .onTapGesture { store.openAsFile(bud.id) }
         .modifier(CommandClick { store.center = bud.id; store.surface = .canvas })
+        .budMenu(bud.id, store: store)
     }
 }
 

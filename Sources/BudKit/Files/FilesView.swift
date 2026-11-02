@@ -69,6 +69,7 @@ struct OutlinePage: View {
                                 PageRow(bud: bud, tree: store.tree)
                             }
                             .buttonStyle(.plain)
+                            .budMenu(bud.id, store: store)
                         }
                     }
                 }
