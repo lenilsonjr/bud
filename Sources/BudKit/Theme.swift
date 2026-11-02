@@ -74,7 +74,11 @@ enum Theme {
 
     /// The font for a step of the type scale. Registers the bundled typefaces on first use.
     static func font(_ role: TextRole) -> Font {
-        let style = role.style
+        font(role.style)
+    }
+
+    /// The font for a one-off style a specimen asks for outside the scale.
+    static func font(_ style: TextStyle) -> Font {
         _ = FontLoader.registered
         return Font.custom(style.typeface.family, size: style.size).weight(weight(style.weight))
     }
@@ -148,9 +152,14 @@ enum FontLoader {
 extension View {
     /// Applies a step of the type scale: font, tracking and case.
     func textRole(_ role: TextRole) -> some View {
-        font(Theme.font(role))
-            .tracking(Theme.tracking(role))
-            .textCase(role.style.uppercase ? .uppercase : nil)
+        textStyle(role.style)
+    }
+
+    /// Applies a one-off style a specimen asks for outside the scale.
+    func textStyle(_ style: TextStyle) -> some View {
+        font(Theme.font(style))
+            .tracking(style.tracking)
+            .textCase(style.uppercase ? .uppercase : nil)
     }
 }
 #endif

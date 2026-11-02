@@ -58,7 +58,7 @@ public struct OrbitCanvas: View {
                             onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                             onOpen: { open(id) },
                             onAdd: { store.modal = .adding(under: id) },
-                            onToggle: { store.toggle(id) }
+                            onToggle: { store.tick(id) }
                         )
                         .scaleEffect(scale)
                         .position(screenPoint(placed.position, in: size))

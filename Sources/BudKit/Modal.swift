@@ -4,11 +4,13 @@ import Foundation
 enum Modal: Hashable, Identifiable {
     case add(parent: UUID)
     case capture
+    case closeBranch(id: UUID)
 
     var id: UUID {
         switch self {
         case .add(let parent): return parent
         case .capture: return inboxID
+        case .closeBranch(let id): return id
         }
     }
 
@@ -77,6 +79,7 @@ struct ModalHost: View {
             switch modal {
             case .add(let parent): AddSheet(store: store, mode: .enrich(under: parent))
             case .capture: AddSheet(store: store, mode: .capture)
+            case .closeBranch(let id): CloseBranchDialog(store: store, id: id)
             }
         }
         .modalCard()

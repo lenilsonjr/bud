@@ -142,6 +142,34 @@ public final class BudStore: ObservableObject {
         commit { $0.update(id, text: text, todo: todo) }
     }
 
+    /// What every checkbox calls. A done to-do reopens at once; an open to-do with nothing open
+    /// inside closes at once; one with open to-dos inside asks first, through the Close branch
+    /// dialog, since closing never cascades on its own.
+    public func tick(_ id: UUID) {
+        guard let bud = tree.bud(id), bud.isTodo else { return }
+        if bud.isDone {
+            commit { $0.toggle(id) }
+        } else if tree.openCount(under: id) > 0 {
+            modal = .closeBranch(id: id)
+        } else {
+            close(id, cascade: false)
+        }
+    }
+
+    /// Closes a to-do, and with `cascade` every open to-do under it, and offers to take it back:
+    /// Undo reopens exactly the ones that changed.
+    public func close(_ id: UUID, cascade: Bool) {
+        let title = tree.title(of: id)
+        var changed: [UUID] = []
+        commit { changed = $0.close(id, cascade: cascade) }
+        guard !changed.isEmpty else { return }
+        let inside = changed.count - 1
+        let message = inside == 0 ? "Closed \(title)" : "Closed \(title) and \(inside) inside"
+        toasts.show(Undoable(message: message) { [weak self] in
+            Task { @MainActor in self?.commit { $0.reopen(changed) } }
+        })
+    }
+
     public func toggle(_ id: UUID) {
         commit { $0.toggle(id) }
     }

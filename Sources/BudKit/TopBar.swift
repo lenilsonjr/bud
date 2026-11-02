@@ -86,7 +86,7 @@ struct TopBar: View {
             .buttonStyle(.plain)
             .foregroundStyle(Theme.text)
             .lineLimit(1)
-            Button("Done") { store.toggle(bud.id) }
+            Button("Done") { store.tick(bud.id) }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.leaf)
         }

@@ -135,6 +135,23 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheCloseBranchDialog() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        for scheme in [ColorScheme.light, .dark] {
+            store.modal = .closeBranch(id: newsletter.id)
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("close-branch-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")

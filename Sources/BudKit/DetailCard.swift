@@ -57,7 +57,7 @@ struct DetailCard: View {
 
     private func statusTag(_ bud: Bud) -> some View {
         Button {
-            store.toggle(id)
+            store.tick(id)
         } label: {
             Text(bud.statusLabel)
                 .textRole(.eyebrow)

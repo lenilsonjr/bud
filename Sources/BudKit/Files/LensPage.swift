@@ -73,7 +73,7 @@ struct ListRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             if bud.isTodo {
-                Button { store.toggle(bud.id) } label: {
+                Button { store.tick(bud.id) } label: {
                     KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
                 }
                 .buttonStyle(.plain)

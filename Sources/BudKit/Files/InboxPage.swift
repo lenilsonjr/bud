@@ -58,7 +58,7 @@ struct InboxPage: View {
         let inside = store.tree.children(of: bud.id).count
         return HStack(alignment: .top, spacing: 8) {
             if bud.isTodo {
-                Button { store.toggle(bud.id) } label: {
+                Button { store.tick(bud.id) } label: {
                     KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
                 }
                 .buttonStyle(.plain)
