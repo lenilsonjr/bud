@@ -183,6 +183,10 @@ struct TopBar: View {
         .padding(.trailing, 4)
         .padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.leafLine, lineWidth: 1))
+        #if os(iOS)
+        // On an iPad the pill keeps its label ahead of the breadcrumb and the rest of the bar.
+        .layoutPriority(2)
+        #endif
     }
 
     /// The next step's title, cut at 28 characters with an ellipsis so the pill keeps its shape.
