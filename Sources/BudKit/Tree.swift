@@ -323,6 +323,22 @@ public struct Tree: Codable, Equatable, Sendable {
         buds.removeAll { gone.contains($0.id) }
     }
 
+    /// Trashes a bud and its whole branch and hands the branch back, so it can be restored as it
+    /// was: same ids, same parents, same order. Empty when the bud is unknown.
+    @discardableResult
+    public mutating func trash(_ id: UUID) -> [Bud] {
+        let gone = Set(descendants(of: id) + [id])
+        let branch = buds.filter { gone.contains($0.id) }
+        buds.removeAll { gone.contains($0.id) }
+        return branch
+    }
+
+    /// Puts a trashed branch back. A bud whose id is already in the tree is skipped.
+    public mutating func restore(_ branch: [Bud]) {
+        let present = Set(buds.map(\.id))
+        buds.append(contentsOf: branch.filter { !present.contains($0.id) })
+    }
+
     /// A small world to start from.
     /// A small fictional world: a newsletter being launched, with a few bodies, two due dates,
     /// one scheduled day and one pinned bud, so every lens and picture has something to show.

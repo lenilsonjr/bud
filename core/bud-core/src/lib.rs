@@ -10,6 +10,7 @@ mod edit;
 mod frontmatter;
 mod query;
 mod scan;
+mod sync;
 mod watch;
 
 pub use edit::sanitize_filename;
@@ -23,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use query::{Counts, Hit, Lens, Row};
+pub use sync::SyncReport;
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");

@@ -56,6 +56,7 @@ public struct BudTVView: View {
 struct TVCanvas: View {
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
+    @State private var adding: TVAddTarget? = nil
     @FocusState private var focused: UUID?
 
     private let scale: CGFloat = 1.6
@@ -78,6 +79,7 @@ struct TVCanvas: View {
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { open(id) })
                         .focused($focused, equals: id)
                         .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
                         .scaleEffect(scale * (focused == id ? 1.06 : 1))
@@ -96,6 +98,7 @@ struct TVCanvas: View {
             }
             .onAppear { focused = store.center }
         }
+        .sheet(item: $adding) { target in TVCaptureSheet(store: store, parent: target.id) }
         .onExitCommand { stepOut() }
         .onPlayPauseCommand { toggleFocused() }
     }
@@ -129,6 +132,12 @@ struct TVCanvas: View {
         } else if store.tree.bud(id)?.isTodo == true {
             store.toggle(id)
         }
+    }
+
+    /// Open from the menu: a bud becomes the center, whether or not it has children yet.
+    private func open(_ id: UUID) {
+        guard id != store.center else { return }
+        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
     }
 
     private func toggleFocused() {
@@ -213,6 +222,11 @@ struct TVCardFace: View {
             RoundedRectangle(cornerRadius: radius).stroke(Theme.amethyst.opacity(0.6), lineWidth: 2)
         }
     }
+}
+
+/// The bud a menu's Add inside… plants under.
+struct TVAddTarget: Identifiable {
+    let id: UUID
 }
 
 /// One line of text from the TV keyboard or dictation, planted under the current bud.

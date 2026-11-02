@@ -166,6 +166,23 @@ public final class BudStore: ObservableObject {
         commit { $0.remove(id) }
     }
 
+    /// Trashes a bud and its branch and offers to take it back; Undo restores the branch as it was.
+    public func trash(_ id: UUID) {
+        guard tree.bud(id) != nil else { return }
+        let title = tree.title(of: id)
+        var branch: [Bud] = []
+        commit { branch = $0.trash(id) }
+        toasts.show(Undoable(message: "Trashed \(title)") { [weak self] in
+            Task { @MainActor in self?.commit { $0.restore(branch) } }
+        })
+    }
+
+    /// Makes a note a to-do, open. A to-do stays what it is.
+    public func makeTodo(_ id: UUID) {
+        guard let bud = tree.bud(id), !bud.isTodo else { return }
+        commit { $0.update(id, text: bud.text, todo: true) }
+    }
+
     /// Open as file: the Files view with this bud as the page. The center is the selection there.
     public func openAsFile(_ id: UUID) {
         center = id
