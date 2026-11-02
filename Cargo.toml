@@ -11,3 +11,9 @@ repository = "https://github.com/lenilsonjr/bud"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# netdev 0.46.3 does not compile for iOS: its IPv6 flags module reaches a libc struct that
+# exists for macOS only. The fix is upstream but only in 0.47, which netwatch (via iroh) does
+# not take yet, so the fixed commit, still at version 0.46.3, stands in until netwatch moves.
+[patch.crates-io]
+netdev = { git = "https://github.com/shellrow/netdev", rev = "b3bfb0fb5595cd143bfa0b9f07d1ad6e0ef0c313" }
