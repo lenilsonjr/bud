@@ -4,7 +4,7 @@ import SwiftUI
 /// The canvas: cards positioned by the layout, one camera over all of them, a thin line from
 /// every card to its parent so a far card still reads as part of its thread.
 /// The camera is the board point at the middle of the viewport; the scale only changes
-/// when you pinch. Drag or scroll to move, tap a card with children to center it,
+/// when you pinch. Dragging or scrolling moves it, tap a card with children to center it,
 /// tap a leaf to open it in place. A soft wash and the light rest under the pointer, or where
 /// the last tap landed on touch; the current orbit is in full light, the rest dims; Space opens
 /// that card, N plants a bud under it.
