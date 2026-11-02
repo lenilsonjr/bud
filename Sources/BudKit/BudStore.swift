@@ -3,6 +3,12 @@ import Foundation
 import Combine
 import SwiftUI
 
+/// The two ways of looking at the same tree.
+public enum Surface: String, CaseIterable, Sendable {
+    case canvas = "Canvas"
+    case files = "Files"
+}
+
 /// The tree, the current center of the web, and the layout derived from both.
 /// Every mutation saves to disk; the layout is recomputed once per change, not per frame.
 @MainActor
@@ -12,6 +18,9 @@ public final class BudStore: ObservableObject {
     @Published public var center: UUID {
         didSet { if center != oldValue { relayout() } }
     }
+    @Published public var surface: Surface = .canvas
+    /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
+    @Published public var zoom: CGFloat = 1
 
     private let fileURL: URL?
 
@@ -41,6 +50,9 @@ public final class BudStore: ObservableObject {
     }
 
     public var centerTrail: [UUID] { Array(tree.ancestors(of: center).reversed()) + [center] }
+
+    /// The open to-do to do next inside the current bud, or nil when there is none.
+    public var nextStep: Bud? { tree.nextStep(under: center) }
 
     public func add(_ text: String, todo: Bool, under parent: UUID) {
         commit { $0.add(text, todo: todo, under: parent) }

@@ -12,5 +12,6 @@ let package = Package(
         .target(name: "BudKit", resources: [.copy("Resources/Fonts")]),
         .executableTarget(name: "BudMac", dependencies: ["BudKit"]),
         .testTarget(name: "BudKitTests", dependencies: ["BudKit"]),
+        .testTarget(name: "BudKitSnapshots", dependencies: ["BudKit"]),
     ]
 )

@@ -9,7 +9,7 @@ import SwiftUI
 public struct OrbitCanvas: View {
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
-    @State private var scale: CGFloat = 1
+    private var scale: CGFloat { store.zoom }
     @State private var dragOrigin: CGPoint? = nil
     @State private var pinchOrigin: CGFloat? = nil
     @State private var lamp: CGPoint? = nil
@@ -117,7 +117,7 @@ public struct OrbitCanvas: View {
             .onChanged { value in
                 if pinchOrigin == nil { pinchOrigin = scale }
                 guard let origin = pinchOrigin else { return }
-                scale = min(3, max(0.35, origin * value.magnification))
+                store.zoom = min(3, max(0.35, origin * value.magnification))
             }
             .onEnded { _ in pinchOrigin = nil }
     }
