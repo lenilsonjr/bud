@@ -1,8 +1,8 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// Settings: Appearance, the vault folder, and Try, the flags that let two layouts be compared
-/// on a device before one is kept. On the Mac it is the Settings window (⌘,); on iPhone and
+/// Settings: Appearance and the vault folder. A Try section returns whenever two layouts need
+/// comparing on a device before one is kept. On the Mac it is the Settings window (⌘,); on iPhone and
 /// iPad it is a modal from the gear in the top bar, with Done to close it.
 public struct SettingsView: View {
     @ObservedObject private var flags: Flags
@@ -34,9 +34,6 @@ public struct SettingsView: View {
                     .truncationMode(.middle)
                     .foregroundStyle(Theme.text3)
                     .textSelection(.enabled)
-            }
-            section("Try", caption: "How much of a phone's height the file navigator takes above the page, to compare on a device before one is kept. The chevron on the handle gives the page the whole screen.") {
-                Segmented(selection: $flags.phoneSplit, options: PhoneSplit.allCases) { $0.rawValue }
             }
             if let onDone {
                 HStack {
