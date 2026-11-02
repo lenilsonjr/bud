@@ -1,0 +1,173 @@
+import XCTest
+@testable import BudKit
+
+@MainActor
+final class DeviceStoreTests: XCTestCase {
+    private func make(lifetime: TimeInterval = 600, missing: Set<String> = []) async -> (DeviceStore, MemoryPeers, TestClock) {
+        let clock = TestClock()
+        let peers = MemoryPeers(lifetime: lifetime, missing: missing, now: { clock.now })
+        let store = DeviceStore(peers: peers, now: { clock.now })
+        await store.start()
+        return (store, peers, clock)
+    }
+
+    private func eventually(_ condition: @MainActor () -> Bool, line: UInt = #line) async {
+        for _ in 0..<400 {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTFail("the condition never held", line: line)
+    }
+
+    func testItListsTheDevicesAndTheSyncState() async {
+        let (store, _, _) = await make()
+        XCTAssertEqual(store.devices.count, 5)
+        XCTAssertEqual(store.syncState, SyncState(idle: true, connectedPeers: 4, pendingChanges: 0))
+        XCTAssertNil(store.lastSummary)
+        XCTAssertEqual(store.shortID("k7f3abcdefghijklmnopq2m9"), "k7f3…q2m9")
+    }
+
+    func testSyncNowKeepsTheSummary() async {
+        let (store, peers, _) = await make()
+        let summary = SyncSummary(created: 1, updated: 2, written: 0, moved: 0, ops: 3)
+        await peers.setNextSummary(summary)
+        await store.syncNow()
+        XCTAssertEqual(store.lastSummary, summary)
+    }
+
+    func testTheTicketSheetGetsATicketAndRefreshesItOnExpiry() async throws {
+        let (store, _, clock) = await make()
+        await store.openTicket()
+        let first = try XCTUnwrap(store.currentTicket)
+        await store.refreshTicketIfExpired()
+        XCTAssertEqual(store.currentTicket, first)
+        clock.advance(601)
+        await store.refreshTicketIfExpired()
+        let second = try XCTUnwrap(store.currentTicket)
+        XCTAssertNotEqual(second.text, first.text)
+        store.closeTicket()
+        XCTAssertNil(store.currentTicket)
+    }
+
+    func testAClosedSheetDoesNotRefresh() async {
+        let (store, _, clock) = await make()
+        await store.openTicket()
+        store.closeTicket()
+        clock.advance(601)
+        await store.refreshTicketIfExpired()
+        XCTAssertNil(store.currentTicket)
+    }
+
+    func testTheOpenTicketRefreshesByItself() async throws {
+        let store = DeviceStore(peers: MemoryPeers(lifetime: 0.05))
+        await store.openTicket()
+        let first = try XCTUnwrap(store.currentTicket)
+        await eventually { store.currentTicket != nil && store.currentTicket?.text != first.text }
+        store.closeTicket()
+    }
+
+    func testJoiningWithATicketSucceeds() async throws {
+        let (store, peers, _) = await make()
+        let ticket = try await peers.ticket(withAddresses: false)
+        XCTAssertEqual(store.joinPhase, .idle)
+        await store.join(text: PeerText.grouped(ticket.text))
+        guard case let .joined(device, received, total) = store.joinPhase else {
+            return XCTFail("expected joined, got \(store.joinPhase)")
+        }
+        XCTAssertEqual(received, 0)
+        XCTAssertNil(total)
+        XCTAssertTrue(store.devices.contains(device))
+        XCTAssertEqual(store.devices.count, 6)
+    }
+
+    func testFetchProgressUpdatesTheJoinedPhase() async throws {
+        let (store, peers, _) = await make()
+        let ticket = try await peers.ticket(withAddresses: false)
+        await store.join(text: ticket.text)
+        await peers.emitFetchProgress(received: 37, total: 134)
+        await eventually {
+            if case .joined(_, 37, 134) = store.joinPhase { return true }
+            return false
+        }
+    }
+
+    func testJoiningWithTextThatIsNotATicketFails() async {
+        let (store, _, _) = await make()
+        await store.join(text: "hello")
+        XCTAssertEqual(store.joinPhase, .failed(.notATicket))
+        store.resetJoin()
+        XCTAssertEqual(store.joinPhase, .idle)
+    }
+
+    func testJoiningWithAUsedTicketFails() async throws {
+        let (store, peers, _) = await make()
+        let ticket = try await peers.ticket(withAddresses: false)
+        await store.join(text: ticket.text)
+        await store.join(text: ticket.text)
+        XCTAssertEqual(store.joinPhase, .failed(.usedOrExpired))
+    }
+
+    func testJoiningWithAnExpiredTicketFails() async throws {
+        let (store, peers, clock) = await make()
+        let ticket = try await peers.ticket(withAddresses: false)
+        clock.advance(601)
+        await store.join(text: ticket.text)
+        XCTAssertEqual(store.joinPhase, .failed(.usedOrExpired))
+    }
+
+    func testJoiningAnUnreachableVaultFails() async throws {
+        let (store, peers, _) = await make()
+        let ticket = try await peers.ticket(withAddresses: false)
+        await peers.setReachable(false)
+        await store.join(text: ticket.text)
+        XCTAssertEqual(store.joinPhase, .failed(.unreachable))
+    }
+
+    func testARedeemedTicketIsNoted() async throws {
+        let (store, peers, _) = await make()
+        await store.openTicket()
+        let ticket = try XCTUnwrap(store.currentTicket)
+        let device = try await peers.accept(ticket.text)
+        await eventually { store.redeemedBy == device.id }
+        await eventually { store.devices.contains(device) }
+    }
+
+    func testRemovingWithoutRotationKeepsTheKey() async throws {
+        let (store, _, _) = await make()
+        let target = store.devices[1]
+        await store.remove(target.id, rotate: false)
+        XCTAssertFalse(store.devices.contains { $0.id == target.id })
+        XCTAssertNil(store.rotation)
+    }
+
+    func testRemovingWithRotationShowsProgress() async throws {
+        let (store, _, _) = await make()
+        let target = store.devices[1]
+        await store.remove(target.id, rotate: true)
+        XCTAssertFalse(store.devices.contains { $0.id == target.id })
+        let rotation = try XCTUnwrap(store.rotation)
+        XCTAssertEqual(rotation.total, 3)
+        XCTAssertEqual(rotation.done, 3)
+        XCTAssertEqual(rotation.result, RotationResult(reached: 3, missed: []))
+        store.dismissRotation()
+        XCTAssertNil(store.rotation)
+    }
+
+    func testRotationNamesTheDeviceThatMissed() async throws {
+        let (store, peers, _) = await make()
+        let missing = store.devices[3].id
+        await peers.setMissing([missing])
+        await store.remove(store.devices[1].id, rotate: true)
+        XCTAssertEqual(store.rotation?.result, RotationResult(reached: 2, missed: [missing]))
+        XCTAssertEqual(store.devices.first { $0.id == missing }?.missed, true)
+    }
+
+    func testAllowingAMissedDeviceClearsIt() async {
+        let (store, peers, _) = await make()
+        let id = store.devices[2].id
+        await peers.setMissing([id])
+        await store.remove(store.devices[1].id, rotate: true)
+        await store.allow(id)
+        XCTAssertEqual(store.devices.first { $0.id == id }?.missed, false)
+    }
+}
