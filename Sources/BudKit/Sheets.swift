@@ -97,20 +97,4 @@ struct AddSheet: View {
         close()
     }
 }
-
-/// A key as the kit draws it: a small mono label in a bordered chip.
-struct Keycap: View {
-    let label: String
-
-    init(_ label: String) { self.label = label }
-
-    var body: some View {
-        Text(label)
-            .textRole(.mono)
-            .foregroundStyle(Theme.text3)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
-    }
-}
 #endif
