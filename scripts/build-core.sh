@@ -4,6 +4,8 @@
 #   build/BudCore/BudCore.swift    the generated Swift bindings
 # Needs macOS with Xcode's command line tools and rustup. Safe to run again: it rebuilds
 # build/ from scratch and adds a rustup target only when it is missing.
+# tvOS is a tier 3 Rust target: its slices build on the nightly toolchain with the standard
+# library compiled from source, which the script installs when they are missing.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,6 +19,10 @@ targets=(
   aarch64-apple-ios
   aarch64-apple-ios-sim
 )
+tv_targets=(
+  aarch64-apple-tvos
+  aarch64-apple-tvos-sim
+)
 
 installed="$(rustup target list --installed)"
 for target in "${targets[@]}"; do
@@ -27,6 +33,16 @@ done
 
 for target in "${targets[@]}"; do
   cargo build -p bud-ffi --"$profile" --target "$target"
+done
+
+if ! rustup toolchain list | grep -q '^nightly'; then
+  rustup toolchain install nightly --profile minimal
+fi
+if ! rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
+  rustup component add rust-src --toolchain nightly
+fi
+for target in "${tv_targets[@]}"; do
+  cargo +nightly build -p bud-ffi --"$profile" --target "$target" -Zbuild-std=std,panic_abort
 done
 
 out="$root/build"
@@ -53,6 +69,8 @@ xcodebuild -create-xcframework \
   -library "$out/stage/macos/$lib.a" -headers "$out/stage/headers" \
   -library "target/aarch64-apple-ios/$profile/$lib.a" -headers "$out/stage/headers" \
   -library "target/aarch64-apple-ios-sim/$profile/$lib.a" -headers "$out/stage/headers" \
+  -library "target/aarch64-apple-tvos/$profile/$lib.a" -headers "$out/stage/headers" \
+  -library "target/aarch64-apple-tvos-sim/$profile/$lib.a" -headers "$out/stage/headers" \
   -output "$out/BudCoreFFI.xcframework"
 
 rm -rf "$out/stage"

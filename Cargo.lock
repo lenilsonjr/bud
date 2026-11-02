@@ -959,7 +959,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2432,7 +2432,7 @@ dependencies = [
 [[package]]
 name = "netdev"
 version = "0.46.3"
-source = "git+https://github.com/shellrow/netdev?rev=b3bfb0fb5595cd143bfa0b9f07d1ad6e0ef0c313#b3bfb0fb5595cd143bfa0b9f07d1ad6e0ef0c313"
+source = "git+https://github.com/lenilsonjr/netdev?rev=232667d55df63d80398f4628bc04888327fb7c66#232667d55df63d80398f4628bc04888327fb7c66"
 dependencies = [
  "block2",
  "dispatch2",
@@ -2534,8 +2534,7 @@ dependencies = [
 [[package]]
 name = "netwatch"
 version = "0.19.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39da9cad5f23aa43401f09497d3b280e51b5feba115d9ffbf38ca35d6ff95e96"
+source = "git+https://github.com/lenilsonjr/net-tools?rev=a228a0bdaa056ff2f9e0dd192a43dc09037932d9#a228a0bdaa056ff2f9e0dd192a43dc09037932d9"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3476,7 +3475,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3534,7 +3533,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4109,7 +4108,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4865,7 +4864,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

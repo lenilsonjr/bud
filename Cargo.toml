@@ -13,10 +13,14 @@ repository = "https://github.com/lenilsonjr/bud"
 all = "warn"
 
 # Two crates under iroh stop compiling for iOS and tvOS with libc 0.2.190 and later, which
-# moved the Apple routing-socket and interface definitions behind a macOS-only gate:
-# - netdev 0.46.3 is patched to its upstream iOS fix (public APIs only; still version 0.46.3,
-#   since netwatch does not take 0.47 yet);
-# - netwatch 0.19.3 has no fix yet, so Cargo.lock pins libc at 0.2.189, the last release that
-#   defines those symbols for every Apple target. Do not bump libc until netwatch gates them.
+# moved the Apple routing-socket and interface definitions behind a macOS-only gate, and neither
+# has a tvOS target at all:
+# - netdev 0.46.3 is patched to its upstream iOS fix plus tvOS treated like iOS (public APIs
+#   only; still version 0.46.3, since netwatch does not take 0.47 yet);
+# - netwatch 0.19.3 is patched to treat tvOS like iOS; it has no libc fix yet, so Cargo.lock pins
+#   libc at 0.2.189, the last release that defines those symbols for every Apple target. Do not
+#   bump libc until netwatch gates them.
+# Both patches sit on branches of forks until they land upstream.
 [patch.crates-io]
-netdev = { git = "https://github.com/shellrow/netdev", rev = "b3bfb0fb5595cd143bfa0b9f07d1ad6e0ef0c313" }
+netdev = { git = "https://github.com/lenilsonjr/netdev", rev = "232667d55df63d80398f4628bc04888327fb7c66" }
+netwatch = { git = "https://github.com/lenilsonjr/net-tools", rev = "a228a0bdaa056ff2f9e0dd192a43dc09037932d9" }
