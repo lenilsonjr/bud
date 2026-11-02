@@ -10,12 +10,13 @@ public enum CardRole: String, Sendable {
     case center, ring, deep, ghost, kin
 }
 
-/// How bright a card is at rest: the center and its ring in full light, everything outside
-/// that orbit dimmed, unless the light has lifted its orbit.
+/// How bright a card is at rest: the center and its ring in full light, the trail of ancestors
+/// up-left at three quarters, everything else dimmed, unless the light has lifted its orbit.
 public func lightLevel(role: CardRole, lifted: Bool) -> Double {
     switch role {
     case .center, .ring: return 1
-    case .deep, .ghost, .kin: return lifted ? 1 : 0.35
+    case .ghost: return lifted ? 1 : 0.75
+    case .deep, .kin: return lifted ? 1 : 0.35
     }
 }
 
@@ -24,6 +25,8 @@ public struct Placed: Equatable {
     public var position: CGPoint
     public var role: CardRole
     public var depth: Int
+    /// Drawn as the hub card: Everything always, and the center when it holds something.
+    public var hub: Bool = false
 }
 
 public struct Orbit: Equatable {
@@ -61,8 +64,10 @@ public enum Metrics {
     public static let ghostAngle = -5 * Double.pi / 6
     public static let ghostGap: CGFloat = 48
 
-    public static func size(of id: UUID) -> CGSize { id == rootID ? hub : chip }
-    public static func halfDiagonal(of id: UUID) -> CGFloat { id == rootID ? 112 : 98 }
+    public static func size(of id: UUID) -> CGSize { size(hub: id == rootID) }
+    public static func halfDiagonal(of id: UUID) -> CGFloat { halfDiagonal(hub: id == rootID) }
+    public static func size(hub: Bool) -> CGSize { hub ? Self.hub : chip }
+    public static func halfDiagonal(hub: Bool) -> CGFloat { hub ? 112 : 98 }
 }
 
 public enum LayoutEngine {
@@ -76,7 +81,7 @@ public enum LayoutEngine {
         var depth = -1
         var next = tree.parent(of: center)
         while let ghost = next {
-            let reach = b.cards.map { id, c in c.position.x * ux + c.position.y * uy + Metrics.halfDiagonal(of: id) }.max() ?? 0
+            let reach = b.cards.map { _, c in c.position.x * ux + c.position.y * uy + Metrics.halfDiagonal(hub: c.hub) }.max() ?? 0
             let d = reach + Metrics.halfDiagonal(of: ghost) + Metrics.ghostGap
             let pos = CGPoint(x: d * ux, y: d * uy)
             b.put(ghost, at: pos, role: .ghost, depth: depth)
@@ -88,8 +93,8 @@ public enum LayoutEngine {
         }
 
         var bounds = CGRect.null
-        for (id, c) in b.cards {
-            let s = Metrics.size(of: id)
+        for (_, c) in b.cards {
+            let s = Metrics.size(hub: c.hub)
             bounds = bounds.union(CGRect(x: c.position.x - s.width / 2, y: c.position.y - s.height / 2, width: s.width, height: s.height))
         }
         return Layout(centerID: center, cards: b.cards, order: b.order, edges: b.edges, orbits: b.orbits, bounds: bounds.isNull ? .zero : bounds)
@@ -109,8 +114,8 @@ private struct Builder {
 
     /// A spot is clear when no card already on the canvas comes within a gap of it.
     func isClear(_ p: CGPoint, size: CGSize) -> Bool {
-        for (id, c) in cards {
-            let o = Metrics.size(of: id)
+        for (_, c) in cards {
+            let o = Metrics.size(hub: c.hub)
             if abs(c.position.x - p.x) < (o.width + size.width) / 2 + Metrics.gap,
                abs(c.position.y - p.y) < (o.height + size.height) / 2 + Metrics.gap {
                 return false
@@ -119,8 +124,11 @@ private struct Builder {
         return true
     }
 
+    /// The center is drawn as the hub when it holds something, so inside a thread the thread is
+    /// the hub and Everything trails off; a centered leaf stays a chip.
     mutating func put(_ id: UUID, at p: CGPoint, role: CardRole, depth: Int) {
-        cards[id] = Placed(id: id, position: p, role: role, depth: depth)
+        let hub = id == rootID || (role == .center && tree.hasChildren(id))
+        cards[id] = Placed(id: id, position: p, role: role, depth: depth, hub: hub)
         order.append(id)
     }
 
@@ -145,7 +153,7 @@ private struct Builder {
         let D = hypot(pos.x - apex.x, pos.y - apex.y)
         let theta = Double(atan2(pos.y - apex.y, pos.x - apex.x))
         let near = D < 1
-        let clearance = Metrics.halfDiagonal(of: id) + (kids.map { Metrics.halfDiagonal(of: $0.id) }.max() ?? 0) + Metrics.gap
+        let clearance = Metrics.halfDiagonal(hub: cards[id]?.hub ?? false) + Metrics.halfDiagonal(hub: false) + Metrics.gap
 
         var rho = clearance
         var spots: [CGPoint?] = []
@@ -170,7 +178,7 @@ private struct Builder {
                     if R * CGFloat(slices[i]) < need { ok = false; break }
                 }
                 if i > 0, let q = spots[i - 1], hypot(p.x - q.x, p.y - q.y) < need { ok = false; break }
-                if !isClear(p, size: Metrics.size(of: kids[i].id)) { ok = false; break }
+                if !isClear(p, size: Metrics.size(hub: false)) { ok = false; break }
             }
             if ok { break }
             rho *= 1.06
