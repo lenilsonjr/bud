@@ -1,8 +1,8 @@
 # Working on Bud
 
 Rules for anyone, person or agent, who changes this repository. Where this file is stricter than
-a tool's defaults, this file wins. The plan, the tickets and the decision records (ADR-001 to
-ADR-005) live in Linear, team BUD; this file carries only what a change must respect.
+a tool's defaults, this file wins. The plan and the decision records live outside the repository;
+this file carries only what a change must respect.
 
 ## Branches, commits, merges
 
@@ -24,13 +24,17 @@ ADR-005) live in Linear, team BUD; this file carries only what a change must res
 - Do not touch `.github/workflows/`, `fastlane/`, `Config/`, `Design/`,
   `Resources/Assets.xcassets/`, `project.yml`, `LICENSE` or `Gemfile`. A ticket that needs one of
   them is a question for the owner, not a change.
+- No Markdown documents beyond this file and the README. Plans, notes and records live outside
+  the repository.
+- Nothing about the infrastructure behind the project: no host names, no internal tool names, no
+  account or workspace names, in code, comments, commit messages or pull requests.
 
 ## Code
 
 - Logic lives in files that compile and test on Linux: the model, the layout, the vault
   protocol, the Rust crate. Every file that imports SwiftUI, UIKit or AppKit sits inside
   `#if canImport(SwiftUI)` or the matching `#if os(...)`, so `swift build` keeps passing on
-  Linux and the factory can run the gate.
+  Linux and the gate below can run anywhere.
 - Colours and fonts come from `Theme` only. No literal colours or system fonts in views.
 - User-facing text: sentence case, Apple spelling (to-do, to-dos), no em dashes, no emoji.
 - Tests first. Rust: `cargo test`. Swift: XCTest in `Tests/`.
