@@ -12,6 +12,11 @@
 //! the peer the first time that peer proves it holds the key, which is by sealing a message with
 //! it.
 //!
+//! A ticket is one-shot on the side that made it: the maker records the ticket it issued and
+//! accepts it from one node, once. A node the vault removed is refused even when it proves the key,
+//! and a key rotation gives the remaining peers a new vault key over sessions sealed with the old
+//! one, which voids the old key and every ticket made under it.
+//!
 //! Every message is sealed with the vault key (XChaCha20-Poly1305, a fresh nonce each) before it
 //! goes on the wire, so a relay or a stranger on the network sees ciphertext only. A session is
 //! one stream: the dialer sends its heads, the other answers with the changes the dialer lacks and
@@ -108,9 +113,19 @@ impl Relay {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ticket {
     pub node: [u8; 32],
+    /// Names this ticket to the vault that made it, which accepts it once.
+    pub id: [u8; 16],
     pub relay: Relay,
     pub key: [u8; 32],
     pub addrs: Vec<SocketAddr>,
+}
+
+/// What a key rotation did: the peers that took the new key, and the ones it could not reach.
+/// A peer that missed it holds the old key and is turned away until it pairs again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RotateReport {
+    pub reached: usize,
+    pub missed: Vec<String>,
 }
 
 /// A QR code as a square of modules, row by row; `true` is dark.
@@ -303,14 +318,99 @@ impl Vault {
         Ok(())
     }
 
-    /// Forget a peer. The vault key stays: it is the vault's, not the peer's.
+    /// Forget a peer and refuse its node id from now on, even when it proves the vault key.
     fn forget(&self, id: &str) -> Result<()> {
         let conn = lock(&self.conn);
         conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
+        conn.execute("DELETE FROM peer_ticket WHERE node = ?1", params![id])?;
         match conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? {
             0 => Err(Error::Invalid(format!("peer: no peer {id}"))),
-            _ => Ok(()),
+            _ => {
+                conn.execute(
+                    "INSERT OR IGNORE INTO peer_denied (node) VALUES (?1)",
+                    params![id],
+                )?;
+                Ok(())
+            }
         }
+    }
+
+    /// Lift the refusal of a node this vault removed.
+    fn allow(&self, id: &str) -> Result<()> {
+        lock(&self.conn).execute("DELETE FROM peer_denied WHERE node = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn is_denied(&self, id: &str) -> Result<bool> {
+        Ok(lock(&self.conn)
+            .query_row(
+                "SELECT 1 FROM peer_denied WHERE node = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    fn is_peer(&self, id: &str) -> Result<bool> {
+        Ok(self.peer_list()?.iter().any(|peer| peer.id == id))
+    }
+
+    /// Make a ticket id and record it as issued.
+    fn issue_ticket(&self) -> Result<[u8; 16]> {
+        let mut id = [0u8; 16];
+        getrandom::fill(&mut id).map_err(peer_error)?;
+        lock(&self.conn).execute(
+            "INSERT INTO tickets_issued (id) VALUES (?1)",
+            params![id.to_vec()],
+        )?;
+        Ok(id)
+    }
+
+    /// Use up an issued ticket. False when it was never issued or was redeemed already.
+    fn redeem_ticket(&self, id: &[u8; 16]) -> Result<bool> {
+        let changed = lock(&self.conn).execute(
+            "DELETE FROM tickets_issued WHERE id = ?1",
+            params![id.to_vec()],
+        )?;
+        Ok(changed == 1)
+    }
+
+    fn pending_ticket(&self, node: &str) -> Result<Option<[u8; 16]>> {
+        let found: Option<Vec<u8>> = lock(&self.conn)
+            .query_row(
+                "SELECT ticket FROM peer_ticket WHERE node = ?1",
+                params![node],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found.and_then(|bytes| bytes.try_into().ok()))
+    }
+
+    fn keep_pending_ticket(&self, node: &str, ticket: &[u8; 16]) -> Result<()> {
+        lock(&self.conn).execute(
+            "INSERT INTO peer_ticket (node, ticket) VALUES (?1, ?2)
+             ON CONFLICT(node) DO UPDATE SET ticket = excluded.ticket",
+            params![node, ticket.to_vec()],
+        )?;
+        Ok(())
+    }
+
+    fn clear_pending_ticket(&self, node: &str) -> Result<()> {
+        lock(&self.conn).execute("DELETE FROM peer_ticket WHERE node = ?1", params![node])?;
+        Ok(())
+    }
+
+    /// Replace the vault key. Tickets issued under the old one are void.
+    fn replace_key(&self, key: &[u8; 32]) -> Result<()> {
+        let conn = lock(&self.conn);
+        conn.execute(
+            "INSERT INTO peer_key (id, key) VALUES (1, ?1)
+             ON CONFLICT(id) DO UPDATE SET key = excluded.key",
+            params![key.to_vec()],
+        )?;
+        conn.execute("DELETE FROM tickets_issued", [])?;
+        Ok(())
     }
 }
 
@@ -353,8 +453,17 @@ fn open(key: &[u8; 32], from: Side, sealed: &[u8]) -> Result<Vec<u8>> {
 
 #[derive(Serialize, Deserialize)]
 enum Message {
-    Hello(Heads),
-    Reply { updates: Updates, heads: Heads },
+    /// The dialer's heads, and the ticket it redeems when this is its first session.
+    Hello {
+        heads: Heads,
+        ticket: Option<[u8; 16]>,
+    },
+    /// The dialer hands over a new vault key; the answerer confirms with `Done`.
+    Rotate([u8; 32]),
+    Reply {
+        updates: Updates,
+        heads: Heads,
+    },
     Final(Updates),
     Done,
 }
@@ -569,8 +678,17 @@ impl Shared {
             .await
             .map_err(peer_error)?;
         let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-        let heads = self.vault().heads()?;
-        send_message(&mut send, &key, Side::Dialer, &Message::Hello(heads)).await?;
+        let (heads, ticket) = {
+            let vault = self.vault();
+            (vault.heads()?, vault.pending_ticket(&peer.id)?)
+        };
+        send_message(
+            &mut send,
+            &key,
+            Side::Dialer,
+            &Message::Hello { heads, ticket },
+        )
+        .await?;
         let Message::Reply { updates, heads } =
             read_message(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
         else {
@@ -584,6 +702,49 @@ impl Shared {
         };
         send.finish().map_err(peer_error)?;
         connection.close(0u32.into(), b"done");
+        // The peer took the ticket; it is spent.
+        self.vault().clear_pending_ticket(&peer.id)?;
+        Ok(report)
+    }
+
+    /// Hand a peer the new vault key over a session sealed with the old one.
+    async fn hand_over(&self, peer: &PeerInfo, old: &[u8; 32], new: &[u8; 32]) -> Result<()> {
+        let connection = self
+            .endpoint
+            .connect(self.address_of(peer)?, ALPN)
+            .await
+            .map_err(peer_error)?;
+        let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
+        send_message(&mut send, old, Side::Dialer, &Message::Rotate(*new)).await?;
+        let Message::Done = read_message(&mut recv, old, Side::Answerer, MAX_FRAME).await? else {
+            return Err(peer_error("a peer did not confirm the new key"));
+        };
+        send.finish().map_err(peer_error)?;
+        connection.close(0u32.into(), b"done");
+        Ok(())
+    }
+
+    /// Make a new vault key, give it to every peer, then take it.
+    async fn rotate(&self) -> Result<RotateReport> {
+        let _busy = Busy::new(&self.active);
+        let old = self.vault().peer_key()?;
+        let mut new = [0u8; 32];
+        getrandom::fill(&mut new).map_err(peer_error)?;
+        let peers = self.vault().peer_list()?;
+        let mut report = RotateReport {
+            reached: 0,
+            missed: Vec::new(),
+        };
+        for peer in &peers {
+            match tokio::time::timeout(SESSION_TIMEOUT, self.hand_over(peer, &old, &new)).await {
+                Ok(Ok(())) => report.reached += 1,
+                _ => {
+                    self.lost(&peer.id);
+                    report.missed.push(peer.id.clone());
+                }
+            }
+        }
+        self.vault().replace_key(&new)?;
         Ok(report)
     }
 
@@ -593,18 +754,48 @@ impl Shared {
         let _busy = Busy::new(&self.active);
         let connection = incoming.await.map_err(peer_error)?;
         let remote = connection.remote_id();
+        let remote_text = id_text(&remote);
+        // A node that was removed is turned away before it is read, key or no key.
+        if self.vault().is_denied(&remote_text)? {
+            connection.close(1u32.into(), b"not paired");
+            return Err(peer_error("a removed peer called"));
+        }
         let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.accept_bi().await.map_err(peer_error)?;
-        let theirs = match read_message(&mut recv, &key, Side::Dialer, MAX_HELLO).await {
-            Ok(Message::Hello(heads)) => heads,
+        let first = read_message(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
+        let (theirs, ticket) = match first {
+            Ok(Message::Hello { heads, ticket }) => (heads, ticket),
+            Ok(Message::Rotate(new)) => {
+                // Only a peer this vault knows may change its key.
+                if !self.vault().is_peer(&remote_text)? {
+                    connection.close(1u32.into(), b"not paired");
+                    return Err(peer_error("a stranger sent a new key"));
+                }
+                self.vault().replace_key(&new)?;
+                send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
+                send.finish().map_err(peer_error)?;
+                self.reached(&remote_text);
+                let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
+                return Ok(());
+            }
             other => {
                 connection.close(1u32.into(), b"not paired");
                 return other.and(Err(peer_error("a peer opened out of turn")));
             }
         };
-        // It proved it holds the vault key: it is a peer.
-        self.vault()
-            .remember_peer(&id_text(&remote), &self.relay, &[])?;
+        // Proving the key is not enough for a node this vault does not know: it also redeems a
+        // ticket this vault issued, once.
+        if !self.vault().is_peer(&remote_text)? {
+            let redeemed = match ticket {
+                Some(id) => self.vault().redeem_ticket(&id)?,
+                None => false,
+            };
+            if !redeemed {
+                connection.close(1u32.into(), b"not paired");
+                return Err(peer_error("a peer has no ticket to redeem"));
+            }
+        }
+        self.vault().remember_peer(&remote_text, &self.relay, &[])?;
         let (updates, heads) = {
             // Edits made in the folder since the last look go out with this answer.
             let mut vault = self.vault();
@@ -712,10 +903,12 @@ impl Node {
 
     /// A ticket for another device on any network: node id, relay setting and vault key.
     pub fn ticket(&self) -> Result<Ticket> {
+        let vault = self.shared.vault();
         Ok(Ticket {
             node: *self.shared.endpoint.id().as_bytes(),
+            id: vault.issue_ticket()?,
             relay: self.shared.relay.clone(),
-            key: self.shared.vault().peer_key()?,
+            key: vault.peer_key()?,
             addrs: Vec::new(),
         })
     }
@@ -767,14 +960,30 @@ impl Node {
         }
         vault.adopt_key(&ticket.key)?;
         vault.remember_peer(&peer.id, &peer.relay, &peer.addrs)?;
+        vault.keep_pending_ticket(&peer.id, &ticket.id)?;
+        // Taking a ticket of a vault this one removed earlier is a new pairing.
+        vault.allow(&peer.id)?;
         Ok(peer)
+    }
+
+    /// Lift the refusal of a node this vault removed, so it can redeem a new ticket.
+    pub fn allow_peer(&self, id: &str) -> Result<()> {
+        self.shared.vault().allow(id)
+    }
+
+    /// Make a new vault key and give it to every peer over the existing sessions. Tickets made
+    /// before it stop working, and so does the old key. Do not call it from inside an async
+    /// runtime.
+    pub fn rotate_key(&self) -> Result<RotateReport> {
+        self.runtime()?.block_on(self.shared.rotate())
     }
 
     pub fn peers(&self) -> Result<Vec<PeerInfo>> {
         self.shared.vault().peer_list()
     }
 
-    /// Forget a peer by its id. It is no longer synced with; a ticket pairs it again.
+    /// Forget a peer by its id. It is no longer synced with and is refused from now on, even when
+    /// it proves the vault key, until [`Node::allow_peer`] lifts that.
     pub fn forget_peer(&self, id: &str) -> Result<()> {
         self.shared.vault().forget(id)?;
         self.shared.lost(id);

@@ -288,6 +288,12 @@ impl PeerNode {
         self.with(|node| node.forget_peer(&id))
     }
 
+    /// Make a new vault key and give it to every peer. Returns the ids of the peers it could not
+    /// reach; they hold the old key and are turned away.
+    pub fn rotate_key(&self) -> Result<Vec<String>> {
+        self.with(|node| Ok(node.rotate_key()?.missed))
+    }
+
     /// Look at the folder, exchange changes with every peer and wait for it.
     pub fn sync_now(&self) -> Result<SyncSummary> {
         self.with(|node| Ok(node.sync_now()?.into()))

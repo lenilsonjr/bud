@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS peers (
     addrs TEXT NOT NULL DEFAULT '',
     added INTEGER NOT NULL
 );
+-- Nodes this vault removed: they are turned away even when they prove the vault key.
+CREATE TABLE IF NOT EXISTS peer_denied (
+    node TEXT PRIMARY KEY NOT NULL
+);
+-- The tickets this vault issued and that nobody redeemed yet; a ticket leaves the table the
+-- first time it is redeemed.
+CREATE TABLE IF NOT EXISTS tickets_issued (
+    id BLOB PRIMARY KEY NOT NULL
+);
+-- The ticket this vault accepted from a peer, until the first session with that peer worked.
+CREATE TABLE IF NOT EXISTS peer_ticket (
+    node   TEXT PRIMARY KEY NOT NULL,
+    ticket BLOB NOT NULL
+);
 -- When each peer last took part in a session, in seconds since the epoch.
 CREATE TABLE IF NOT EXISTS peer_seen (
     node TEXT PRIMARY KEY NOT NULL,
