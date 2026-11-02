@@ -5,7 +5,7 @@ import SwiftUI
 /// every card to its parent so a far card still reads as part of its thread.
 /// The camera is the board point at the middle of the viewport; the scale only changes
 /// when you pinch. Drag or scroll to move, tap a card with children to center it,
-/// tap a leaf to edit it. The light rests on the card under the pointer.
+/// tap a leaf to edit it. The light rests on the card under the pointer; N plants a bud under it.
 public struct OrbitCanvas: View {
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
@@ -15,6 +15,7 @@ public struct OrbitCanvas: View {
     @State private var lamp: CGPoint? = nil
     @State private var editing: EditTarget? = nil
     @State private var adding: AddTarget? = nil
+    @State private var viewport: CGSize = .zero
     @FocusState private var focused: Bool
 
     private let lampReach: CGFloat = 170
@@ -54,6 +55,8 @@ public struct OrbitCanvas: View {
             }
             .frame(width: size.width, height: size.height)
             .clipped()
+            .onAppear { viewport = size }
+            .onChange(of: size) { _, now in viewport = now }
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let point): lamp = point
@@ -74,6 +77,10 @@ public struct OrbitCanvas: View {
         .onAppear { focused = true }
         .onKeyPress(.escape) {
             stepOut()
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("n")) {
+            addUnderTheLitCard()
             return .handled
         }
         .onChange(of: store.center) { _, _ in
@@ -149,6 +156,11 @@ public struct OrbitCanvas: View {
         } else {
             editing = EditTarget(id: id)
         }
+    }
+
+    /// N: a new bud under the lit card, or under the center when nothing is lit.
+    private func addUnderTheLitCard() {
+        adding = AddTarget(parent: litCard(in: store.layout, viewport: viewport) ?? store.center)
     }
 
     private func stepOut() {

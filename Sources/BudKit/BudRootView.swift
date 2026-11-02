@@ -38,7 +38,7 @@ public struct BudRootView: View {
     }
 
     private var hint: some View {
-        Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf to edit · Esc or the trail steps out")
+        Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf to edit · N adds under the lit card · Esc steps out")
             .textRole(.caption)
             .foregroundStyle(Theme.text3)
             .padding(.horizontal, 12)

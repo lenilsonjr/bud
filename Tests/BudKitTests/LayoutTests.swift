@@ -35,6 +35,33 @@ final class TreeTests: XCTestCase {
     }
 }
 
+final class QuickAddTests: XCTestCase {
+    func testTheKindFollowsTheParent() throws {
+        let t = Tree.seed()
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        XCTAssertFalse(t.suggestsTodo(under: rootID), "A note under the root")
+        XCTAssertTrue(t.suggestsTodo(under: newsletter.id), "A to-do under a to-do")
+        let note = try XCTUnwrap(t.walk(under: rootID).first { !$0.isTodo })
+        XCTAssertFalse(t.suggestsTodo(under: note.id), "A note under a note")
+    }
+
+    #if canImport(Combine)
+    @MainActor
+    func testABlankLinePlantsNothingAndALineIsTrimmed() throws {
+        let store = BudStore(fileURL: nil)
+        let before = store.tree.children(of: rootID).count
+        store.add("   ", todo: true, under: rootID)
+        store.add("\n", todo: false, under: rootID)
+        XCTAssertEqual(store.tree.children(of: rootID).count, before)
+        store.add("  Water the fern  ", todo: true, under: rootID)
+        let planted: Bud = try XCTUnwrap(store.tree.children(of: rootID).last)
+        XCTAssertEqual(planted.text, "Water the fern")
+        XCTAssertTrue(planted.isTodo)
+        XCTAssertEqual(store.tree.children(of: rootID).count, before + 1)
+    }
+    #endif
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()
