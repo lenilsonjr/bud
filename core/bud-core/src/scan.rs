@@ -26,67 +26,122 @@ pub struct Found {
 pub(crate) const RESERVED: [&str; 3] = ["Inbox", "Archive", ".trash"];
 
 pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
+    walk_under(root, Path::new(""))
+}
+
+/// Walk `start`, a path relative to `root`, and everything below it. The start itself is
+/// included when it is a bud. An empty `start` is the whole vault.
+pub fn walk_under(root: &Path, start: &Path) -> std::io::Result<Vec<Found>> {
     let mut found = Vec::new();
-    let walker = WalkDir::new(root)
-        .min_depth(1)
+    let base = start.components().count();
+    let walker = WalkDir::new(root.join(start))
+        .min_depth(if base == 0 { 1 } else { 0 })
         .follow_links(false)
         .sort_by_file_name()
         .into_iter()
         .filter_entry(|entry| {
             let name = entry.file_name().to_string_lossy();
             // Dot entries are skipped, except the trash at the root.
-            !name.starts_with('.') || (entry.depth() == 1 && name == ".trash")
+            !name.starts_with('.') || (entry.depth() + base == 1 && name == ".trash")
         });
     for entry in walker {
         let entry = entry?;
         let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
-        let rel = relative_string(relative);
-        let depth = entry.depth();
         let file_type = entry.file_type();
-        let mtime = entry
-            .metadata()?
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        if file_type.is_dir() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if depth == 1 && RESERVED.contains(&name.as_str()) {
-                continue;
-            }
-            // A folder beside `Name.md` holds that bud's children and is not a bud itself.
-            if sibling_file(root, relative).exists() {
-                continue;
-            }
-            let parent = parent_bud(root, relative.parent().unwrap_or(Path::new("")));
-            found.push(Found {
-                path: rel,
-                parent,
-                title: name,
-                place: place_of(relative),
-                is_folder: true,
-                absolute: entry.path().to_path_buf(),
-                mtime,
-            });
-        } else if file_type.is_file() {
-            let name = entry.file_name().to_string_lossy();
-            let Some(title) = name.strip_suffix(".md") else {
-                continue;
-            };
-            let parent = parent_bud(root, relative.parent().unwrap_or(Path::new("")));
-            found.push(Found {
-                path: rel,
-                parent,
-                title: title.to_string(),
-                place: place_of(relative),
-                is_folder: false,
-                absolute: entry.path().to_path_buf(),
-                mtime,
-            });
+        let mtime = mtime_of(&entry.metadata()?);
+        if let Some(item) = classify(
+            root,
+            relative,
+            file_type.is_dir(),
+            file_type.is_file(),
+            mtime,
+        ) {
+            found.push(item);
         }
     }
     Ok(found)
+}
+
+/// What is at `relative` right now, by the same rules as the walk: none when it is missing,
+/// ignored or not a bud.
+pub fn probe(root: &Path, relative: &Path) -> Option<Found> {
+    if is_ignored(relative) {
+        return None;
+    }
+    let meta = std::fs::symlink_metadata(root.join(relative)).ok()?;
+    let file_type = meta.file_type();
+    classify(
+        root,
+        relative,
+        file_type.is_dir(),
+        file_type.is_file(),
+        mtime_of(&meta),
+    )
+}
+
+/// True for a path the scan never looks at: any dot entry, except `.trash` at the root.
+pub fn is_ignored(relative: &Path) -> bool {
+    relative.components().enumerate().any(|(i, c)| match c {
+        Component::Normal(part) => {
+            let name = part.to_string_lossy();
+            name.starts_with('.') && !(i == 0 && name == ".trash")
+        }
+        _ => false,
+    })
+}
+
+fn mtime_of(meta: &std::fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn classify(
+    root: &Path,
+    relative: &Path,
+    is_dir: bool,
+    is_file: bool,
+    mtime: i64,
+) -> Option<Found> {
+    let rel = relative_string(relative);
+    let name = relative.file_name()?.to_string_lossy().to_string();
+    let depth = relative.components().count();
+    let absolute = root.join(relative);
+    if is_dir {
+        if depth == 1 && RESERVED.contains(&name.as_str()) {
+            return None;
+        }
+        // A folder beside `Name.md` holds that bud's children and is not a bud itself.
+        if sibling_file(root, relative).exists() {
+            return None;
+        }
+        let parent = parent_bud(root, relative.parent().unwrap_or(Path::new("")));
+        Some(Found {
+            path: rel,
+            parent,
+            title: name,
+            place: place_of(relative),
+            is_folder: true,
+            absolute,
+            mtime,
+        })
+    } else if is_file {
+        let title = name.strip_suffix(".md")?.to_string();
+        let parent = parent_bud(root, relative.parent().unwrap_or(Path::new("")));
+        Some(Found {
+            path: rel,
+            parent,
+            title,
+            place: place_of(relative),
+            is_folder: false,
+            absolute,
+            mtime,
+        })
+    } else {
+        None
+    }
 }
 
 /// The bud that owns the entries of `dir`: `dir.md` when it exists, else the folder itself, and
@@ -124,7 +179,7 @@ pub(crate) fn place_of(relative: &Path) -> Place {
     }
 }
 
-fn relative_string(path: &Path) -> String {
+pub fn relative_string(path: &Path) -> String {
     path.components()
         .filter_map(|c| match c {
             Component::Normal(part) => Some(part.to_string_lossy().into_owned()),

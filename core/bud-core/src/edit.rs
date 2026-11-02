@@ -6,6 +6,7 @@
 //! every descendant follow.
 
 use crate::frontmatter;
+use crate::lock;
 use crate::scan;
 use crate::{insert_row, Error, Kind, Placement, Properties, Result, State, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -183,7 +184,9 @@ impl Vault {
             place: scan::place_of(Path::new(&path)),
             mtime: mtime_of(&absolute),
         };
-        let tx = self.conn.transaction()?;
+        lock(&self.written).insert(path.clone(), row.mtime);
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
         ensure_folders(&self.root, &tx, &dir)?;
         insert_row(&tx, &row, &props, "")?;
         tx.commit()?;
@@ -205,9 +208,11 @@ impl Vault {
         let (_, body) = frontmatter::split(&old);
         let head = &old[..old.len() - body.len()];
         write_atomic(&absolute, &format!("{head}{text}"))?;
-        self.conn.execute(
+        let mtime = mtime_of(&absolute);
+        lock(&self.written).insert(path.clone(), mtime);
+        lock(&self.conn).execute(
             "UPDATE buds SET body = ?1, mtime = ?2 WHERE path = ?3",
-            params![text, mtime_of(&absolute), path],
+            params![text, mtime, path],
         )?;
         Ok(())
     }
@@ -254,8 +259,7 @@ impl Vault {
             if std::fs::remove_dir(self.root.join(dir)).is_err() {
                 break;
             }
-            self.conn
-                .execute("DELETE FROM buds WHERE path = ?1", params![dir])?;
+            lock(&self.conn).execute("DELETE FROM buds WHERE path = ?1", params![dir])?;
             dir = dir.rsplit_once('/').map_or("", |(parent, _)| parent);
         }
         Ok(restored)
@@ -344,7 +348,8 @@ impl Vault {
         }
 
         let rows: Vec<(String, Option<String>)> = {
-            let mut stmt = self.conn.prepare("SELECT path, parent FROM buds")?;
+            let conn = lock(&self.conn);
+            let mut stmt = conn.prepare("SELECT path, parent FROM buds")?;
             let found = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             found.collect::<std::result::Result<_, _>>()?
         };
@@ -359,7 +364,8 @@ impl Vault {
             }
         };
         let place = scan::place_of(Path::new(&new_path));
-        let tx = self.conn.transaction()?;
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
         ensure_folders(&self.root, &tx, parent_dir)?;
         for (path, parent) in &rows {
             let Some(path_now) = follow(path) else {
