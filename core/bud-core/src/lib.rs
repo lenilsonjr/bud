@@ -8,6 +8,7 @@
 
 mod edit;
 mod frontmatter;
+mod peer;
 mod query;
 mod scan;
 mod sync;
@@ -23,8 +24,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub use peer::{Node, NodeOptions, PeerInfo, Qr, Relay, Ticket};
 pub use query::{Counts, Hit, Lens, Row};
-pub use sync::SyncReport;
+pub use sync::{Heads, SyncReport, Updates};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
@@ -175,6 +177,8 @@ impl ScanReport {
 /// A folder of Markdown files and the index that follows it.
 pub struct Vault {
     root: PathBuf,
+    /// The folder of the index: what belongs to this machine and not to the vault lives here.
+    index_dir: PathBuf,
     /// Behind a mutex because the watcher thread writes to the index too.
     conn: Arc<Mutex<Connection>>,
     /// The modification time of each file this vault wrote, so the watcher can skip its echo.
@@ -204,8 +208,13 @@ impl Vault {
         }
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        let index_dir = match index_path.as_ref().parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+            _ => PathBuf::from("."),
+        };
         Ok(Vault {
             root,
+            index_dir,
             conn: Arc::new(Mutex::new(conn)),
             written: Arc::new(Mutex::new(HashMap::new())),
         })
