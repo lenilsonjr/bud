@@ -9,7 +9,7 @@ struct Sidebar: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
+            MaybeScroll {
                 VStack(alignment: .leading, spacing: 2) {
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: 0, selected: false, action: nil)
