@@ -1,7 +1,7 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The whole app: the bar across the top, the canvas or the files below it, a hint at the bottom.
+/// The whole app: the bar across the top, the canvas or the files below it.
 public struct BudRootView: View {
     @StateObject private var store: BudStore
     @State private var adding: AddTarget? = nil
@@ -21,10 +21,8 @@ public struct BudRootView: View {
             TopBar(store: store, onAdd: { adding = AddTarget(parent: store.center) }, onSearch: { searching = true })
             surface
                 .overlay(alignment: .bottom) {
-                    VStack(spacing: 10) {
-                        ToastView(center: store.toasts)
-                        hint
-                    }
+                    ToastView(center: store.toasts)
+                        .padding(12)
                     .animation(.spring(duration: 0.4, bounce: 0.2), value: store.toasts.current?.id)
                 }
         }
@@ -62,17 +60,6 @@ public struct BudRootView: View {
                 .padding(.top, 72)
         }
         .transition(.opacity)
-    }
-
-    private var hint: some View {
-        Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf or press Space to open it · N adds under the lit card · ⌘K goes anywhere · Esc steps out")
-            .textRole(.caption)
-            .foregroundStyle(Theme.text3)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Theme.glass, in: Capsule())
-            .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
-            .padding(12)
     }
 }
 #endif
