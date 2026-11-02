@@ -77,3 +77,23 @@ final class CaptureStoreTests: XCTestCase {
     }
 }
 #endif
+
+#if canImport(SwiftUI)
+@MainActor
+final class EntryCueTests: XCTestCase {
+    func testTheStoreRecordsWhatWasPlantedLastAndForHowLongItIsFresh() throws {
+        let store = BudStore(fileURL: nil)
+        XCTAssertNil(store.lastPlanted)
+        let planted = try XCTUnwrap(store.add("Write the welcome note", todo: true, under: rootID))
+        let record = try XCTUnwrap(store.lastPlanted)
+        XCTAssertEqual(record.id, planted.id)
+        XCTAssertLessThan(abs(record.at.timeIntervalSinceNow), 2)
+        XCTAssertTrue(store.isFresh(planted.id))
+        XCTAssertFalse(store.isFresh(rootID))
+        XCTAssertFalse(store.isFresh(planted.id, now: record.at.addingTimeInterval(BudStore.entryCue + 0.1)))
+        let captured = try XCTUnwrap(store.capture("A stray thought", source: "mac"))
+        XCTAssertEqual(store.lastPlanted?.id, captured.id, "A capture is planted too")
+        XCTAssertFalse(store.isFresh(planted.id), "Only the last one carries the cue")
+    }
+}
+#endif

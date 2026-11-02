@@ -25,10 +25,13 @@ struct CardView: View {
                 }
             }
         }
-        .opacity(lit ? 1 : light)
         .animation(.easeOut(duration: 0.35), value: lit)
         .animation(.easeOut(duration: 0.35), value: light)
     }
+
+    /// The fill takes the full dim; the words floor at 55% so a dimmed card still reads.
+    private var fillLight: Double { lit ? 1 : light }
+    private var inkLight: Double { lit ? 1 : max(light, 0.55) }
 
     private var hub: some View {
         VStack(spacing: 6) {
@@ -46,8 +49,9 @@ struct CardView: View {
                 .textRole(.label)
                 .foregroundStyle(Theme.hubAccent)
         }
+        .opacity(inkLight)
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
-        .background(hubBackground)
+        .background(hubBackground.opacity(fillLight))
         .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
     }
@@ -81,7 +85,9 @@ struct CardView: View {
                     .padding(12)
             }
         }
-        .background(hubBackground)
+        .opacity(inkLight)
+        .background(hubBackground.opacity(fillLight))
+        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.xl))
         .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
@@ -112,11 +118,14 @@ struct CardView: View {
             }
             .buttonStyle(.plain)
             .textRole(.label)
-            .foregroundStyle(style.meta)
+            .foregroundStyle(lit ? style.meta : Theme.text2)
+            .help("Add inside")
         }
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
-        .background(chipBackground(bud))
+        .opacity(inkLight)
+        .background(chipBackground(bud).opacity(fillLight))
+        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.md))
         .contentShape(RoundedRectangle(cornerRadius: Radius.md))
         .onTapGesture(perform: onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
@@ -128,6 +137,29 @@ struct CardView: View {
             .fill(style.fill)
             .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: lit ? 1.5 : 1))
             .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 2, y: lit ? 0 : 2)
+    }
+
+    /// The entry cue: a leaf ring at 60% on a card that just joined the orbit, fading out over
+    /// the cue's length with no bounce. A still picture keeps it at full.
+    private struct EntryRing: View {
+        let fresh: Bool
+        let radius: CGFloat
+        @State private var shown = 1.0
+        @Environment(\.stillPicture) private var still
+
+        var body: some View {
+            if fresh {
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(Theme.leaf.opacity(0.6), lineWidth: 2)
+                    .padding(-3)
+                    .opacity(shown)
+                    .allowsHitTesting(false)
+                    .onAppear {
+                        guard !still else { return }
+                        withAnimation(.easeOut(duration: BudStore.entryCue)) { shown = 0 }
+                    }
+            }
+        }
     }
 
     private var hubBackground: some View {

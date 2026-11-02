@@ -69,7 +69,7 @@ struct TVCanvas: View {
             let lifted = focused.map { store.tree.orbit(of: $0) } ?? []
             ZStack {
                 Theme.canvas
-                EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
+                EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
                 ForEach(layout.order, id: \.self) { id in
                     if let placed = layout.cards[id] {
                         Button {

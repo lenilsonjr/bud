@@ -45,7 +45,7 @@ public struct OrbitCanvas: View {
                         lamp = point
                     }
                 wash
-                EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
+                EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
                     .allowsHitTesting(false)
                 ForEach(layout.order, id: \.self) { id in
                     if let placed = layout.cards[id] {
