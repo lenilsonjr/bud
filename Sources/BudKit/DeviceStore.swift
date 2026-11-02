@@ -39,6 +39,9 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var currentTicket: Ticket?
     @Published public private(set) var joinPhase: JoinPhase = .idle
     @Published public private(set) var rotation: RotationProgress?
+    /// When the last rotation that left a device behind was over, for the notice above the list.
+    @Published public private(set) var rotatedAt: Date?
+    @Published public private(set) var relay: RelaySetting = .default
     /// The device that used the ticket on show, until the sheet is closed or asks again.
     @Published public private(set) var redeemedBy: String?
 
@@ -49,6 +52,11 @@ public final class DeviceStore: ObservableObject {
     private var sheetOpen = false
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
+
+    /// The store the apps use until a real node plugs in: this device alone, so Settings shows the
+    /// invitation.
+    public static let shared = DeviceStore(
+        peers: MemoryPeers(devices: [Device(id: "this-device", isThisDevice: true, reach: .local)]))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
@@ -87,6 +95,12 @@ public final class DeviceStore: ObservableObject {
     public func refresh() async {
         if let list = try? await peers.devices() { devices = list }
         if let state = try? await peers.state() { syncState = state }
+        if let setting = try? await peers.relay() { relay = setting }
+    }
+
+    public func setRelay(_ setting: RelaySetting) async {
+        try? await peers.setRelay(setting)
+        if let stored = try? await peers.relay() { relay = stored }
     }
 
     public func syncNow() async {
@@ -167,7 +181,9 @@ public final class DeviceStore: ObservableObject {
         for await step in steps {
             switch step {
             case .device: rotation?.done += 1
-            case let .done(result): rotation?.result = result
+            case let .done(result):
+                rotation?.result = result
+                if !result.missed.isEmpty { rotatedAt = now() }
             }
         }
         await refresh()

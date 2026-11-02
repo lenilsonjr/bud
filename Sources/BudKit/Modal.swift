@@ -8,9 +8,14 @@ enum Modal: Hashable, Identifiable {
     case settings
     /// Delete one branch from the Trash for good; with nil, empty the whole Trash.
     case deleteForever(id: UUID?)
+    /// Settings › Devices: the ticket sheet and the join sheet.
+    case showTicket
+    case joinVault
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
+    static let showTicketID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!
+    static let joinVaultID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
 
     var id: UUID {
         switch self {
@@ -19,6 +24,8 @@ enum Modal: Hashable, Identifiable {
         case .closeBranch(let id): return id
         case .settings: return Self.settingsID
         case .deleteForever(let id): return id ?? Self.emptyTrashID
+        case .showTicket: return Self.showTicketID
+        case .joinVault: return Self.joinVaultID
         }
     }
 
@@ -86,8 +93,11 @@ struct ModalHost: View {
             case .add(let parent): AddSheet(store: store, mode: .enrich(under: parent))
             case .capture: AddSheet(store: store, mode: .capture)
             case .closeBranch(let id): CloseBranchDialog(store: store, id: id)
-            case .settings: SettingsView(flags: .shared, onDone: { store.modal = nil })
+            case .settings:
+                SettingsView(flags: .shared, devices: store.devices, onDone: { store.modal = nil }, present: { store.modal = $0 })
             case .deleteForever(let id): DeleteForeverDialog(store: store, id: id)
+            case .showTicket: TicketSheet(devices: store.devices, close: { store.modal = .settings })
+            case .joinVault: JoinSheet(devices: store.devices, close: { store.modal = .settings })
             }
         }
         .modalCard()

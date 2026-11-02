@@ -188,6 +188,29 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersSettingsWithDevices() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let missed = MemoryPeers.fixtures()[3].id
+        for (name, missing) in [("settings-devices", Set<String>()), ("settings-missed", [missed])] {
+            let peers = MemoryPeers(missing: missing)
+            let devices = DeviceStore(peers: peers)
+            await devices.start()
+            if !missing.isEmpty { await devices.remove(MemoryPeers.fixtures()[4].id, rotate: true) }
+            let store = BudStore(fileURL: nil, devices: devices)
+            for scheme in [ColorScheme.light, .dark] {
+                store.modal = .settings
+                let data = try render(store: store, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
