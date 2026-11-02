@@ -13,12 +13,7 @@ struct TopBar: View {
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
-            Picker("View", selection: $store.surface) {
-                ForEach(Surface.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
             breadcrumb
             Spacer(minLength: 8)
             if let step = store.nextStep { nextStep(step) }
