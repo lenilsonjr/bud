@@ -194,6 +194,30 @@ final class UndoTests: XCTestCase {
     #endif
 }
 
+final class LightTests: XCTestCase {
+    func testTheCurrentOrbitIsLitAndTheRestDimsUnlessLifted() {
+        XCTAssertEqual(lightLevel(role: .center, lifted: false), 1)
+        XCTAssertEqual(lightLevel(role: .ring, lifted: false), 1)
+        for role in [CardRole.deep, .ghost, .kin] {
+            XCTAssertEqual(lightLevel(role: role, lifted: false), 0.35, "\(role) rests dim")
+            XCTAssertEqual(lightLevel(role: role, lifted: true), 1, "\(role) lifts under the light")
+        }
+    }
+
+    func testAnOrbitIsTheParentAndTheSiblings() throws {
+        let t = Tree.seed()
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let kids = t.children(of: newsletter.id)
+        let first = try XCTUnwrap(kids.first)
+        let orbit = t.orbit(of: first.id)
+        XCTAssertTrue(orbit.contains(newsletter.id), "The parent")
+        XCTAssertEqual(orbit.intersection(kids.map(\.id)).count, kids.count, "Every sibling, itself included")
+        XCTAssertFalse(orbit.contains(rootID), "Not the grandparent")
+        XCTAssertEqual(t.orbit(of: rootID), [rootID], "The root stands alone")
+        XCTAssertEqual(t.orbit(of: newsletter.id), Set(t.children(of: rootID).map(\.id)).union([rootID]))
+    }
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()

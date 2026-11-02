@@ -127,6 +127,13 @@ public struct Tree: Codable, Equatable, Sendable {
         return rows
     }
 
+    /// The orbit a bud belongs to: its parent and every sibling, itself included. The root's
+    /// orbit is the root alone.
+    public func orbit(of id: UUID) -> Set<UUID> {
+        guard let parent = parent(of: id) else { return [id] }
+        return Set(children(of: parent).map(\.id)).union([parent, id])
+    }
+
     /// A peek inside a bud: the first few titles under it, in reading order.
     public func peek(into id: UUID, limit: Int = 3) -> [String] {
         children(of: id).prefix(limit).map(\.text)

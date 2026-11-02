@@ -5,7 +5,8 @@ import SwiftUI
 /// every card to its parent so a far card still reads as part of its thread.
 /// The camera is the board point at the middle of the viewport; the scale only changes
 /// when you pinch. Drag or scroll to move, tap a card with children to center it,
-/// tap a leaf to open it in place. The light rests on the card under the pointer; Space opens
+/// tap a leaf to open it in place. A soft wash and the light rest under the pointer, or where
+/// the last tap landed on touch; the current orbit is in full light, the rest dims; Space opens
 /// that card, N plants a bud under it.
 public struct OrbitCanvas: View {
     @ObservedObject var store: BudStore
@@ -20,6 +21,10 @@ public struct OrbitCanvas: View {
     @FocusState private var focused: Bool
 
     private let lampReach: CGFloat = 170
+    /// The wash under the pointer: leaf at 12% fading to nothing over this radius.
+    private let washRadius: CGFloat = 260
+    /// Where the wash last was, so it can fade out in place when the pointer leaves.
+    @State private var washAt: CGPoint = .zero
 
     public init(store: BudStore) {
         self.store = store
@@ -30,14 +35,17 @@ public struct OrbitCanvas: View {
             let size = geo.size
             let layout = store.layout
             let lit = litCard(in: layout, viewport: size)
+            let lifted = lit.map { store.tree.orbit(of: $0) } ?? []
             ZStack {
                 Theme.canvas
                     .contentShape(Rectangle())
                     .gesture(panGesture)
-                    .onTapGesture {
+                    .onTapGesture(coordinateSpace: .local) { point in
                         focused = true
                         close()
+                        lamp = point
                     }
+                wash
                 EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
                     .allowsHitTesting(false)
                 ForEach(layout.order, id: \.self) { id in
@@ -47,7 +55,8 @@ public struct OrbitCanvas: View {
                             store: store,
                             role: placed.role,
                             lit: lit == id,
-                            onTap: { tap(id) },
+                            light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
+                            onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                             onOpen: { open(id) },
                             onAdd: { adding = AddTarget(parent: id) },
                             onToggle: { store.toggle(id) }
@@ -107,6 +116,18 @@ public struct OrbitCanvas: View {
         .sheet(item: $adding) { target in AddSheet(store: store, parent: target.parent) }
     }
 
+    /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.
+    private var wash: some View {
+        Circle()
+            .fill(RadialGradient(colors: [Theme.leaf.opacity(0.12), Theme.leaf.opacity(0)], center: .center, startRadius: 0, endRadius: washRadius))
+            .frame(width: washRadius * 2, height: washRadius * 2)
+            .position(lamp ?? washAt)
+            .opacity(lamp == nil ? 0 : 1)
+            .animation(.easeOut(duration: 0.3), value: lamp == nil)
+            .allowsHitTesting(false)
+            .onChange(of: lamp) { _, now in if let now { washAt = now } }
+    }
+
     // MARK: camera
 
     private func screenPoint(_ p: CGPoint, in size: CGSize) -> CGPoint {
@@ -164,7 +185,9 @@ public struct OrbitCanvas: View {
     }
 
     /// A card with children centers on the first click and opens on the next; a leaf opens at once.
-    private func tap(_ id: UUID) {
+    /// On touch the light has no pointer to follow, so it rests where the tap landed.
+    private func tap(_ id: UUID, at point: CGPoint) {
+        lamp = point
         if id == rootID || store.tree.hasChildren(id) {
             if id == store.center {
                 if id != rootID { open(id) }

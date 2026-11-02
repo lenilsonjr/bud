@@ -82,15 +82,6 @@ enum Theme {
     /// Kerning for a step of the type scale; only the eyebrow has any.
     static func tracking(_ role: TextRole) -> CGFloat { role.style.tracking }
 
-    static func light(for role: CardRole) -> Double {
-        switch role {
-        case .center, .ring: return 1
-        case .deep: return 0.85
-        case .ghost: return 0.7
-        case .kin: return 0.55
-        }
-    }
-
     private static func weight(_ axis: Int) -> Font.Weight {
         switch axis {
         case ..<200: return .thin
