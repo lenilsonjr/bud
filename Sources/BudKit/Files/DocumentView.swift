@@ -47,6 +47,7 @@ struct DocumentView: View {
             Text(store.tree.filePath(of: id))
                 .textRole(.mono)
                 .lineLimit(1)
+                .truncationMode(.head)
                 .foregroundStyle(Theme.text3)
             Spacer()
             HStack(spacing: 4) {

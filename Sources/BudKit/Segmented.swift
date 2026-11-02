@@ -16,6 +16,8 @@ struct Segmented<Option: Hashable>: View {
                 } label: {
                     Text(label(option))
                         .textRole(.label)
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(on ? Theme.text : Theme.text2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
