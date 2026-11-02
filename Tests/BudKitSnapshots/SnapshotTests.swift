@@ -297,6 +297,37 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    private let phone = CGSize(width: 393, height: 852)
+
+    /// The phone layout: Files split with the navigator on top, the canvas, and the palette.
+    func testRendersThePhone() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        store.openAsFile(newsletter.id)
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("phone-files-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        store.surface = .canvas
+        store.center = rootID
+        let canvas = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
+        try render(canvas, scheme: .light).write(to: folder.appendingPathComponent("phone-canvas-light.png"))
+        let palette = CommandPalette(store: store, onClose: {})
+            .padding(12)
+            .frame(width: phone.width)
+            .background(Theme.canvas)
+            .environment(\.compact, true)
+        try render(palette, scheme: .light).write(to: folder.appendingPathComponent("phone-palette-light.png"))
+    }
+
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
         try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
     }

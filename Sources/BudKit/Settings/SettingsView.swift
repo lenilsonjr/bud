@@ -35,8 +35,8 @@ public struct SettingsView: View {
                     .foregroundStyle(Theme.text3)
                     .textSelection(.enabled)
             }
-            section("Try", caption: "Two ways to lay out Files on a phone, to compare on a device before one is kept. Split puts the tree above the page with a handle between; Sidebar slides the tree in from the left.") {
-                Segmented(selection: $flags.phoneFilesLayout, options: PhoneFilesLayout.allCases) { $0.rawValue }
+            section("Try", caption: "How much of a phone's height the file navigator takes above the page, to compare on a device before one is kept. The chevron on the handle gives the page the whole screen.") {
+                Segmented(selection: $flags.phoneSplit, options: PhoneSplit.allCases) { $0.rawValue }
             }
             if let onDone {
                 HStack {

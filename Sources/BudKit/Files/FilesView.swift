@@ -6,35 +6,49 @@ import SwiftUI
 /// Drawn as two panes rather than a split view so it looks the same everywhere and in pictures.
 struct FilesView: View {
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
 
     static let sidebarWidth: CGFloat = 264
 
     var body: some View {
-        HStack(spacing: 0) {
-            Sidebar(store: store)
-                .frame(width: Self.sidebarWidth)
-                .background(Theme.sidebar)
-            Rectangle()
-                .fill(Theme.line)
-                .frame(width: 1)
-            Group {
-                if let lens = store.lens {
-                    LensPage(store: store, lens: lens)
-                } else if let place = store.place {
-                    switch place {
-                    case .inbox: InboxPage(store: store)
-                    case .archive: ArchivePage(store: store)
-                    case .trash: TrashPage(store: store)
-                    }
-                } else if store.center == rootID || store.tree.hasChildren(store.center) {
-                    OutlinePage(store: store)
-                } else {
-                    DocumentView(id: store.center, store: store)
-                }
+        if compact {
+            PhoneFilesView(store: store)
+        } else {
+            HStack(spacing: 0) {
+                Sidebar(store: store)
+                    .frame(width: Self.sidebarWidth)
+                    .background(Theme.sidebar)
+                Rectangle()
+                    .fill(Theme.line)
+                    .frame(width: 1)
+                FilesPage(store: store)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.canvas)
         }
+    }
+}
+
+/// The page for where you are: a lens, a place, a folder's outline or a leaf's document.
+struct FilesPage: View {
+    @ObservedObject var store: BudStore
+
+    var body: some View {
+        Group {
+            if let lens = store.lens {
+                LensPage(store: store, lens: lens)
+            } else if let place = store.place {
+                switch place {
+                case .inbox: InboxPage(store: store)
+                case .archive: ArchivePage(store: store)
+                case .trash: TrashPage(store: store)
+                }
+            } else if store.center == rootID || store.tree.hasChildren(store.center) {
+                OutlinePage(store: store)
+            } else {
+                DocumentView(id: store.center, store: store)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
     }
 }
 #endif

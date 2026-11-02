@@ -12,6 +12,17 @@ extension EnvironmentValues {
         get { self[StillPictureKey.self] }
         set { self[StillPictureKey.self] = newValue }
     }
+
+    /// A phone-width window: the bar, Files and the palette lay out for one hand. Set from the
+    /// size class on iOS, and by a picture that wants the phone layout.
+    var compact: Bool {
+        get { self[CompactKey.self] }
+        set { self[CompactKey.self] = newValue }
+    }
+}
+
+private struct CompactKey: EnvironmentKey {
+    static let defaultValue = false
 }
 
 /// A vertical scroll view in the app; a plain column in a still picture.

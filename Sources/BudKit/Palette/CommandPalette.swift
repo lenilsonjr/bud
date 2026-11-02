@@ -9,6 +9,7 @@ struct CommandPalette: View {
     @State private var query = ""
     @State private var picked = 0
     @FocusState private var typing: Bool
+    @Environment(\.compact) private var compact
 
     private enum Row: Hashable {
         case bud(SearchHit)
@@ -41,7 +42,12 @@ struct CommandPalette: View {
                     .textRole(.heading)
                     .foregroundStyle(Theme.text)
                     .focused($typing)
-                Keycap("esc")
+                if compact {
+                    Button("Cancel", action: onClose)
+                        .buttonStyle(.budGhost)
+                } else {
+                    Keycap("esc")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -75,18 +81,20 @@ struct CommandPalette: View {
                     .padding(.horizontal, 6)
                     .padding(.bottom, 8)
                 }
-                .frame(maxHeight: 360, alignment: .top)
+                .frame(maxHeight: compact ? 300 : 360, alignment: .top)
                 .clipped()
                 .onChange(of: picked) { _, now in proxy.scrollTo(now) }
             }
-            Theme.line.frame(height: 1)
-            Text("↵ center on canvas · ⌘↵ open in Files · ↑↓ move · esc back")
-                .textRole(.caption)
-                .foregroundStyle(Theme.text3)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+            if !compact {
+                Theme.line.frame(height: 1)
+                Text("↵ center on canvas · ⌘↵ open in Files · ↑↓ move · esc back")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
         }
-        .frame(width: 560)
+        .frame(maxWidth: 560)
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadowStrong, radius: 24, y: 12)
