@@ -71,6 +71,109 @@ pub fn parse(yaml: &str) -> Properties {
     }
 }
 
+/// The keys of a block that [`Properties`] does not carry, as the file wrote them, and the order
+/// of every key of the block. Two replicas that agree on a layout write the same block.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Layout {
+    /// Each unknown key with its lines (the key line and what is indented or commented under it),
+    /// in the order of the block.
+    pub extras: Vec<(String, String)>,
+    /// Every key of the block in order; empty while there are no unknown keys.
+    pub order: Vec<String>,
+}
+
+/// The lines before the first key, then each top-level key with its lines.
+fn chunks(yaml: &str) -> (String, Vec<(String, String)>) {
+    let mut pre = String::new();
+    let mut out: Vec<(String, String)> = Vec::new();
+    for line in yaml.split_inclusive('\n') {
+        let key = (!line.starts_with([' ', '\t', '#', '-', '\r', '\n']))
+            .then(|| line.split_once(':').map(|(key, _)| key.trim().to_string()))
+            .flatten()
+            .filter(|key| !key.is_empty());
+        match (key, out.last_mut()) {
+            (Some(key), _) => out.push((key, line.to_string())),
+            (None, Some((_, text))) => text.push_str(line),
+            (None, None) => pre.push_str(line),
+        }
+    }
+    (pre, out)
+}
+
+/// The unknown keys of a YAML block and the order of all its keys. A key that repeats counts once,
+/// at its first line.
+pub fn layout(yaml: &str) -> Layout {
+    let (_, found) = chunks(yaml);
+    let mut seen = std::collections::HashSet::new();
+    let mut layout = Layout::default();
+    for (key, text) in found {
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        if !KEYS.contains(&key.as_str()) {
+            layout.extras.push((key.clone(), text));
+        }
+        layout.order.push(key);
+    }
+    if layout.extras.is_empty() {
+        layout.order.clear();
+    }
+    layout
+}
+
+/// Return `text` with the unknown keys of its block set to `layout`: the ones it lacks are added,
+/// the ones that differ are replaced, the ones it has beyond are removed, and with any unknown key
+/// the block's keys follow `layout.order`. Known keys keep their lines. With no unknown key in
+/// `layout` and none in the file the text comes back as it was.
+pub fn write_layout(text: &str, layout: &Layout) -> String {
+    let (yaml, body) = match split(text) {
+        (Some(yaml), body) => (yaml, body),
+        (None, _) if layout.extras.is_empty() => return text.to_string(),
+        (None, _) => ("", text),
+    };
+    let had_block = split(text).0.is_some();
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let (pre, found) = chunks(yaml);
+    let mut seen = std::collections::HashSet::new();
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for (key, chunk) in found {
+        if !seen.insert(key.clone()) && !KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        if KEYS.contains(&key.as_str()) {
+            kept.push((key, chunk));
+        } else if let Some((_, wanted)) = layout.extras.iter().find(|(k, _)| *k == key) {
+            kept.push((key, wanted.clone()));
+        }
+    }
+    for (key, wanted) in &layout.extras {
+        if !seen.contains(key) {
+            kept.push((key.clone(), wanted.clone()));
+        }
+    }
+    if !layout.extras.is_empty() {
+        let at = |key: &str| layout.order.iter().position(|k| k == key);
+        kept.sort_by_key(|(key, _)| at(key).unwrap_or(usize::MAX));
+    }
+    let mut block = pre;
+    for (_, chunk) in kept {
+        if !block.is_empty() && !block.ends_with('\n') {
+            block.push_str(eol);
+        }
+        block.push_str(&chunk);
+        if !block.ends_with('\n') {
+            block.push_str(eol);
+        }
+    }
+    if had_block {
+        let open_len = if text.starts_with("---\r\n") { 5 } else { 4 };
+        let close = &text[open_len + yaml.len()..text.len() - body.len()];
+        format!("{}{block}{close}{body}", &text[..open_len])
+    } else {
+        format!("---{eol}{block}---{eol}{text}")
+    }
+}
+
 /// The keys this module writes, in the order new ones are appended.
 const KEYS: [&str; 6] = ["state", "when", "due", "pinned", "created", "source"];
 
@@ -412,6 +515,64 @@ mod tests {
                 source: Some("phone".into()),
             }
         );
+    }
+
+    #[test]
+    fn the_unknown_keys_and_the_order_of_all_keys_are_read() {
+        let found = layout(UNKNOWN.split("---\n").nth(1).unwrap());
+        assert_eq!(found.order, ["tags", "state", "aliases", "when"]);
+        assert_eq!(
+            found.extras,
+            [
+                ("tags".to_string(), "tags: [brand, 'launch']\n".to_string()),
+                (
+                    "aliases".to_string(),
+                    "aliases:\n  - Sender\n  - \"Mail\"\n".to_string()
+                ),
+            ]
+        );
+        assert_eq!(layout("state: open\ndue: x\n"), Layout::default());
+    }
+
+    #[test]
+    fn a_layout_is_written_in_its_order_and_read_back() {
+        let from = "---\nzeta: 1\nstate: open\nalpha:\n  - a\n# note\ncreated: x\n---\nB\n";
+        let found = layout(split(from).0.unwrap());
+        let known = write("B\n", &parse(split(from).0.unwrap()));
+        assert_eq!(write_layout(&known, &found), from);
+        // A second write changes nothing.
+        let once = write_layout(from, &found);
+        assert_eq!(once, from);
+        assert_eq!(write_layout(&once, &found), once);
+    }
+
+    #[test]
+    fn a_layout_replaces_and_removes_unknown_keys_only() {
+        let text = "---\ntags: a\nstate: open\nold: 1\n---\nB\n";
+        let wanted = Layout {
+            extras: vec![("tags".into(), "tags: [b]\n".into())],
+            order: vec!["state".into(), "tags".into()],
+        };
+        assert_eq!(
+            write_layout(text, &wanted),
+            "---\nstate: open\ntags: [b]\n---\nB\n"
+        );
+    }
+
+    #[test]
+    fn no_unknown_keys_leaves_a_file_with_the_six_keys_alone() {
+        let text = "---\n# c\nstate: open\ndue: x\n  more\n---\nB\n";
+        assert_eq!(write_layout(text, &Layout::default()), text);
+        assert_eq!(write_layout("Plain\n", &Layout::default()), "Plain\n");
+    }
+
+    #[test]
+    fn a_layout_makes_a_block_when_the_file_has_none() {
+        let wanted = Layout {
+            extras: vec![("tags".into(), "tags: [a]\n".into())],
+            order: vec!["tags".into()],
+        };
+        assert_eq!(write_layout("Hi\n", &wanted), "---\ntags: [a]\n---\nHi\n");
     }
 
     #[test]
