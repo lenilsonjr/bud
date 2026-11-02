@@ -2,11 +2,15 @@
 //!
 //! The files are the only truth (ADR-001). This crate opens a vault folder, walks it into an
 //! index kept outside the vault, and answers the queries the views need. The only write into the
-//! vault is [`Vault::set_properties`], which changes frontmatter keys and nothing else.
+//! vault are the edits in [`Vault::create`], [`Vault::set_body`], [`Vault::set_properties`],
+//! [`Vault::rename`], [`Vault::move_to`], [`Vault::trash`] and [`Vault::restore`]: each changes
+//! the file first and the index row after.
 
+mod edit;
 mod frontmatter;
 mod scan;
 
+pub use edit::sanitize_filename;
 pub use frontmatter::{
     parse as parse_frontmatter, split as split_frontmatter, write as write_frontmatter, Properties,
 };
@@ -28,6 +32,10 @@ pub enum Error {
     NotAFolder(PathBuf),
     #[error("no such bud: {0}")]
     NoSuchBud(String),
+    #[error("already exists: {0}")]
+    Exists(String),
+    #[error("not allowed: {0}")]
+    Invalid(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -253,20 +261,8 @@ impl Vault {
             std::fs::read_to_string(&absolute)?
         };
         let written = frontmatter::write(&text, props);
-        let mut tmp = absolute.clone().into_os_string();
-        tmp.push(".tmp");
-        let tmp = PathBuf::from(tmp);
-        std::fs::write(&tmp, &written)?;
-        if let Err(err) = std::fs::rename(&tmp, &absolute) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(err.into());
-        }
-        let mtime = std::fs::metadata(&absolute)?
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+        edit::write_atomic(&absolute, &written)?;
+        let mtime = edit::mtime_of(&absolute);
         let (_, body) = frontmatter::split(&written);
         let row = Placement {
             path: &file_path,

@@ -23,7 +23,7 @@ pub struct Found {
     pub mtime: i64,
 }
 
-const RESERVED: [&str; 3] = ["Inbox", "Archive", ".trash"];
+pub(crate) const RESERVED: [&str; 3] = ["Inbox", "Archive", ".trash"];
 
 pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
     let mut found = Vec::new();
@@ -91,7 +91,7 @@ pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
 
 /// The bud that owns the entries of `dir`: `dir.md` when it exists, else the folder itself, and
 /// none at the root or directly inside a place.
-fn parent_bud(root: &Path, dir: &Path) -> Option<String> {
+pub(crate) fn parent_bud(root: &Path, dir: &Path) -> Option<String> {
     if dir.as_os_str().is_empty() {
         return None;
     }
@@ -106,13 +106,13 @@ fn parent_bud(root: &Path, dir: &Path) -> Option<String> {
 }
 
 /// `a/b` → `root/a/b.md`.
-fn sibling_file(root: &Path, dir: &Path) -> PathBuf {
+pub(crate) fn sibling_file(root: &Path, dir: &Path) -> PathBuf {
     let mut file = root.join(dir).into_os_string();
     file.push(".md");
     PathBuf::from(file)
 }
 
-fn place_of(relative: &Path) -> Place {
+pub(crate) fn place_of(relative: &Path) -> Place {
     match relative.components().next() {
         Some(Component::Normal(first)) => match first.to_string_lossy().as_ref() {
             "Inbox" => Place::Inbox,
