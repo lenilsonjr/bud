@@ -35,10 +35,29 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheQuickAddSheet() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        for scheme in [ColorScheme.light, .dark] {
+            let sheet = AddSheet(store: store, parent: newsletter.id).frame(width: 420)
+            let data = try render(sheet, scheme: scheme)
+            let file = folder.appendingPathComponent("sheet-add-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 5_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
-        let view = BudRootView(store: store)
-            .frame(width: size.width, height: size.height)
-            .environment(\.colorScheme, scheme)
+        try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
+    }
+
+    private func render(_ content: some View, scheme: ColorScheme) throws -> Data {
+        let view = content.environment(\.colorScheme, scheme)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         let appearance = try XCTUnwrap(NSAppearance(named: scheme == .dark ? .darkAqua : .aqua))

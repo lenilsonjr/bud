@@ -98,6 +98,11 @@ public struct Tree: Codable, Equatable, Sendable {
         walk(under: id).first { $0.state == .open }
     }
 
+    /// The kind a new bud starts as: a to-do under a to-do, a note under a note or the root.
+    public func suggestsTodo(under parent: UUID) -> Bool {
+        bud(parent)?.isTodo ?? false
+    }
+
     @discardableResult
     public mutating func add(_ text: String, todo: Bool, under parent: UUID) -> Bud {
         let last = children(of: parent).last?.order ?? 0

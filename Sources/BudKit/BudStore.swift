@@ -54,8 +54,11 @@ public final class BudStore: ObservableObject {
     /// The open to-do to do next inside the current bud, or nil when there is none.
     public var nextStep: Bud? { tree.nextStep(under: center) }
 
+    /// Plants a bud under a parent. A blank line plants nothing.
     public func add(_ text: String, todo: Bool, under parent: UUID) {
-        commit { $0.add(text, todo: todo, under: parent) }
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return }
+        commit { $0.add(line, todo: todo, under: parent) }
     }
 
     public func update(_ id: UUID, text: String, todo: Bool) {
