@@ -72,10 +72,10 @@ public struct MoveTargets {
 
 /// The places and lenses the palette lists beside the buds.
 public enum Destination: String, CaseIterable, Sendable {
-    case inbox = "Inbox", everything = "Everything", archive = "Archive"
+    case inbox = "Inbox", everything = "Everything", archive = "Archive", trash = "Trash"
     case today = "Today", todos = "To-dos", pinned = "Pinned"
 
-    public var isPlace: Bool { self == .inbox || self == .everything || self == .archive }
+    public var isPlace: Bool { self == .inbox || self == .everything || self == .archive || self == .trash }
 
     /// The ones that match the query by name; all of them when the query is empty.
     public static func matching(_ query: String) -> [Destination] {

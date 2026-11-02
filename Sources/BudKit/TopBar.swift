@@ -57,8 +57,7 @@ struct TopBar: View {
     /// The lens or the Inbox when Files shows one instead of the center's page.
     private var placeName: String? {
         guard store.surface == .files else { return nil }
-        if store.inboxOpen { return "Inbox" }
-        return store.lens?.rawValue
+        return store.place?.rawValue ?? store.lens?.rawValue
     }
 
     private var breadcrumb: some View {

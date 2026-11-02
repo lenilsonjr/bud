@@ -75,12 +75,39 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// A branch in the Trash: the buds as they were, the head first, and when it went there. It
+/// keeps its ids, parents and order so a restore puts it back exactly.
+public struct TrashedBranch: Codable, Equatable, Sendable, Identifiable {
+    public let at: Date
+    public let buds: [Bud]
+
+    public init(at: Date, buds: [Bud]) {
+        self.at = at
+        self.buds = buds
+    }
+
+    /// The bud the branch hangs from: the one whose parent is not in the branch.
+    public var head: Bud { buds.first { bud in !buds.contains { $0.id == bud.parent } } ?? buds[0] }
+    public var id: UUID { head.id }
+    public var inside: Int { buds.count - 1 }
+}
+
 /// A plain value: every operation is a small mutation, so the store can persist after each one.
 public struct Tree: Codable, Equatable, Sendable {
     public var buds: [Bud]
+    /// What was trashed and not yet restored or deleted, oldest first.
+    public var trashed: [TrashedBranch]
 
-    public init(buds: [Bud] = []) {
+    public init(buds: [Bud] = [], trashed: [TrashedBranch] = []) {
         self.buds = buds
+        self.trashed = trashed
+    }
+
+    /// Files saved before the Trash existed still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        buds = try c.decode([Bud].self, forKey: .buds)
+        trashed = try c.decodeIfPresent([TrashedBranch].self, forKey: .trashed) ?? []
     }
 
     public func bud(_ id: UUID) -> Bud? {
@@ -356,20 +383,54 @@ public struct Tree: Codable, Equatable, Sendable {
         buds.removeAll { gone.contains($0.id) }
     }
 
-    /// Trashes a bud and its whole branch and hands the branch back, so it can be restored as it
-    /// was: same ids, same parents, same order. Empty when the bud is unknown.
+    /// Trashes a bud and its whole branch: it moves to the Trash and is handed back, so it can be
+    /// restored as it was: same ids, same parents, same order. Empty when the bud is unknown.
     @discardableResult
-    public mutating func trash(_ id: UUID) -> [Bud] {
+    public mutating func trash(_ id: UUID, at now: Date = Date()) -> [Bud] {
+        guard bud(id) != nil else { return [] }
         let gone = Set(descendants(of: id) + [id])
-        let branch = buds.filter { gone.contains($0.id) }
+        let branch = [bud(id)!] + buds.filter { gone.contains($0.id) && $0.id != id }
         buds.removeAll { gone.contains($0.id) }
+        trashed.append(TrashedBranch(at: now, buds: branch))
         return branch
     }
 
-    /// Puts a trashed branch back. A bud whose id is already in the tree is skipped.
+    /// Puts a branch back and takes it out of the Trash. A bud whose id is already in the tree is
+    /// skipped; a bud whose parent is gone lands under Everything, after the last thread.
     public mutating func restore(_ branch: [Bud]) {
         let present = Set(buds.map(\.id))
-        buds.append(contentsOf: branch.filter { !present.contains($0.id) })
+        let ids = Set(branch.map(\.id))
+        trashed.removeAll { ids.contains($0.id) }
+        var next = (children(of: rootID).last?.order ?? 0) + 1
+        for var bud in branch where !present.contains(bud.id) {
+            let parentKnown = bud.parent == rootID || bud.parent == inboxID || ids.contains(bud.parent) || self.bud(bud.parent) != nil
+            if !parentKnown {
+                bud.parent = rootID
+                bud.order = next
+                next += 1
+            }
+            buds.append(bud)
+        }
+    }
+
+    /// Restores the branch in the Trash that hangs from this bud; nothing when it is not there.
+    public mutating func restore(_ id: UUID) {
+        guard let branch = trashed.first(where: { $0.id == id }) else { return }
+        restore(branch.buds)
+    }
+
+    /// Drops a branch from the Trash for good.
+    public mutating func deleteForever(_ id: UUID) {
+        trashed.removeAll { $0.id == id }
+    }
+
+    public mutating func emptyTrash() {
+        trashed.removeAll()
+    }
+
+    /// Finished chapters: the threads under Everything that are closed, in their order.
+    public func archived() -> [Bud] {
+        children(of: rootID).filter(\.isDone)
     }
 
     /// A small world to start from.
