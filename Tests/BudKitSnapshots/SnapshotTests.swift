@@ -211,6 +211,35 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheSyncIndicator() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let alone = [Device(id: "a91cp4x8d2n6w0j3h5v9b1m7r2ks7t0e", isThisDevice: true, reach: .local)]
+        let states: [(String, MemoryPeers, Int, Bool)] = [
+            ("sync-connected", MemoryPeers(), 0, false),
+            ("sync-pending", MemoryPeers(), 3, false),
+            ("sync-apart", MemoryPeers(devices: alone), 3, false),
+            ("sync-syncing", MemoryPeers(), 0, true),
+        ]
+        for (name, peers, pending, syncing) in states {
+            await peers.setPendingChanges(pending)
+            await peers.setSyncing(syncing)
+            let devices = DeviceStore(peers: peers)
+            await devices.refresh()
+            let store = BudStore(fileURL: nil, devices: devices)
+            for scheme in [ColorScheme.light, .dark] {
+                let bar = TopBar(store: store, onAdd: {}, onSearch: {}).frame(width: size.width)
+                let data = try render(bar, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 5_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
