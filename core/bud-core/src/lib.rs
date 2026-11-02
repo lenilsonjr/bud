@@ -1,13 +1,15 @@
 //! bud-core: a vault is a folder of Markdown files; SQLite is the index that follows it.
 //!
 //! The files are the only truth (ADR-001). This crate opens a vault folder, walks it into an
-//! index kept outside the vault, and answers the queries the views need. Nothing here writes
-//! into the vault until a later version adds the write operations.
+//! index kept outside the vault, and answers the queries the views need. The only write into the
+//! vault is [`Vault::set_properties`], which changes frontmatter keys and nothing else.
 
 mod frontmatter;
 mod scan;
 
-pub use frontmatter::{parse as parse_frontmatter, split as split_frontmatter, Properties};
+pub use frontmatter::{
+    parse as parse_frontmatter, split as split_frontmatter, write as write_frontmatter, Properties,
+};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::collections::HashMap;
@@ -24,6 +26,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("not a folder: {0}")]
     NotAFolder(PathBuf),
+    #[error("no such bud: {0}")]
+    NoSuchBud(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -209,31 +213,14 @@ impl Vault {
                     body.to_string(),
                 )
             };
-            let kind = if props.state.is_some() {
-                Kind::Todo
-            } else {
-                Kind::Note
+            let row = Placement {
+                path: &item.path,
+                parent: item.parent.as_deref(),
+                title: &item.title,
+                place: item.place,
+                mtime: item.mtime,
             };
-            tx.execute(
-                "INSERT OR REPLACE INTO buds
-                 (path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-                params![
-                    item.path,
-                    item.parent,
-                    item.title,
-                    kind.as_str(),
-                    props.state.map(State::as_str),
-                    props.when,
-                    props.due,
-                    props.pinned as i64,
-                    props.created,
-                    props.source,
-                    body,
-                    item.mtime,
-                    item.place.as_str(),
-                ],
-            )?;
+            insert_row(&tx, &row, &props, &body)?;
         }
         for path in known.keys() {
             if !seen.contains(path) {
@@ -243,6 +230,62 @@ impl Vault {
         }
         tx.commit()?;
         Ok(report)
+    }
+
+    /// Set the known frontmatter keys of a bud to `props`: a key that is none is removed. Nothing
+    /// else in the file changes. The file is written to `<name>.md.tmp` beside it and renamed into
+    /// place, and the index row follows. A bud that is only a folder gets `Name.md` beside the
+    /// folder first, and its children now belong to that file.
+    pub fn set_properties(&mut self, path: &str, props: &Properties) -> Result<()> {
+        let bud = self
+            .bud(path)?
+            .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
+        let is_folder = !path.ends_with(".md");
+        let file_path = if is_folder {
+            format!("{path}.md")
+        } else {
+            path.to_string()
+        };
+        let absolute = self.root.join(&file_path);
+        let text = if is_folder {
+            String::new()
+        } else {
+            std::fs::read_to_string(&absolute)?
+        };
+        let written = frontmatter::write(&text, props);
+        let mut tmp = absolute.clone().into_os_string();
+        tmp.push(".tmp");
+        let tmp = PathBuf::from(tmp);
+        std::fs::write(&tmp, &written)?;
+        if let Err(err) = std::fs::rename(&tmp, &absolute) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(err.into());
+        }
+        let mtime = std::fs::metadata(&absolute)?
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let (_, body) = frontmatter::split(&written);
+        let row = Placement {
+            path: &file_path,
+            parent: bud.parent.as_deref(),
+            title: &bud.title,
+            place: bud.place,
+            mtime,
+        };
+        let tx = self.conn.transaction()?;
+        if is_folder {
+            tx.execute("DELETE FROM buds WHERE path = ?1", params![path])?;
+            tx.execute(
+                "UPDATE buds SET parent = ?1 WHERE parent = ?2",
+                params![file_path, path],
+            )?;
+        }
+        insert_row(&tx, &row, props, body)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// One bud by its path.
@@ -284,6 +327,49 @@ impl Vault {
         let rows = stmt.query_map(args, read_bud)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
+}
+
+/// The parts of a row that come from the folder rather than from the file's frontmatter.
+struct Placement<'a> {
+    path: &'a str,
+    parent: Option<&'a str>,
+    title: &'a str,
+    place: Place,
+    mtime: i64,
+}
+
+fn insert_row(
+    conn: &Connection,
+    row: &Placement<'_>,
+    props: &Properties,
+    body: &str,
+) -> Result<()> {
+    let kind = if props.state.is_some() {
+        Kind::Todo
+    } else {
+        Kind::Note
+    };
+    conn.execute(
+        "INSERT OR REPLACE INTO buds
+         (path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            row.path,
+            row.parent,
+            row.title,
+            kind.as_str(),
+            props.state.map(State::as_str),
+            props.when,
+            props.due,
+            props.pinned as i64,
+            props.created,
+            props.source,
+            body,
+            row.mtime,
+            row.place.as_str(),
+        ],
+    )?;
+    Ok(())
 }
 
 const SELECT: &str = "SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";
