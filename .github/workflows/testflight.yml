@@ -1,8 +1,11 @@
 # Signed internal TestFlight delivery for iOS, macOS and tvOS, in parallel.
 #
-#   push to develop  → lane beta    → TestFlight, auto build number
 #   push a v* tag     → lane release → TestFlight, marketing version = the tag
-#   manual (Actions)  → lane beta
+#   manual (Actions)  → lane beta    → TestFlight, auto build number
+#
+# TestFlight is release-gated: a build ships only when you cut a v* tag, so every
+# TestFlight build is a deliberate, changelog-able release. Merges to develop run
+# only the compile-only build-check (see build-check.yml), not a TestFlight build.
 #
 # Required repo (or org) secrets — identical for every app except BUNDLE_ID_PREFIX:
 #   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT (base64 of the ADMIN .p8), APPLE_TEAM_ID, BUNDLE_ID_PREFIX
@@ -11,7 +14,6 @@ name: TestFlight
 
 on:
   push:
-    branches: [develop]
     tags: ['v*']
   workflow_dispatch:
 
