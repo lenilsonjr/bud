@@ -21,7 +21,7 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(Palette.canvas, Tone("#EDF3E7", "#0F1912"))
         XCTAssertEqual(Palette.card, Tone("#CDE3C1", "#21392A"))
         XCTAssertEqual(Palette.cardLit, Tone("#8CCC8C", "#8CCC8C"))
-        XCTAssertEqual(Palette.hub, Tone("#24432B", "#16361F"), "Darker and deeper than the chips in dark, so it still reads as the hub")
+        XCTAssertEqual(Palette.hub, Tone("#24432B", "#24432B"), "The board keeps one hub green in both appearances")
         XCTAssertEqual(Palette.text, Tone("#14281B", "#EEF5EA"))
         XCTAssertEqual(Palette.leaf, Tone("#3B7A45", "#8CCC8C"))
         XCTAssertEqual(Palette.amethyst, Tone("#5B2A9E", "#C3B2EE"))
@@ -34,6 +34,17 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(Radius.md, 10)
         XCTAssertEqual(Radius.lg, 14)
         XCTAssertEqual(Radius.xl, 22)
+        XCTAssertEqual(Radius.keycap, 4)
+        XCTAssertEqual(Radius.chip, 5)
+        XCTAssertEqual(Radius.iconButton, 7)
+        XCTAssertEqual(Radius.button, 8)
+        XCTAssertEqual(Radius.field, 8)
+        XCTAssertEqual(Radius.segmented, 9)
+        XCTAssertEqual(Radius.card, 10)
+        XCTAssertEqual(Radius.toast, 12)
+        XCTAssertEqual(Radius.detail, 14)
+        XCTAssertEqual(Radius.hub, 20)
+        XCTAssertEqual(Radius.sheet, 22)
     }
 
     func testTypeScaleFollowsTheBoard() {
