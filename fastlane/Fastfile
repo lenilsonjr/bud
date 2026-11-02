@@ -37,10 +37,10 @@ def xcode_auth
   "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
 end
 
-# Archive with the cloud-managed distribution identity. Automatic signing would otherwise mint a new
-# development certificate on every fresh runner until the account hits Apple's limit.
+# DEVELOPMENT_TEAM on the command line reaches every target, the package's resource bundle included;
+# the xcconfig only reaches the app targets.
 def version_xcargs(next_build)
-  a = ["CURRENT_PROJECT_VERSION=#{next_build}", %(CODE_SIGN_IDENTITY="Apple Distribution")]
+  a = ["CURRENT_PROJECT_VERSION=#{next_build}", "DEVELOPMENT_TEAM=#{TEAM_ID}"]
   a << "MARKETING_VERSION=#{ENV['APP_MARKETING_VERSION']}" unless ENV["APP_MARKETING_VERSION"].to_s.empty?
   a << xcode_auth
   a.join(" ")
