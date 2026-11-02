@@ -1,12 +1,12 @@
 {
   "images": [
     {
-      "filename": "back.png",
+      "filename": "bud-tv-icon-back-400x240.png",
       "idiom": "tv",
       "scale": "1x"
     },
     {
-      "filename": "back@2x.png",
+      "filename": "bud-tv-icon-back-800x480.png",
       "idiom": "tv",
       "scale": "2x"
     }
