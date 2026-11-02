@@ -40,7 +40,7 @@ extension Tree {
         }
     }
 
-    /// Today, Yesterday, or the day as Thu 30 Oct in the calendar's locale.
+    /// Today, Yesterday, or the day as Thu 30 Oct, with the names in the calendar's locale.
     public static func dayLabel(for day: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
         if calendar.isDate(day, inSameDayAs: now) { return "Today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(day, inSameDayAs: yesterday) {
@@ -48,8 +48,9 @@ extension Tree {
         }
         let formatter = DateFormatter()
         formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.locale = calendar.locale ?? .current
-        formatter.setLocalizedDateFormatFromTemplate("EEEdMMM")
+        formatter.dateFormat = "EEE d MMM"
         return formatter.string(from: day)
     }
 }
