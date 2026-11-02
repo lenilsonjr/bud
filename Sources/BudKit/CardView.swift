@@ -24,7 +24,7 @@ struct CardView: View {
 
     private var hub: some View {
         VStack(spacing: 6) {
-            Image(systemName: "circle.hexagongrid")
+            Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.hubMark)
             Text("Everything")
@@ -46,27 +46,22 @@ struct CardView: View {
 
     private func chip(_ bud: Bud) -> some View {
         HStack(alignment: .top, spacing: 8) {
+            let style = CardStyle.chip(for: bud, lit: lit)
             if bud.isTodo {
-                Button(action: onToggle) {
-                    Image(systemName: bud.isDone ? "checkmark.square.fill" : "square")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(bud.isDone ? Theme.leaf : meta(bud))
+                Button(action: onToggle) { KindMark(bud: bud, style: style) }
+                    .buttonStyle(.plain)
             } else {
-                Circle()
-                    .fill(Theme.leaf)
-                    .frame(width: 6, height: 6)
-                    .padding(.top, 6)
+                KindMark(bud: bud, style: style)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(bud.text)
                     .strikethrough(bud.isDone)
                     .textRole(.cardTitle)
                     .lineLimit(2)
-                    .foregroundStyle(bud.isDone ? meta(bud) : ink(bud))
-                Text(subtitle(bud))
+                    .foregroundStyle(bud.isDone ? style.meta : style.ink)
+                Text(CardStyle.caption(for: bud, in: store.tree))
                     .textRole(.caption)
-                    .foregroundStyle(meta(bud))
+                    .foregroundStyle(style.meta)
             }
             Spacer(minLength: 0)
             Button(action: onAdd) {
@@ -74,7 +69,7 @@ struct CardView: View {
             }
             .buttonStyle(.plain)
             .textRole(.label)
-            .foregroundStyle(meta(bud))
+            .foregroundStyle(style.meta)
         }
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
@@ -83,40 +78,19 @@ struct CardView: View {
         .onTapGesture(perform: onTap)
     }
 
-    private func subtitle(_ bud: Bud) -> String {
-        let kids = store.tree.children(of: bud.id)
-        if kids.isEmpty { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
-        let open = store.tree.openCount(under: bud.id)
-        return "\(kids.count) connected" + (open > 0 ? " · \(open) open" : "")
-    }
-
-    // MARK: colours by kind and light
-
-    private func ink(_ bud: Bud) -> Color { lit ? Theme.cardLitInk : Theme.cardInk }
-
-    private func meta(_ bud: Bud) -> Color {
-        lit ? Theme.cardLitMeta : (bud.isTodo ? Theme.cardMeta : Theme.cardNoteMeta)
-    }
-
-    private func fill(_ bud: Bud) -> Color {
-        lit ? Theme.cardLit : (bud.isTodo ? Theme.card : Theme.cardNote)
-    }
-
-    private func line(_ bud: Bud) -> Color {
-        lit ? Theme.cardLitLine : (bud.isTodo ? Theme.cardLine : Theme.cardNoteLine)
-    }
-
     private func chipBackground(_ bud: Bud) -> some View {
-        RoundedRectangle(cornerRadius: Radius.md)
-            .fill(fill(bud))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(line(bud), lineWidth: lit ? 1.5 : 1))
-            .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 6, y: lit ? 0 : 2)
+        let style = CardStyle.chip(for: bud, lit: lit)
+        return RoundedRectangle(cornerRadius: Radius.md)
+            .fill(style.fill)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: lit ? 1.5 : 1))
+            .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 2, y: lit ? 0 : 2)
     }
 
     private var hubBackground: some View {
-        RoundedRectangle(cornerRadius: Radius.xl)
-            .fill(Theme.hub)
-            .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(lit ? Theme.hubAccent : Theme.hubLine, lineWidth: lit ? 1.5 : 1))
+        let style = CardStyle.hub(lit: lit)
+        return RoundedRectangle(cornerRadius: Radius.xl)
+            .fill(style.fill)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(style.line, lineWidth: lit ? 1.5 : 1))
             .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
     }
 }

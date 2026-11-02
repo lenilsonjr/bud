@@ -21,6 +21,8 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         let deep = try XCTUnwrap(store.tree.children(of: newsletter.id).first)
+        // One done to-do, so the pictures show the struck title and the filled check.
+        if let leaf = store.tree.children(of: deep.id).first(where: { $0.isTodo }) { store.toggle(leaf.id) }
 
         for (name, center) in [("hub", rootID), ("deep", deep.id)] {
             store.center = center

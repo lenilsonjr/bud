@@ -167,7 +167,7 @@ struct TVCardFace: View {
 
     private var hub: some View {
         VStack(spacing: 6) {
-            Image(systemName: "circle.hexagongrid")
+            Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.hubMark)
             Text("Everything")
@@ -180,37 +180,26 @@ struct TVCardFace: View {
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
         .background(
             RoundedRectangle(cornerRadius: Radius.xl)
-                .fill(Theme.hub)
-                .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(lit ? Theme.hubAccent : Theme.hubLine, lineWidth: lit ? 1.5 : 1))
+                .fill(CardStyle.hub(lit: lit).fill)
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(CardStyle.hub(lit: lit).line, lineWidth: lit ? 1.5 : 1))
                 .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
         )
     }
 
     private func chip(_ bud: Bud) -> some View {
-        let ink = lit ? Theme.cardLitInk : Theme.cardInk
-        let meta = lit ? Theme.cardLitMeta : (bud.isTodo ? Theme.cardMeta : Theme.cardNoteMeta)
-        let fill = lit ? Theme.cardLit : (bud.isTodo ? Theme.card : Theme.cardNote)
-        let line = lit ? Theme.cardLitLine : (bud.isTodo ? Theme.cardLine : Theme.cardNoteLine)
+        let style = CardStyle.chip(for: bud, lit: lit)
         return HStack(alignment: .top, spacing: 8) {
-            if bud.isTodo {
-                Image(systemName: bud.isDone ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(bud.isDone ? Theme.leaf : meta)
-            } else {
-                Circle()
-                    .fill(Theme.leaf)
-                    .frame(width: 6, height: 6)
-                    .padding(.top, 6)
-            }
+            KindMark(bud: bud, style: style)
             VStack(alignment: .leading, spacing: 3) {
                 Text(bud.text)
                     .strikethrough(bud.isDone)
                     .textRole(.cardTitle)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                    .foregroundStyle(bud.isDone ? meta : ink)
-                Text(subtitle(bud))
+                    .foregroundStyle(bud.isDone ? style.meta : style.ink)
+                Text(CardStyle.caption(for: bud, in: store.tree))
                     .textRole(.caption)
-                    .foregroundStyle(meta)
+                    .foregroundStyle(style.meta)
             }
             Spacer(minLength: 0)
         }
@@ -218,17 +207,10 @@ struct TVCardFace: View {
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.md)
-                .fill(fill)
-                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(line, lineWidth: lit ? 1.5 : 1))
-                .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 6, y: lit ? 0 : 2)
+                .fill(style.fill)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: lit ? 1.5 : 1))
+                .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 2, y: lit ? 0 : 2)
         )
-    }
-
-    private func subtitle(_ bud: Bud) -> String {
-        let kids = store.tree.children(of: bud.id)
-        if kids.isEmpty { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
-        let open = store.tree.openCount(under: bud.id)
-        return "\(kids.count) connected" + (open > 0 ? " · \(open) open" : "")
     }
 }
 
