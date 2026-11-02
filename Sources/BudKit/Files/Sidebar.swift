@@ -93,6 +93,7 @@ struct Sidebar: View {
         }
         .buttonStyle(.plain)
         .disabled(action == nil)
+        .help(action == nil ? "Coming later" : name)
     }
 }
 #endif

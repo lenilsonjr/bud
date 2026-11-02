@@ -21,23 +21,33 @@ public protocol Searcher {
     func search(_ query: String, limit: Int) -> [SearchHit]
 }
 
-/// A case-insensitive substring search over the tree: title hits first, in reading order; an
-/// empty query lists nothing (the places and lenses stand in for it).
+/// A case-insensitive substring search over the tree: title hits first, in reading order. An
+/// empty query lists the most recently created buds, newest first, so the palette opens on
+/// where you were last working.
 public struct TreeSearcher: Searcher {
     public let tree: Tree
+
+    /// How many recent buds an empty query lists.
+    public static let recentCount = 8
 
     public init(tree: Tree) { self.tree = tree }
 
     public func search(_ query: String, limit: Int = 30) -> [SearchHit] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !needle.isEmpty else { return [] }
+        let all = tree.walk(under: rootID) + tree.walk(under: inboxID)
+        if needle.isEmpty {
+            return all.sorted { $0.created > $1.created }.prefix(Self.recentCount).map(hit)
+        }
         var hits: [SearchHit] = []
-        for bud in tree.walk(under: rootID) + tree.walk(under: inboxID) where bud.text.lowercased().contains(needle) {
-            let trail = tree.ancestors(of: bud.id).reversed().map { tree.title(of: $0) }
-            hits.append(SearchHit(id: bud.id, title: bud.text, trail: trail))
+        for bud in all where bud.text.lowercased().contains(needle) {
+            hits.append(hit(bud))
             if hits.count == limit { break }
         }
         return hits
+    }
+
+    private func hit(_ bud: Bud) -> SearchHit {
+        SearchHit(id: bud.id, title: bud.text, trail: tree.ancestors(of: bud.id).reversed().map { tree.title(of: $0) })
     }
 }
 

@@ -31,11 +31,7 @@ struct TreeRow: View {
                 }
             }
             RowMark(bud: bud)
-            Text(bud.text)
-                .textRole(.body)
-                .lineLimit(1)
-                .strikethrough(bud.isDone)
-                .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
+            title(kids: kids)
             Spacer(minLength: 4)
             if kids > 0 {
                 Text("\(kids)")
@@ -50,6 +46,25 @@ struct TreeRow: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(selected ? Theme.leafLine : .clear, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
+    }
+
+    /// With a count on the right a long title fades out under it instead of ending in an
+    /// ellipsis; a leaf's title truncates as usual.
+    @ViewBuilder private func title(kids: Int) -> some View {
+        let text = Text(bud.text)
+            .textRole(.body)
+            .lineLimit(1)
+            .strikethrough(bud.isDone)
+            .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
+        if kids > 0 {
+            text
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .clipped()
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.85), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+        } else {
+            text
+        }
     }
 }
 #endif

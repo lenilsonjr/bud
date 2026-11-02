@@ -15,10 +15,19 @@ struct CommandPalette: View {
         case destination(Destination)
     }
 
+    private var browsing: Bool { query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    /// With a query, the buds that match and then the places; with none, the places and lenses
+    /// and then the recent buds.
     private var rows: [Row] {
         let hits = TreeSearcher(tree: store.tree).search(query, limit: 30).map(Row.bud)
         let places = Destination.matching(query).map(Row.destination)
-        return hits + places
+        return browsing ? places + hits : hits + places
+    }
+
+    /// The row to start on: the first bud, so Return goes somewhere specific.
+    private func firstPick(in rows: [Row]) -> Int {
+        rows.firstIndex { if case .bud = $0 { return true } else { return false } } ?? 0
     }
 
     var body: some View {
@@ -80,8 +89,8 @@ struct CommandPalette: View {
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadowStrong, radius: 24, y: 12)
-        .onAppear { typing = true }
-        .onChange(of: query) { _, _ in picked = 0 }
+        .onAppear { typing = true; picked = firstPick(in: rows) }
+        .onChange(of: query) { _, _ in picked = firstPick(in: self.rows) }
         .onKeyPress(.downArrow) { move(1, in: rows.count); return .handled }
         .onKeyPress(.upArrow) { move(-1, in: rows.count); return .handled }
         .onKeyPress(.escape) { onClose(); return .handled }
@@ -93,7 +102,7 @@ struct CommandPalette: View {
 
     private func heading(_ row: Row) -> String {
         switch row {
-        case .bud: return "Buds"
+        case .bud: return browsing ? "Recent" : "Buds"
         case .destination(let d): return d.isPlace ? "Places" : "Lenses"
         }
     }
@@ -103,7 +112,7 @@ struct CommandPalette: View {
             switch row {
             case .bud(let hit):
                 if let bud = store.tree.bud(hit.id) {
-                    KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false)).frame(width: 14)
+                    RowMark(bud: bud)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(hit.title)

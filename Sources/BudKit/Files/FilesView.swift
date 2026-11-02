@@ -7,7 +7,7 @@ import SwiftUI
 struct FilesView: View {
     @ObservedObject var store: BudStore
 
-    static let sidebarWidth: CGFloat = 240
+    static let sidebarWidth: CGFloat = 264
 
     var body: some View {
         HStack(spacing: 0) {
