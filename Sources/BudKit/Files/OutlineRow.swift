@@ -24,24 +24,15 @@ struct OutlineRow: View {
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                             .textRole(.caption)
                             .foregroundStyle(Theme.text3)
-                            .frame(width: 16, height: 16)
+                            .frame(width: 16, height: 18)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Color.clear.frame(width: 16, height: 16)
+                    Color.clear.frame(width: 16, height: 18)
                 }
             }
-            .padding(.top, 2)
-            if bud.isTodo {
-                Button { store.tick(bud.id) } label: {
-                    KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-            } else {
-                KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-            }
+            RowMark(bud: bud, onTick: { store.tick(bud.id) })
             Button { store.center = bud.id } label: {
                 Text(bud.text)
                     .textRole(.body)
@@ -52,19 +43,15 @@ struct OutlineRow: View {
             }
             .buttonStyle(.plain)
             if kids > 0 {
-                Text(kids == 1 ? "1 inside" : "\(kids) inside")
-                    .textRole(.caption)
-                    .foregroundStyle(Theme.text2)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Theme.line, in: Capsule())
+                NeutralTag(kids == 1 ? "1 inside" : "\(kids) inside")
             }
             dots
         }
         .padding(.leading, CGFloat(depth) * 20)
-        .padding(.vertical, 8)
-        .padding(.horizontal, 8)
-        .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
+        .padding(.vertical, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .rowHairline()
         .contentShape(Rectangle())
         .budMenu(bud.id, store: store)
         .draggable(bud.id.uuidString)
@@ -78,7 +65,7 @@ struct OutlineRow: View {
             Image(systemName: "ellipsis")
                 .textRole(.label)
                 .foregroundStyle(Theme.text3)
-                .frame(width: 20, height: 20)
+                .frame(width: 20, height: 18)
         } else {
             Menu {
                 BudMenuItems(id: bud.id, store: store, onMove: onMove)
@@ -86,7 +73,7 @@ struct OutlineRow: View {
                 Image(systemName: "ellipsis")
                     .textRole(.label)
                     .foregroundStyle(Theme.text3)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 20, height: 18)
                     .contentShape(Rectangle())
             }
             .menuStyle(.button)
@@ -104,7 +91,7 @@ struct PageRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
+            RowMark(bud: bud)
             Text(bud.text)
                 .strikethrough(bud.isDone)
                 .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
@@ -113,8 +100,10 @@ struct PageRow: View {
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .rowHairline()
         .contentShape(Rectangle())
     }
 }

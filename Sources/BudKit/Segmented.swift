@@ -21,8 +21,9 @@ struct Segmented<Option: Hashable>: View {
                         .padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                .fill(on ? Theme.surface : .clear)
+                                .fill(on ? Theme.raised : .clear)
                                 .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 1, y: 1)
+                                .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(on ? Theme.lineStrong : .clear, lineWidth: 1))
                         )
                         .contentShape(Rectangle())
                 }

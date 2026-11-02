@@ -53,6 +53,13 @@ struct TopBar: View {
         #endif
     }
 
+    /// The lens or the Inbox when Files shows one instead of the center's page.
+    private var placeName: String? {
+        guard store.surface == .files else { return nil }
+        if store.inboxOpen { return "Inbox" }
+        return store.lens?.rawValue
+    }
+
     private var breadcrumb: some View {
         HStack(spacing: 5) {
             ForEach(Array(store.centerTrail.enumerated()), id: \.offset) { index, id in
@@ -66,7 +73,15 @@ struct TopBar: View {
                 }
                 .buttonStyle(.plain)
                 .textRole(.label)
-                .foregroundStyle(index == store.centerTrail.count - 1 ? Theme.text : Theme.text2)
+                .foregroundStyle(index == store.centerTrail.count - 1 && placeName == nil ? Theme.text : Theme.text2)
+            }
+            if let placeName {
+                Image(systemName: "chevron.right")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                Text(placeName)
+                    .textRole(.label)
+                    .foregroundStyle(Theme.text)
             }
         }
         .lineLimit(1)

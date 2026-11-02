@@ -30,8 +30,7 @@ struct TreeRow: View {
                     Color.clear.frame(width: 14, height: 14)
                 }
             }
-            KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-                .frame(width: 14)
+            RowMark(bud: bud)
             Text(bud.text)
                 .textRole(.body)
                 .lineLimit(1)
@@ -48,6 +47,7 @@ struct TreeRow: View {
         .padding(.trailing, 8)
         .padding(.vertical, 4)
         .background(selected ? Theme.leafSoft : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(selected ? Theme.leafLine : .clear, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
     }

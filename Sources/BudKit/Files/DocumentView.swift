@@ -25,8 +25,7 @@ struct DocumentView: View {
                     bodyEditor
                     inside(bud)
                 }
-                .padding(28)
-                .frame(maxWidth: 720, alignment: .leading)
+                .pageColumn()
             }
             .background {
                 // ⌘↩ closes or reopens this bud, drawn nowhere.
@@ -50,9 +49,13 @@ struct DocumentView: View {
                 .lineLimit(1)
                 .foregroundStyle(Theme.text3)
             Spacer()
-            Text(dirty ? "Saving…" : "Saved")
-                .textRole(.caption)
-                .foregroundStyle(Theme.text3)
+            HStack(spacing: 4) {
+                Image(systemName: dirty ? "circle.dotted" : "checkmark.circle.fill")
+                    .foregroundStyle(dirty ? Theme.text3 : Theme.leaf)
+                Text(dirty ? "Saving…" : "Saved")
+                    .foregroundStyle(Theme.text3)
+            }
+            .textRole(.caption)
             Button {
                 flush()
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
@@ -79,27 +82,10 @@ struct DocumentView: View {
                         .textRole(.label)
                 }
             }
-            PropertyRow(name: "When") { dateField(bud.when) { store.setWhen(id, $0) } }
-            PropertyRow(name: "Due") { dateField(bud.due) { store.setDue(id, $0) } }
+            PropertyRow(name: "When") { DateField(label: "When", date: bud.when) { store.setWhen(id, $0) } }
+            PropertyRow(name: "Due") { DateField(label: "Due", date: bud.due) { store.setDue(id, $0) } }
             PropertyRow(name: "Pinned") {
                 Button(bud.pinned ? "Pinned" : "Pin", systemImage: bud.pinned ? "pin.fill" : "pin") { store.setPinned(id, !bud.pinned) }
-                    .buttonStyle(.bordered)
-                    .textRole(.label)
-            }
-        }
-    }
-
-    private func dateField(_ date: Date?, set: @escaping (Date?) -> Void) -> some View {
-        HStack(spacing: 8) {
-            if let date {
-                DatePicker("", selection: Binding(get: { date }, set: { set($0) }), displayedComponents: .date)
-                    .labelsHidden()
-                Button("Clear") { set(nil) }
-                    .buttonStyle(.plain)
-                    .textRole(.label)
-                    .foregroundStyle(Theme.text3)
-            } else {
-                Button("Set a day") { set(Calendar.current.startOfDay(for: Date())) }
                     .buttonStyle(.bordered)
                     .textRole(.label)
             }
@@ -212,6 +198,41 @@ struct DocumentView: View {
             .textRole(.body)
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
+        }
+    }
+}
+
+/// A day in a property row: "No day" and Set while empty; the pistil tag the Today lens uses
+/// once set, a click on it opens the calendar, Clear beside it.
+struct DateField: View {
+    let label: String
+    let date: Date?
+    let set: (Date?) -> Void
+    @State private var picking = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let date {
+                Button { picking.toggle() } label: {
+                    DateTag(label: label, date: date)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $picking) {
+                    DatePicker("", selection: Binding(get: { date }, set: { set($0) }), displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                        .padding(12)
+                }
+                Button("Clear") { set(nil) }
+                    .buttonStyle(.budGhost)
+            } else {
+                Text("No day")
+                    .textRole(.label)
+                    .foregroundStyle(Theme.text3)
+                Button("Set") { set(Calendar.current.startOfDay(for: Date())) }
+                    .buttonStyle(.budGhost)
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ struct LensPage: View {
 
     var body: some View {
         MaybeScroll {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("LENS · ACROSS ALL THREADS")
                         .textRole(.eyebrow)
@@ -36,8 +36,7 @@ struct LensPage: View {
                     if pinned.isEmpty { nothing("Nothing pinned yet.") }
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 720, alignment: .leading)
+            .pageColumn()
         }
     }
 
@@ -71,41 +70,31 @@ struct ListRow: View {
     let tag: (String, Date)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if bud.isTodo {
-                Button { store.tick(bud.id) } label: {
-                    KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-            } else {
-                KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
+        VStack(alignment: .leading, spacing: 2) {
+            let crumbs = store.tree.breadcrumb(of: bud.id)
+            if !crumbs.isEmpty {
+                Text(crumbs.joined(separator: " › "))
+                    .textRole(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(Theme.text3)
+                    .padding(.leading, 24)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                let crumbs = store.tree.breadcrumb(of: bud.id)
-                if !crumbs.isEmpty {
-                    Text(crumbs.joined(separator: " › "))
-                        .textRole(.caption)
-                        .lineLimit(1)
-                        .foregroundStyle(Theme.text3)
-                }
+            HStack(alignment: .top, spacing: 8) {
+                RowMark(bud: bud, onTick: { store.tick(bud.id) })
                 Text(bud.text)
                     .textRole(.body)
                     .strikethrough(bud.isDone)
                     .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
-            }
-            Spacer()
-            if let tag {
-                Text("\(tag.0) \(tag.1.formatted(date: .abbreviated, time: .omitted))")
-                    .textRole(.label)
-                    .foregroundStyle(Theme.pistil)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Theme.pistilSoft, in: Capsule())
+                Spacer()
+                if let tag {
+                    DateTag(label: tag.0, date: tag.1)
+                }
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .rowHairline()
         .contentShape(Rectangle())
         .onTapGesture { store.openAsFile(bud.id) }
         .modifier(CommandClick { store.center = bud.id; store.surface = .canvas })

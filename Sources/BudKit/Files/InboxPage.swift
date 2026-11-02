@@ -13,7 +13,7 @@ struct InboxPage: View {
         let count = store.tree.inbox().count
         let groups = store.tree.inboxGroups(filter)
         MaybeScroll {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("PLACE")
                         .textRole(.eyebrow)
@@ -46,10 +46,8 @@ struct InboxPage: View {
                 Text("Nothing here gets sorted for you. Drag a bud onto any thread when it's ready; filing is the last step.")
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
-                    .padding(.top, 8)
             }
-            .padding(28)
-            .frame(maxWidth: 720, alignment: .leading)
+            .pageColumn()
         }
         .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }
@@ -57,15 +55,7 @@ struct InboxPage: View {
     private func row(_ bud: Bud) -> some View {
         let inside = store.tree.children(of: bud.id).count
         return HStack(alignment: .top, spacing: 8) {
-            if bud.isTodo {
-                Button { store.tick(bud.id) } label: {
-                    KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
-            } else {
-                KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-            }
+            RowMark(bud: bud, onTick: { store.tick(bud.id) })
             VStack(alignment: .leading, spacing: 2) {
                 Text(bud.text)
                     .textRole(.body)
@@ -76,15 +66,17 @@ struct InboxPage: View {
                     .foregroundStyle(Theme.text3)
             }
             Spacer()
-            tag(inside == 0 ? "raw" : (inside == 1 ? "1 inside" : "\(inside) inside"))
+            NeutralTag(inside == 0 ? "raw" : (inside == 1 ? "1 inside" : "\(inside) inside"))
             Button("Enrich") { store.modal = .add(parent: bud.id) }
                 .buttonStyle(.bordered)
             Button("Move to…") { moving = bud }
                 .buttonStyle(.bordered)
         }
         .textRole(.label)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .rowHairline()
         .contentShape(Rectangle())
         .draggable(bud.id.uuidString)
     }
@@ -94,15 +86,6 @@ struct InboxPage: View {
         let time = bud.created.formatted(date: .omitted, time: .shortened)
         if let source = bud.source { return "from \(source) · \(time)" }
         return time
-    }
-
-    private func tag(_ text: String) -> some View {
-        Text(text)
-            .textRole(.caption)
-            .foregroundStyle(Theme.text2)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Theme.line, in: Capsule())
     }
 }
 #endif
