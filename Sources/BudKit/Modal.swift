@@ -5,12 +5,16 @@ enum Modal: Hashable, Identifiable {
     case add(parent: UUID)
     case capture
     case closeBranch(id: UUID)
+    case settings
+
+    static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
 
     var id: UUID {
         switch self {
         case .add(let parent): return parent
         case .capture: return inboxID
         case .closeBranch(let id): return id
+        case .settings: return Self.settingsID
         }
     }
 
@@ -80,6 +84,7 @@ struct ModalHost: View {
             case .add(let parent): AddSheet(store: store, mode: .enrich(under: parent))
             case .capture: AddSheet(store: store, mode: .capture)
             case .closeBranch(let id): CloseBranchDialog(store: store, id: id)
+            case .settings: SettingsView(flags: .shared, onDone: { store.modal = nil })
             }
         }
         .modalCard()
