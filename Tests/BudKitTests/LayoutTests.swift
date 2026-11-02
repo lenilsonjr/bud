@@ -113,6 +113,37 @@ final class OutlineTests: XCTestCase {
     }
 }
 
+final class SearcherTests: XCTestCase {
+    func testSubstringHitsCarryTheirTrailAndComeInReadingOrder() throws {
+        let t = Tree.seed()
+        let s = TreeSearcher(tree: t)
+        XCTAssertEqual(s.search("   ").count, 0, "An empty query lists nothing; places stand in")
+
+        let hits = s.search("news")
+        XCTAssertFalse(hits.isEmpty)
+        XCTAssertEqual(hits.first?.title, "Launch the newsletter", "The thread whose title matches comes first")
+        XCTAssertEqual(hits.first?.trail, ["Everything"])
+        XCTAssertEqual(s.search("NEWS").map(\.id), hits.map(\.id), "Case does not matter")
+
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let inside = try XCTUnwrap(t.children(of: newsletter.id).first)
+        let deep = try XCTUnwrap(s.search(inside.text).first { $0.id == inside.id })
+        XCTAssertEqual(deep.trailText, "Everything › Launch the newsletter")
+
+        let all = s.search("e", limit: 5)
+        XCTAssertEqual(all.count, 5, "The limit holds")
+        XCTAssertEqual(all.map(\.id), Array(t.walk(under: rootID).filter { $0.text.lowercased().contains("e") }.prefix(5).map(\.id)))
+    }
+
+    func testPlacesAndLensesMatchByName() {
+        XCTAssertEqual(Destination.matching(""), Destination.allCases, "Empty query: every place and lens")
+        XCTAssertEqual(Destination.matching("to"), [.today, .todos])
+        XCTAssertEqual(Destination.matching("xyz"), [])
+        XCTAssertTrue(Destination.inbox.isPlace)
+        XCTAssertFalse(Destination.pinned.isPlace)
+    }
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()

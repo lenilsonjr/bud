@@ -7,6 +7,7 @@ import SwiftUI
 struct TopBar: View {
     @ObservedObject var store: BudStore
     let onAdd: () -> Void
+    let onSearch: () -> Void
 
     var body: some View {
         HStack(spacing: 14) {
@@ -86,21 +87,25 @@ struct TopBar: View {
     }
 
     private var goAnywhere: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(Theme.text3)
-            Text("Go anywhere")
-                .foregroundStyle(Theme.text3)
-            Spacer(minLength: 0)
-            Keycap("⌘K")
+        Button(action: onSearch) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Theme.text3)
+                Text("Go anywhere")
+                    .foregroundStyle(Theme.text3)
+                Spacer(minLength: 0)
+                Keycap("⌘K")
+            }
+            .textRole(.label)
+            .padding(.leading, 10)
+            .padding(.trailing, 5)
+            .padding(.vertical, 5)
+            .frame(width: 180)
+            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.md))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(Theme.line, lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .textRole(.label)
-        .padding(.leading, 10)
-        .padding(.trailing, 5)
-        .padding(.vertical, 5)
-        .frame(width: 180)
-        .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(Theme.line, lineWidth: 1))
+        .buttonStyle(.plain)
     }
 
     private var zoom: some View {

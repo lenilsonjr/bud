@@ -5,6 +5,7 @@ import SwiftUI
 public struct BudRootView: View {
     @StateObject private var store: BudStore
     @State private var adding: AddTarget? = nil
+    @State private var searching = false
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
@@ -17,11 +18,18 @@ public struct BudRootView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            TopBar(store: store) { adding = AddTarget(parent: store.center) }
+            TopBar(store: store, onAdd: { adding = AddTarget(parent: store.center) }, onSearch: { searching = true })
             surface
                 .overlay(alignment: .bottom) { hint }
         }
+        .overlay { if searching { palette } }
         .background(Theme.window.ignoresSafeArea())
+        .background {
+            // ⌘K from anywhere in the window, drawn nowhere.
+            Button("") { searching = true }
+                .keyboardShortcut("k", modifiers: .command)
+                .opacity(0)
+        }
         .textRole(.body)
         .foregroundStyle(Theme.text)
         .tint(Theme.leaf)
@@ -37,8 +45,21 @@ public struct BudRootView: View {
         }
     }
 
+    /// Go anywhere over the whole view; a click on the dim closes it.
+    private var palette: some View {
+        ZStack(alignment: .top) {
+            Theme.shadowStrong
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { searching = false }
+            CommandPalette(store: store) { searching = false }
+                .padding(.top, 72)
+        }
+        .transition(.opacity)
+    }
+
     private var hint: some View {
-        Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf or press Space to open it · N adds under the lit card · Esc steps out")
+        Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf or press Space to open it · N adds under the lit card · ⌘K goes anywhere · Esc steps out")
             .textRole(.caption)
             .foregroundStyle(Theme.text3)
             .padding(.horizontal, 12)
