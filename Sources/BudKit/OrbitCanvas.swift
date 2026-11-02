@@ -28,7 +28,7 @@ public struct OrbitCanvas: View {
             let layout = store.layout
             let lit = litCard(in: layout, viewport: size)
             ZStack {
-                Theme.background
+                Theme.canvas
                     .contentShape(Rectangle())
                     .gesture(panGesture)
                     .onTapGesture { focused = true }

@@ -20,7 +20,8 @@ struct AddSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("New bud under \(store.tree.title(of: parent))")
-                .font(.headline)
+                .textRole(.heading)
+                .foregroundStyle(Theme.text)
             TextField("What is it?", text: $text)
                 .textFieldStyle(.roundedBorder)
             Picker("Kind", selection: $todo) {
@@ -42,6 +43,8 @@ struct AddSheet: View {
         }
         .padding(20)
         .frame(minWidth: 360)
+        .textRole(.body)
+        .background(Theme.surface)
     }
 }
 
@@ -55,7 +58,8 @@ struct EditSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Edit bud")
-                .font(.headline)
+                .textRole(.heading)
+                .foregroundStyle(Theme.text)
             TextField("Text", text: $text)
                 .textFieldStyle(.roundedBorder)
             Picker("Kind", selection: $todo) {
@@ -81,6 +85,8 @@ struct EditSheet: View {
         }
         .padding(20)
         .frame(minWidth: 360)
+        .textRole(.body)
+        .background(Theme.surface)
         .onAppear {
             if let bud = store.tree.bud(id) {
                 text = bud.text

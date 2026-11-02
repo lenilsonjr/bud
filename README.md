@@ -3,8 +3,10 @@
 A bare-bones native port of the orbit canvas: buds that are notes or to-dos, nested without limit,
 on a flat web of orbits you drag around. No warehouses, no triggers.
 
-- `Sources/BudKit` — the package. `Tree.swift` (model) and `Layout.swift` (the wedge-based orbit
-  layout) are pure Swift and run anywhere; the SwiftUI views sit beside them.
+- `Sources/BudKit` — the package. `Tree.swift` (model), `Layout.swift` (the wedge-based orbit
+  layout) and `Palette.swift` (colour tokens, radii, type scale) are pure Swift and run anywhere;
+  the SwiftUI views and `Theme.swift` sit beside them. `Resources/Fonts` holds Fraunces, Figtree
+  and JetBrains Mono with their OFL licences; `Theme` registers them at runtime.
 - `Sources/BudMac` — a macOS runner so the canvas works without an Xcode project.
 - `Tests/BudKitTests` — model and layout tests; they run on Linux too.
 - `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS) that hosts `BudRootView`
