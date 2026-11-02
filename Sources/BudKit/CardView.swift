@@ -7,6 +7,7 @@ struct CardView: View {
     let role: CardRole
     let lit: Bool
     let onTap: () -> Void
+    let onOpen: () -> Void
     let onAdd: () -> Void
     let onToggle: () -> Void
 
@@ -76,6 +77,7 @@ struct CardView: View {
         .background(chipBackground(bud))
         .contentShape(RoundedRectangle(cornerRadius: Radius.md))
         .onTapGesture(perform: onTap)
+        .onLongPressGesture(minimumDuration: 0.4, perform: onOpen)
     }
 
     private func chipBackground(_ bud: Bud) -> some View {

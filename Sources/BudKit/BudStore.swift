@@ -73,6 +73,12 @@ public final class BudStore: ObservableObject {
         commit { $0.remove(id) }
     }
 
+    /// Open as file: the Files view with this bud as the page. The center is the selection there.
+    public func openAsFile(_ id: UUID) {
+        center = id
+        surface = .files
+    }
+
     public func back() {
         guard center != rootID else { return }
         center = tree.parent(of: center) ?? rootID

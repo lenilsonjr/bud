@@ -25,6 +25,15 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
 
     public var isTodo: Bool { state != nil }
     public var isDone: Bool { state == .done }
+
+    /// The word on the status tag: To-do, Done or Note.
+    public var statusLabel: String {
+        switch state {
+        case .open: return "To-do"
+        case .done: return "Done"
+        case nil: return "Note"
+        }
+    }
 }
 
 /// A plain value: every operation is a small mutation, so the store can persist after each one.
@@ -96,6 +105,11 @@ public struct Tree: Codable, Equatable, Sendable {
     /// The one open to-do to do next under a bud: the first in reading order. Dates come later.
     public func nextStep(under id: UUID) -> Bud? {
         walk(under: id).first { $0.state == .open }
+    }
+
+    /// A peek inside a bud: the first few titles under it, in reading order.
+    public func peek(into id: UUID, limit: Int = 3) -> [String] {
+        children(of: id).prefix(limit).map(\.text)
     }
 
     /// The kind a new bud starts as: a to-do under a to-do, a note under a note or the root.

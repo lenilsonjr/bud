@@ -62,6 +62,37 @@ final class QuickAddTests: XCTestCase {
     #endif
 }
 
+final class OpenedCardTests: XCTestCase {
+    func testStatusLabelAndPeek() throws {
+        var t = Tree.seed()
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        XCTAssertEqual(newsletter.statusLabel, "To-do")
+        t.toggle(newsletter.id)
+        XCTAssertEqual(t.bud(newsletter.id)?.statusLabel, "Done")
+        let note = try XCTUnwrap(t.walk(under: rootID).first { !$0.isTodo })
+        XCTAssertEqual(note.statusLabel, "Note")
+
+        let titles = t.children(of: newsletter.id).map(\.text)
+        XCTAssertEqual(t.peek(into: newsletter.id), Array(titles.prefix(3)), "Three titles, in reading order")
+        XCTAssertEqual(t.peek(into: newsletter.id, limit: 1), [titles[0]])
+        let leaf = try XCTUnwrap(t.walk(under: rootID).first { !t.hasChildren($0.id) })
+        XCTAssertEqual(t.peek(into: leaf.id), [], "A leaf has nothing to peek at")
+    }
+
+    #if canImport(Combine)
+    @MainActor
+    func testOpenAsFileSwitchesToFilesOnThatBud() throws {
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let leaf = try XCTUnwrap(store.tree.walk(under: newsletter.id).first { !store.tree.hasChildren($0.id) })
+        store.openAsFile(leaf.id)
+        XCTAssertEqual(store.surface, .files)
+        XCTAssertEqual(store.center, leaf.id, "The center is the selection in Files, a leaf included")
+        XCTAssertEqual(store.layout.cards[leaf.id]?.role, .center)
+    }
+    #endif
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()
