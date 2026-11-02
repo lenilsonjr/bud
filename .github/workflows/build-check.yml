@@ -41,3 +41,20 @@ jobs:
           xcodebuild -project Bud.xcodeproj -scheme "${{ matrix.scheme }}" -configuration Debug
           -destination '${{ matrix.destination }}'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+  # Pictures, not a gate: the canvas rendered in light and dark, attached to the run so a change can
+  # be looked at before it merges. Never required by the ruleset.
+  snapshots:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Render the canvas
+        env:
+          BUD_SNAPSHOT_DIR: ${{ runner.temp }}/snapshots
+        run: swift test --filter BudKitSnapshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: canvas-${{ github.sha }}
+          path: ${{ runner.temp }}/snapshots
+          if-no-files-found: error
