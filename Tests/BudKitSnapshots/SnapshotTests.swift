@@ -299,6 +299,46 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheJoinSheet() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let peers = MemoryPeers()
+        let ticket = try await peers.ticket(withAddresses: false)
+        let full = PeerText.grouped(ticket.text)
+        let partial = String(full.prefix(44))
+        let source = MemoryPeers.fixtures()[0]
+        let states: [(String, JoinPhase, String, Bool)] = [
+            ("join-typing", .idle, partial, false),
+            ("join-ready", .idle, full, false),
+            ("join-failed", .failed(.usedOrExpired), full, false),
+            ("join-joined", .joined(source, received: 214, total: 1380), full, false),
+            ("join-phone-denied", .idle, "", true),
+            ("join-phone-typing", .idle, partial, true),
+            ("join-phone-failed", .failed(.usedOrExpired), full, true),
+            ("join-phone-joined", .joined(source, received: 214, total: nil), full, true),
+        ]
+        for (name, phase, text, phone) in states {
+            for scheme in [ColorScheme.light, .dark] {
+                let body = JoinSheetBody(
+                    phase: phase, text: .constant(text), scanning: false, canScan: phone, cameraDenied: phone,
+                    onPaste: {}, onJoin: {}, onTypeInstead: {}, onScanAgain: {}, onEdit: {}, onClose: {})
+                let sheet = body
+                    .modalCard()
+                    .frame(width: phone ? 393 - 2 * ModalMetrics.margin : ModalMetrics.width)
+                    .padding(phone ? 16 : 32)
+                    .background(Theme.canvas)
+                    .environment(\.compact, phone)
+                let data = try render(sheet, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
