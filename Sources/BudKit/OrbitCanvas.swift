@@ -18,6 +18,12 @@ public struct OrbitCanvas: View {
     @State private var opened: UUID? = nil
     @State private var viewport: CGSize = .zero
     @FocusState private var focused: Bool
+    @State private var motion = MotionState()
+    /// Whether the timeline is ticking: it stops once every card is on its spot.
+    @State private var animating = true
+    @State private var dragging: UUID? = nil
+    @State private var dragStart: CGPoint? = nil
+    private static let space = "orbit"
 
     private let lampReach: CGFloat = 170
     /// The wash under the pointer: leaf at 12% fading to nothing over this radius.
@@ -32,49 +38,10 @@ public struct OrbitCanvas: View {
     public var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let layout = store.layout
-            let lit = litCard(in: layout, viewport: size)
-            let lifted = lit.map { store.tree.orbit(of: $0) } ?? []
-            ZStack {
-                Theme.canvas
-                    .contentShape(Rectangle())
-                    .gesture(panGesture)
-                    .onTapGesture(coordinateSpace: .local) { point in
-                        focused = true
-                        close()
-                        lamp = point
-                    }
-                wash
-                EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
-                    .allowsHitTesting(false)
-                ForEach(layout.order, id: \.self) { id in
-                    if let placed = layout.cards[id] {
-                        CardView(
-                            id: id,
-                            store: store,
-                            role: placed.role,
-                            lit: lit == id,
-                            light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
-                            onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
-                            onOpen: { open(id) },
-                            onAdd: { store.modal = .adding(under: id) },
-                            onToggle: { store.tick(id) }
-                        )
-                        .scaleEffect(scale)
-                        .position(screenPoint(placed.position, in: size))
-                        .zIndex(lit == id ? 2 : (placed.role == .center ? 1 : 0))
-                    }
-                }
-                if let opened, let placed = layout.cards[opened] {
-                    DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
-                        .scaleEffect(scale)
-                        .position(screenPoint(placed.position, in: size))
-                        .zIndex(3)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
-                }
+            TimelineView(.animation(paused: !Motion.enabled || !animating)) { timeline in
+                canvas(size: size, layout: frame(at: timeline.date))
             }
-            .frame(width: size.width, height: size.height)
-            .clipped()
+            .onChange(of: store.layout) { _, _ in animating = true }
             .onAppear { viewport = size }
             .onChange(of: size) { _, now in viewport = now }
             .onContinuousHover(coordinateSpace: .local) { phase in
@@ -112,6 +79,86 @@ public struct OrbitCanvas: View {
             opened = nil
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
         }
+    }
+
+    /// The layout to draw this frame: the cards where the springs have them, or the static layout
+    /// when motion is off. Lines, light and hit tests all read the same positions.
+    private func frame(at date: Date) -> Layout {
+        guard Motion.enabled else { return store.layout }
+        motion.advance(to: date, rest: store.layout)
+        if motion.sim.isAtRest, animating, dragging == nil {
+            DispatchQueue.main.async { animating = false }
+        }
+        return motion.sim.current
+    }
+
+    private func canvas(size: CGSize, layout: Layout) -> some View {
+        let lit = litCard(in: layout, viewport: size)
+        let lifted = lit.map { store.tree.orbit(of: $0) } ?? []
+        return ZStack {
+            Theme.canvas
+                .contentShape(Rectangle())
+                .gesture(panGesture)
+                .onTapGesture(coordinateSpace: .local) { point in
+                    focused = true
+                    close()
+                    lamp = point
+                }
+            wash
+            EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
+                .allowsHitTesting(false)
+            ForEach(layout.order, id: \.self) { id in
+                if let placed = layout.cards[id] {
+                    CardView(
+                        id: id,
+                        store: store,
+                        role: placed.role,
+                        lit: lit == id,
+                        light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
+                        onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
+                        onOpen: { open(id) },
+                        onAdd: { store.modal = .adding(under: id) },
+                        onToggle: { store.tick(id) }
+                    )
+                    .scaleEffect(scale)
+                    .position(screenPoint(placed.position, in: size))
+                    .gesture(dragGesture(id))
+                    .zIndex(dragging == id || lit == id ? 2 : (placed.role == .center ? 1 : 0))
+                }
+            }
+            if let opened, let placed = layout.cards[opened] {
+                DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
+                    .scaleEffect(scale)
+                    .position(screenPoint(placed.position, in: size))
+                    .zIndex(3)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+        }
+        .coordinateSpace(name: Self.space)
+        .frame(width: size.width, height: size.height)
+        .clipped()
+    }
+
+    /// Pick a card up and let go: the others make room while it is held, and it settles back after.
+    private func dragGesture(_ id: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                guard Motion.enabled else { return }
+                if dragging != id {
+                    dragging = id
+                    dragStart = motion.sim.positions[id]
+                }
+                guard let start = dragStart else { return }
+                motion.sim.hold(id, at: CGPoint(x: start.x + value.translation.width / scale, y: start.y + value.translation.height / scale))
+                animating = true
+            }
+            .onEnded { _ in
+                guard dragging == id else { return }
+                motion.sim.release(id)
+                dragging = nil
+                dragStart = nil
+                animating = true
+            }
     }
 
     /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.
@@ -215,6 +262,24 @@ public struct OrbitCanvas: View {
 
     private func stepOut() {
         withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.back() }
+    }
+}
+
+/// The simulation and the clock that steps it, held by reference so the timeline can advance it
+/// while the view is drawing.
+final class MotionState {
+    var sim: Simulation
+    private var last: Date?
+
+    init() {
+        sim = Simulation(layout: Layout(centerID: rootID, cards: [:], order: [], edges: [], orbits: [:], bounds: .zero))
+    }
+
+    func advance(to date: Date, rest: Layout) {
+        sim.retarget(to: rest)
+        let dt = last.map { date.timeIntervalSince($0) } ?? 0
+        last = sim.isAtRest ? nil : date
+        sim.step(dt: dt)
     }
 }
 
