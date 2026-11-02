@@ -1,9 +1,9 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// One device of the list, as the Device row specimen draws it: the reach icon, the short id, the
-/// seen label and a Remove action. A device that missed the new key says so and offers Pair again
-/// in place of Remove; this device has no action. A long press or a right click opens the same
+/// One device of the list, as the Device row specimen draws it: the reach icon, the short id with
+/// a "This device" tag on this one, the reach and seen label, and a Remove action. A device that
+/// missed the new key says so and offers Pair again in place of Remove; this device has no action. A long press or a right click opens the same
 /// action as a menu, the way a bud's row does.
 struct DeviceRow: View {
     let device: Device
@@ -20,14 +20,10 @@ struct DeviceRow: View {
                 .foregroundStyle(device.missed ? Theme.rose : Theme.text3)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    if device.isThisDevice {
-                        Text(DevicesText.thisDevice(DevicesText.platform(isPad: DevicesSection.isPad)))
-                            .textRole(.cardTitle)
-                            .foregroundStyle(Theme.text)
-                    }
                     Text(PeerText.shortID(device.id))
                         .textRole(.mono)
-                        .foregroundStyle(device.isThisDevice ? Theme.text3 : Theme.text)
+                        .foregroundStyle(Theme.text)
+                    if device.isThisDevice { tag }
                 }
                 Text(caption)
                     .textRole(.caption)
@@ -47,6 +43,17 @@ struct DeviceRow: View {
                 Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
             }
         }
+    }
+
+    /// The neutral tag of the kit: raised fill, 5 pt corners, 11 pt semibold.
+    private var tag: some View {
+        Text("This device")
+            .font(Theme.font(TextStyle(typeface: .text, size: 11, weight: 600)))
+            .foregroundStyle(Theme.text2)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous).stroke(Theme.line, lineWidth: 1))
     }
 
     private var caption: String {

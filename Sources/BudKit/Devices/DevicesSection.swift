@@ -74,22 +74,28 @@ struct DevicesSection: View {
         .overlay(shape.stroke(Theme.line, lineWidth: 1))
     }
 
+    private static let invitationBody = TextStyle(typeface: .text, size: 12, weight: 400)
+
     private var invitation: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(DevicesText.alone(kind))
                     .textRole(.cardTitle)
                     .foregroundStyle(Theme.text)
                 Text(DevicesText.invitation(kind))
-                    .textRole(.body)
+                    .textStyle(Self.invitationBody)
+                    .lineSpacing(12 * 0.45)
                     .foregroundStyle(Theme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.top, 4)
             ways
         }
     }
 
-    /// The two ways in, and Rotate the key once there is another device: side by side on the
-    /// Mac, stacked and full width on iPhone and iPad.
+    /// The two ways in, and Rotate the key once there is another device: in one row on the Mac,
+    /// with Rotate the key on a row of its own when the three do not fit; stacked and full width
+    /// on iPhone and iPad.
     @ViewBuilder private var ways: some View {
         let others = !DevicesText.isEmpty(devices.devices)
         if stacked {
@@ -98,14 +104,26 @@ struct DevicesSection: View {
                 joinButton.frame(maxWidth: .infinity)
                 if others { rotateButton.frame(maxWidth: .infinity) }
             }
+        } else if others {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    ticketButton
+                    joinButton
+                    Spacer(minLength: 0)
+                    rotateButton
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        ticketButton
+                        joinButton
+                    }
+                    rotateButton
+                }
+            }
         } else {
             HStack(spacing: 8) {
                 ticketButton
                 joinButton
-                if others {
-                    Spacer(minLength: 0)
-                    rotateButton
-                }
             }
         }
     }
@@ -115,19 +133,23 @@ struct DevicesSection: View {
             present(.rotateKey)
             Task { await devices.rotateKey() }
         } label: {
-            BudButtonLabel(title: "Rotate the key", systemImage: "key").frame(maxWidth: stacked ? .infinity : nil)
+            BudButtonLabel(title: "Rotate the key", systemImage: "key", iconAfter: true)
+                .lineLimit(1)
+                .frame(maxWidth: stacked ? .infinity : nil)
         }
         .buttonStyle(.budGhost)
     }
 
     private var ticketButton: some View {
-        Button { present(.showTicket) } label: { BudButtonLabel(title: "Show a ticket", systemImage: "qrcode").frame(maxWidth: stacked ? .infinity : nil) }
+        Button { present(.showTicket) } label: {
+            BudButtonLabel(title: "Show a ticket", systemImage: "qrcode").lineLimit(1).frame(maxWidth: stacked ? .infinity : nil)
+        }
             .buttonStyle(.budSecondary)
     }
 
     private var joinButton: some View {
         Button { present(.joinVault) } label: {
-            BudButtonLabel(title: "Add this \(DevicesText.deviceWord(kind)) to a vault").frame(maxWidth: stacked ? .infinity : nil)
+            BudButtonLabel(title: "Add this \(DevicesText.deviceWord(kind)) to a vault").lineLimit(1).frame(maxWidth: stacked ? .infinity : nil)
         }
         .buttonStyle(.budSecondary)
     }
