@@ -98,6 +98,13 @@ public final class BudStore: ObservableObject {
         self.tree = tree
         self.center = rootID
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
+        self.devices.onSyncFinished = { [weak self] summary in
+            guard let message = DevicesText.arrival(summary) else { return }
+            self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
+        }
+        self.devices.onRotationFinished = { [weak self] result in
+            self?.toasts.show(Undoable(message: DevicesText.rotated(result), systemImage: "key"))
+        }
         Task { @MainActor [weak self] in
             await self?.reload()
             await self?.startWatching()

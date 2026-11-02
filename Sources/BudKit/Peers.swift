@@ -6,7 +6,7 @@ public enum Reach: String, Codable, Sendable {
 }
 
 /// The sort of device, once the core carries it.
-public enum DeviceKind: String, Codable, Sendable {
+public enum DeviceKind: String, CaseIterable, Codable, Sendable {
     case mac, iphone, ipad, tv
 }
 

@@ -1,15 +1,12 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The DEVICES section of Settings: the notice for a missed key, the list or the invitation, the
-/// two ways in and the Relay control. It reads from `DeviceStore` and opens the sheets and dialogs
-/// through `present`.
+/// The DEVICES section of Settings: the intro line, the notice for a missed key, the list or the
+/// invitation, the two ways in with Rotate the key beside them, and the Relay control. It reads
+/// from `DeviceStore` and opens the sheets and dialogs through `present`.
 struct DevicesSection: View {
     @ObservedObject var devices: DeviceStore
     let present: (Modal) -> Void
-    /// What Remove does. The confirmation dialog comes with BUD-90, which passes it in; until then
-    /// the button does nothing.
-    var onRemove: (Device) -> Void = { _ in }
 
     @State private var showCustom = false
     @State private var customText = ""
@@ -36,6 +33,9 @@ struct DevicesSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("DEVICES")
                 .textRole(.eyebrow)
+                .foregroundStyle(Theme.text3)
+            Text(DevicesText.intro)
+                .textRole(.caption)
                 .foregroundStyle(Theme.text3)
             if let notice {
                 Text(notice)
@@ -66,7 +66,7 @@ struct DevicesSection: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, device in
                 if index > 0 { Theme.line.frame(height: 1) }
                 DeviceRow(
-                    device: device, now: Date(), onRemove: { onRemove(device) },
+                    device: device, now: Date(), onRemove: { present(.removeDevice(id: device.id)) },
                     onPairAgain: { present(.showTicket) })
             }
         }
@@ -76,26 +76,48 @@ struct DevicesSection: View {
 
     private var invitation: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Only this \(DevicesText.deviceWord(kind)) so far. Pair another device to keep your buds in step.")
-                .textRole(.body)
-                .foregroundStyle(Theme.text2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(DevicesText.alone(kind))
+                    .textRole(.cardTitle)
+                    .foregroundStyle(Theme.text)
+                Text(DevicesText.invitation(kind))
+                    .textRole(.body)
+                    .foregroundStyle(Theme.text2)
+            }
             ways
         }
     }
 
-    /// The two ways in: side by side on the Mac, stacked and full width on iPhone and iPad.
+    /// The two ways in, and Rotate the key once there is another device: side by side on the
+    /// Mac, stacked and full width on iPhone and iPad.
     @ViewBuilder private var ways: some View {
+        let others = !DevicesText.isEmpty(devices.devices)
         if stacked {
             VStack(spacing: 8) {
                 ticketButton.frame(maxWidth: .infinity)
                 joinButton.frame(maxWidth: .infinity)
+                if others { rotateButton.frame(maxWidth: .infinity) }
             }
         } else {
             HStack(spacing: 8) {
                 ticketButton
                 joinButton
+                if others {
+                    Spacer(minLength: 0)
+                    rotateButton
+                }
             }
         }
+    }
+
+    private var rotateButton: some View {
+        Button {
+            present(.rotateKey)
+            Task { await devices.rotateKey() }
+        } label: {
+            BudButtonLabel(title: "Rotate the key", systemImage: "key").frame(maxWidth: stacked ? .infinity : nil)
+        }
+        .buttonStyle(.budGhost)
     }
 
     private var ticketButton: some View {
@@ -135,7 +157,7 @@ struct DevicesSection: View {
                     #endif
                     .autocorrectionDisabled()
             }
-            Text("A relay carries sealed traffic between devices that are not on the same network.")
+            Text(DevicesText.relayCaption)
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
         }

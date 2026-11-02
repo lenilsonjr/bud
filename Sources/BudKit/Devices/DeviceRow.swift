@@ -50,8 +50,7 @@ struct DeviceRow: View {
     }
 
     private var caption: String {
-        if device.missed { return "Missed the new key" }
-        return PeerText.seen(device.isThisDevice ? now : device.lastSeen, now: now)
+        DevicesText.rowCaption(device, kind: DevicesText.platform(isPad: DevicesSection.isPad), now: now)
     }
 
     @ViewBuilder private var action: some View {

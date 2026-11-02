@@ -25,6 +25,25 @@ public enum DevicesText {
         }
     }
 
+    /// The line under DEVICES, always shown.
+    public static let intro =
+        "Devices that hold this vault’s key sync with each other, on the same network or through a relay. Nobody else can read what they send."
+
+    /// The caption under the Relay control.
+    public static let relayCaption = "Carries traffic when devices are apart. It can’t read it."
+
+    /// The empty state's headline: "Only this Mac has the vault so far".
+    public static func alone(_ kind: DeviceKind?) -> String {
+        "Only this \(deviceWord(kind)) has the vault so far"
+    }
+
+    /// The empty state's invitation, naming the other three kinds of device.
+    public static func invitation(_ kind: DeviceKind?) -> String {
+        let others = DeviceKind.allCases.filter { $0 != kind }.map(deviceWord)
+        let list = others.dropLast().joined(separator: ", ") + " or " + (others.last ?? "")
+        return "Show a ticket here and take it on your \(list). If your vault already lives on another device, add this \(deviceWord(kind)) to it instead."
+    }
+
     /// The word the invitation uses: "Add this Mac to a vault".
     public static func deviceWord(_ kind: DeviceKind?) -> String {
         switch kind {
@@ -34,6 +53,69 @@ public enum DevicesText {
         case .tv: return "Apple TV"
         case nil: return "device"
         }
+    }
+
+    /// How a device is reached, in words.
+    public static func reachWord(_ reach: Reach) -> String {
+        switch reach {
+        case .local: return "Local network"
+        case .relay: return "Through a relay"
+        case .direct: return "Direct"
+        }
+    }
+
+    /// The row's second line: "This Mac · holds the vault", "Local network · seen just now",
+    /// "Through a relay · not seen yet", or "Missed the new key".
+    public static func rowCaption(_ device: Device, kind: DeviceKind?, now: Date) -> String {
+        if device.isThisDevice { return "\(thisDevice(kind)) · holds the vault" }
+        if device.missed { return "Missed the new key" }
+        return "\(reachWord(device.reach)) · \(PeerText.seen(device.lastSeen, now: now))"
+    }
+
+    /// The toast after a sync that brought changes: "3 changes arrived"; nil when none did.
+    public static func arrival(_ summary: SyncSummary) -> String? {
+        let changes = summary.created + summary.updated + summary.written + summary.moved
+        guard changes > 0 else { return nil }
+        return changes == 1 ? "1 change arrived" : "\(changes) changes arrived"
+    }
+
+    /// The toast after a key rotation: who missed it, or how many took it.
+    public static func rotated(_ result: RotationResult) -> String {
+        switch result.missed.count {
+        case 0: return result.reached == 1 ? "Key rotated · 1 device got it" : "Key rotated · \(result.reached) devices got it"
+        case 1: return "Key rotated · 1 device missed it"
+        case let n: return "Key rotated · \(n) devices missed it"
+        }
+    }
+
+    /// One line of the Rotating the key dialog.
+    public struct RotationLine: Equatable, Sendable {
+        public enum State: Equatable, Sendable { case newKey, gotIt, waiting, missed }
+        public var id: String
+        public var state: State
+        public var label: String
+    }
+
+    /// The dialog's lines: this device first with the new key, then each of the others as it
+    /// reports. A device that has not answered yet waits; one that is apart says so.
+    public static func rotationLines(_ devices: [Device], progress: RotationProgress?, kind: DeviceKind?) -> [RotationLine] {
+        ordered(devices).map { device in
+            if device.isThisDevice { return RotationLine(id: device.id, state: .newKey, label: "\(thisDevice(kind)) · new key") }
+            switch progress?.reports[device.id] {
+            case .some(true): return RotationLine(id: device.id, state: .gotIt, label: "Got it")
+            case .some(false): return RotationLine(id: device.id, state: .missed, label: "Didn’t answer · missed the new key")
+            case .none:
+                let how = device.reach == .relay ? "apart, through a relay" : "on the \(reachWord(device.reach).lowercased())"
+                return RotationLine(id: device.id, state: .waiting, label: "Waiting · \(how)")
+            }
+        }
+    }
+
+    /// "2 of 3": the devices that have the new key, this one included, of all of them.
+    public static func rotationCount(_ progress: RotationProgress?) -> String {
+        let reached = progress.map { $0.reports.values.filter { $0 }.count } ?? 0
+        let total = progress?.total ?? 0
+        return "\(reached + 1) of \(total + 1)"
     }
 
     /// This device first, the others as they came.

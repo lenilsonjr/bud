@@ -197,3 +197,48 @@ final class DeviceStoreTests: XCTestCase {
         XCTAssertEqual(store.relay, .custom(url))
     }
 }
+
+extension DeviceStoreTests {
+    func testARefusedRemovalStartsNoRotation() async {
+        let clock = TestClock()
+        let peers = MemoryPeers(now: { clock.now })
+        let store = DeviceStore(peers: peers, now: { clock.now })
+        await store.start()
+        var finished: [RotationResult] = []
+        store.onRotationFinished = { finished.append($0) }
+        let removed = await store.remove("nobody", rotate: true)
+        XCTAssertFalse(removed)
+        XCTAssertNil(store.rotation)
+        XCTAssertTrue(finished.isEmpty)
+        XCTAssertEqual(store.devices.count, 5)
+    }
+
+    func testARotationReportsEachDeviceAndTellsTheEnd() async throws {
+        let clock = TestClock()
+        let peers = MemoryPeers(missing: [MemoryPeers.fixtures()[3].id], now: { clock.now })
+        let store = DeviceStore(peers: peers, now: { clock.now })
+        await store.start()
+        var finished: [RotationResult] = []
+        store.onRotationFinished = { finished.append($0) }
+        await store.rotateKey()
+        let rotation = try XCTUnwrap(store.rotation)
+        XCTAssertEqual(rotation.total, 4)
+        XCTAssertEqual(rotation.reports[MemoryPeers.fixtures()[1].id], true)
+        XCTAssertEqual(rotation.reports[MemoryPeers.fixtures()[3].id], false)
+        XCTAssertEqual(finished, [RotationResult(reached: 3, missed: [MemoryPeers.fixtures()[3].id])])
+        XCTAssertEqual(DevicesText.rotationCount(rotation), "4 of 5")
+    }
+
+    func testASyncThatFinishedIsReported() async {
+        let clock = TestClock()
+        let peers = MemoryPeers(now: { clock.now })
+        let store = DeviceStore(peers: peers, now: { clock.now })
+        await store.start()
+        var summaries: [SyncSummary] = []
+        store.onSyncFinished = { summaries.append($0) }
+        let summary = SyncSummary(created: 2, updated: 1, ops: 3)
+        await peers.setNextSummary(summary)
+        await store.syncNow()
+        await eventually { summaries == [summary] }
+    }
+}

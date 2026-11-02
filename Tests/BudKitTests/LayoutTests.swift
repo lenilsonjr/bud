@@ -150,7 +150,7 @@ final class UndoTests: XCTestCase {
         let box = Box()
         let action = Undoable(message: "Planted under Everything") { box.ran += 1 }
         XCTAssertEqual(action.message, "Planted under Everything")
-        action.undo()
+        action.undo?()
         XCTAssertEqual(box.ran, 1)
     }
 
@@ -544,3 +544,17 @@ final class RecentSearchTests: XCTestCase {
         XCTAssertEqual(hits.first?.trail, ["Inbox"], "The capture made today is the newest bud")
     }
 }
+
+#if canImport(Combine)
+extension UndoTests {
+    @MainActor func testAToastThatOnlyReportsHasNoUndo() {
+        let center = ToastCenter(duration: .seconds(60))
+        center.show(Undoable(message: "3 changes arrived", systemImage: "arrow.down.to.line"))
+        XCTAssertNil(center.current?.action.undo)
+        center.undo()
+        XCTAssertEqual(center.current?.action.message, "3 changes arrived", "Undo on a report leaves it on screen")
+        center.dismiss()
+        XCTAssertNil(center.current)
+    }
+}
+#endif

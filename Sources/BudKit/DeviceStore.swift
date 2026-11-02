@@ -18,12 +18,15 @@ public struct RotationProgress: Equatable, Sendable {
     public var total: Int
     /// How many it has tried so far.
     public var done: Int
+    /// What each device tried answered: true when it took the new key.
+    public var reports: [String: Bool]
     /// Set once the rotation is over.
     public var result: RotationResult?
 
-    public init(total: Int, done: Int = 0, result: RotationResult? = nil) {
+    public init(total: Int, done: Int = 0, reports: [String: Bool] = [:], result: RotationResult? = nil) {
         self.total = total
         self.done = done
+        self.reports = reports
         self.result = result
     }
 }
@@ -44,6 +47,10 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var relay: RelaySetting = .default
     /// The device that used the ticket on show, until the sheet is closed or asks again.
     @Published public private(set) var redeemedBy: String?
+    /// Told when a sync is over, for the toast that says what it brought in.
+    public var onSyncFinished: ((SyncSummary) -> Void)?
+    /// Told when a key rotation is over, for the toast that says who missed it.
+    public var onRotationFinished: ((RotationResult) -> Void)?
 
     private let peers: Peers
     private let now: @Sendable () -> Date
@@ -167,11 +174,23 @@ public final class DeviceStore: ObservableObject {
 
     // MARK: Remove, allow, rotate
 
-    /// Forgets a device, and with `rotate` makes a new key so it cannot read what comes next.
-    public func remove(_ id: String, rotate: Bool) async {
-        try? await peers.remove(id)
+    /// Forgets a device, and with `rotate` makes a new key so it cannot read what comes next. A
+    /// removal the node refuses returns false and starts no rotation.
+    @discardableResult
+    public func remove(_ id: String, rotate: Bool) async -> Bool {
+        do {
+            try await peers.remove(id)
+        } catch {
+            await refresh()
+            return false
+        }
         await refresh()
-        guard rotate else { return }
+        if rotate { await rotateKey() }
+        return true
+    }
+
+    /// Makes a new key and sends it to the devices that remain; `rotation` follows each one.
+    public func rotateKey() async {
         let total = devices.filter { !$0.isThisDevice }.count
         rotation = RotationProgress(total: total)
         guard let steps = try? await peers.rotateKey() else {
@@ -180,10 +199,13 @@ public final class DeviceStore: ObservableObject {
         }
         for await step in steps {
             switch step {
-            case .device: rotation?.done += 1
+            case let .device(id, reached):
+                rotation?.done += 1
+                rotation?.reports[id] = reached
             case let .done(result):
                 rotation?.result = result
                 if !result.missed.isEmpty { rotatedAt = now() }
+                onRotationFinished?(result)
             }
         }
         await refresh()
@@ -208,6 +230,7 @@ public final class DeviceStore: ObservableObject {
             await refresh()
         case let .syncFinished(summary):
             lastSummary = summary
+            onSyncFinished?(summary)
             await refresh()
         case let .fetchProgress(received, total):
             fetched = (received, total)
