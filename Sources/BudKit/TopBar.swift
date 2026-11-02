@@ -17,7 +17,7 @@ struct TopBar: View {
             Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
             breadcrumb
             Spacer(minLength: 8)
-            if let step = store.nextStep { nextStep(step) }
+            if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
             goAnywhere
             zoom
             Button(action: onAdd) {
@@ -65,12 +65,24 @@ struct TopBar: View {
         .lineLimit(1)
     }
 
-    private func nextStep(_ bud: Bud) -> some View {
+    /// The next step: the bullseye jumps to it in the current view, Done closes it from here.
+    private func nextStep(_ bud: Bud, elsewhere: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "scope")
-                .foregroundStyle(Theme.leaf)
+            Button {
+                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = bud.id }
+            } label: {
+                Image(systemName: "scope")
+                    .foregroundStyle(Theme.leaf)
+            }
+            .buttonStyle(.plain)
+            .help("Go to it")
+            if elsewhere {
+                Text("ELSEWHERE")
+                    .textRole(.eyebrow)
+                    .foregroundStyle(Theme.text3)
+            }
             Button(bud.text) {
-                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = bud.parent }
+                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = bud.id }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.text)

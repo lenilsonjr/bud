@@ -53,8 +53,13 @@ public final class BudStore: ObservableObject {
 
     public var centerTrail: [UUID] { Array(tree.ancestors(of: center).reversed()) + [center] }
 
-    /// The open to-do to do next inside the current bud, or nil when there is none.
-    public var nextStep: Bud? { tree.nextStep(under: center) }
+    /// The open to-do to do next inside the current bud, or, when it has none, the next one
+    /// anywhere, marked as elsewhere. Nil when nothing is open at all.
+    public var nextStep: (bud: Bud, elsewhere: Bool)? {
+        if let here = tree.nextStep(under: center) { return (here, false) }
+        if let anywhere = tree.nextStep(under: rootID) { return (anywhere, true) }
+        return nil
+    }
 
     /// Plants a bud under a parent and offers to take it back. A blank line plants nothing.
     @discardableResult

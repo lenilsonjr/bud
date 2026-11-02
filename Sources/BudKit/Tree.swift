@@ -132,9 +132,28 @@ public struct Tree: Codable, Equatable, Sendable {
         return out
     }
 
-    /// The one open to-do to do next under a bud: the first in reading order. Dates come later.
+    /// The one open to-do to do next under a bud: the soonest due, then the soonest scheduled,
+    /// then the oldest; reading order breaks the remaining ties. Nil when nothing is open.
     public func nextStep(under id: UUID) -> Bud? {
-        walk(under: id).first { $0.state == .open }
+        let open = walk(under: id).filter { $0.state == .open }
+        guard var best = open.first else { return nil }
+        for bud in open.dropFirst() where Tree.comesFirst(bud, before: best) { best = bud }
+        return best
+    }
+
+    /// Whether `a` is the sooner step: a date beats no date, an earlier date beats a later one.
+    static func comesFirst(_ a: Bud, before b: Bud) -> Bool {
+        func sooner(_ x: Date?, _ y: Date?) -> Bool? {
+            switch (x, y) {
+            case let (x?, y?): return x == y ? nil : x < y
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return nil
+            }
+        }
+        if let byDue = sooner(a.due, b.due) { return byDue }
+        if let byWhen = sooner(a.when, b.when) { return byWhen }
+        return a.created < b.created
     }
 
     /// One row of the outline: a bud and how deep it sits under the root.
