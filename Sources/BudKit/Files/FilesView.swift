@@ -17,9 +17,15 @@ struct FilesView: View {
             Rectangle()
                 .fill(Theme.line)
                 .frame(width: 1)
-            OutlinePage(store: store)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.canvas)
+            Group {
+                if let lens = store.lens {
+                    LensPage(store: store, lens: lens)
+                } else {
+                    OutlinePage(store: store)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.canvas)
         }
     }
 }

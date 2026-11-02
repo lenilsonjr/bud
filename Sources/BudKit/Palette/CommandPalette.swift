@@ -160,10 +160,15 @@ struct CommandPalette: View {
                 store.surface = .canvas
             }
         case .destination(let d):
-            // Only Everything is a page today; the others wait for the vault.
-            if d == .everything {
+            // Inbox and Archive wait for the vault.
+            switch d {
+            case .everything:
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = rootID }
                 if inFiles { store.surface = .files }
+            case .today: store.open(.today)
+            case .todos: store.open(.todos)
+            case .pinned: store.open(.pinned)
+            case .inbox, .archive: break
             }
         }
         onClose()
