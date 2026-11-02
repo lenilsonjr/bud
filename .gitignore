@@ -26,3 +26,6 @@ Config/BundleIdSecrets.xcconfig
 # Ruby
 vendor/bundle/
 .bundle/
+
+# Rust
+target/

@@ -9,12 +9,16 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
 - `Tests/BudKitTests` — model and layout tests; they run on Linux too.
 - `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS) that hosts `BudRootView`
   from `BudKit`. The Xcode project is generated, never committed.
+- `core/bud-core` — the Rust core. A vault is a folder of Markdown files; the crate walks it into a
+  SQLite index kept outside the vault and answers the queries the views need. The files are the
+  only truth; the index is disposable.
 
 ## Run
 
 ```sh
 swift run BudMac          # the macOS runner, no Xcode project needed
 swift test                # model + layout tests (run on Linux too)
+cargo test --workspace    # the Rust core's tests
 ```
 
 For the real apps, generate the Xcode project (needs [XcodeGen](https://github.com/yonaskolb/XcodeGen)):

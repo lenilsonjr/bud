@@ -1,0 +1,13 @@
+# The Rust side of Bud (ADR-003): the core that owns the vault on disk and its SQLite index.
+[workspace]
+members = ["core/bud-core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "PolyForm-Noncommercial-1.0.0"
+repository = "https://github.com/lenilsonjr/bud"
+
+[workspace.lints.clippy]
+all = "warn"
