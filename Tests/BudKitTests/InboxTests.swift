@@ -112,11 +112,35 @@ final class InboxTests: XCTestCase {
         XCTAssertEqual(again.inbox().first?.source, "mac", "The source survives a save")
     }
 
-    func testTheSeedHoldsTwoCapturesFromTheMac() throws {
+    func testTheSeedHoldsTwoCapturesOneOfThemEnrichedYesterday() throws {
         let t = Tree.seed()
         let inbox = t.inbox()
         XCTAssertEqual(inbox.count, 2)
-        XCTAssertTrue(inbox.allSatisfy { $0.source == "mac" && $0.parent == inboxID && !$0.isTodo })
+        XCTAssertTrue(inbox.allSatisfy { $0.source != nil && $0.parent == inboxID && !$0.isTodo })
+        XCTAssertEqual(inbox.map { t.isRaw($0.id) }, [false, true], "One capture has something inside already")
+        XCTAssertEqual(t.inboxGroups().map(\.label), ["Today", "Yesterday"])
+    }
+
+    func testInboxGroupsByDayNewestFirstWithTodayAndYesterday() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 9)))
+        let day: TimeInterval = 86_400
+        var t = Tree()
+        let old = t.capture("Printer samples", source: "mac", created: now.addingTimeInterval(-3 * day))
+        let early = t.capture("Morning thought", source: "iphone", created: now.addingTimeInterval(-2 * 3600))
+        let late = t.capture("Later thought", source: "mac", created: now.addingTimeInterval(-3600))
+        let yesterday = t.capture("A recipe", source: "mac", created: now.addingTimeInterval(-1 * day))
+        t.add("Paper weights", todo: false, under: old.id)
+        let groups = t.inboxGroups(now: now, calendar: calendar)
+        XCTAssertEqual(groups.map(\.label), ["Today", "Yesterday", "Fri 30 Oct"])
+        XCTAssertEqual(groups[0].buds.map(\.id), [late.id, early.id], "Newest first within a day")
+        XCTAssertEqual(groups[1].buds.map(\.id), [yesterday.id])
+        XCTAssertEqual(t.inboxGroups(.raw, now: now, calendar: calendar).flatMap(\.buds).map(\.id), [late.id, early.id, yesterday.id])
+        XCTAssertEqual(t.inboxGroups(.enriched, now: now, calendar: calendar).flatMap(\.buds).map(\.id), [old.id])
+        XCTAssertTrue(t.isRaw(late.id))
+        XCTAssertFalse(t.isRaw(old.id))
     }
 }
 

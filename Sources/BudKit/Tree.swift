@@ -260,9 +260,9 @@ public struct Tree: Codable, Equatable, Sendable {
 
     /// Capture: one line, no place in mind. It lands in the Inbox as a note, after the last.
     @discardableResult
-    public mutating func capture(_ line: String, source: String) -> Bud {
+    public mutating func capture(_ line: String, source: String, created: Date = Date()) -> Bud {
         let last = children(of: inboxID).last?.order ?? 0
-        let bud = Bud(text: line, parent: inboxID, order: last + 1, source: source)
+        let bud = Bud(text: line, parent: inboxID, order: last + 1, created: created, source: source)
         buds.append(bud)
         return bud
     }
@@ -372,8 +372,9 @@ public struct Tree: Codable, Equatable, Sendable {
         t.add("Routines", todo: false, under: rootID)
         t.add("Gift ideas", todo: false, under: rootID)
         t.add("Side project", todo: false, under: rootID)
-        t.capture("Ask the printer about paper samples", source: "mac")
-        t.capture("A recipe to try for the first issue", source: "mac")
+        let printer = t.capture("Ask the printer about paper samples", source: "mac", created: Date().addingTimeInterval(-1 * day))
+        t.add("Three paper weights to compare", todo: false, under: printer.id)
+        t.capture("A recipe to try for the first issue", source: "iphone")
         return t
     }
 }

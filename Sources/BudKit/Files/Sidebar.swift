@@ -14,6 +14,7 @@ struct Sidebar: View {
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.inboxOpen) { store.openInbox() }
                     place("Everything", glyph: "leaf.fill", count: nil, selected: !store.inboxOpen && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.inboxOpen = false }
+                        .dropDestination(for: String.self) { items, _ in drop(items, under: rootID) }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
                             TreeRow(
@@ -26,6 +27,7 @@ struct Sidebar: View {
                                 onDisclose: { toggle(bud.id) }
                             )
                             .budMenu(bud.id, store: store)
+                            .dropDestination(for: String.self) { items, _ in drop(items, under: bud.id) }
                             .id(bud.id)
                         }
                     }
@@ -51,6 +53,12 @@ struct Sidebar: View {
         expanded.formUnion(store.tree.ancestors(of: id))
         if store.tree.hasChildren(id) { expanded.insert(id) }
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+    }
+
+    /// A row dragged from the Inbox (or any page) lands under the bud it was dropped on.
+    private func drop(_ items: [String], under parent: UUID) -> Bool {
+        guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+        return store.move(id, under: parent)
     }
 
     private func toggle(_ id: UUID) {
