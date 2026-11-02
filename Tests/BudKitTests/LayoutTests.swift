@@ -93,6 +93,26 @@ final class OpenedCardTests: XCTestCase {
     #endif
 }
 
+final class OutlineTests: XCTestCase {
+    func testOutlineShowsOnlyWhatIsExpanded() throws {
+        let t = Tree.seed()
+        let top = t.children(of: rootID)
+        XCTAssertEqual(t.outline(expanded: []).map(\.id), top.map(\.id), "Closed: the top level only")
+        XCTAssertTrue(t.outline(expanded: []).allSatisfy { $0.depth == 0 })
+
+        let newsletter = try XCTUnwrap(top.first { $0.text == "Launch the newsletter" })
+        let rows = t.outline(expanded: [newsletter.id])
+        let kids = t.children(of: newsletter.id)
+        let at = try XCTUnwrap(rows.firstIndex { $0.id == newsletter.id })
+        XCTAssertEqual(rows[(at + 1)...(at + kids.count)].map(\.id), kids.map(\.id), "Children follow their parent")
+        XCTAssertTrue(rows[(at + 1)...(at + kids.count)].allSatisfy { $0.depth == 1 })
+        XCTAssertEqual(rows.count, top.count + kids.count, "Grandchildren stay hidden until their parent opens")
+
+        let everything = t.outline(expanded: Set(t.buds.map(\.id)))
+        XCTAssertEqual(everything.map(\.id), t.walk(under: rootID).map(\.id), "Fully open, the outline is the reading order")
+    }
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()

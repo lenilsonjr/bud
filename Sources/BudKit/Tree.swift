@@ -107,6 +107,26 @@ public struct Tree: Codable, Equatable, Sendable {
         walk(under: id).first { $0.state == .open }
     }
 
+    /// One row of the outline: a bud and how deep it sits under the root.
+    public struct OutlineRow: Hashable, Sendable {
+        public let id: UUID
+        public let depth: Int
+    }
+
+    /// The rows the tree shows: every bud under the root whose ancestors are all expanded,
+    /// in reading order, with its depth. The root itself is not a row.
+    public func outline(expanded: Set<UUID>) -> [OutlineRow] {
+        var rows: [OutlineRow] = []
+        func visit(_ id: UUID, depth: Int) {
+            for child in children(of: id) {
+                rows.append(OutlineRow(id: child.id, depth: depth))
+                if expanded.contains(child.id) { visit(child.id, depth: depth + 1) }
+            }
+        }
+        visit(rootID, depth: 0)
+        return rows
+    }
+
     /// A peek inside a bud: the first few titles under it, in reading order.
     public func peek(into id: UUID, limit: Int = 3) -> [String] {
         children(of: id).prefix(limit).map(\.text)
