@@ -311,6 +311,32 @@ final class LensTests: XCTestCase {
     }
 }
 
+final class DocumentTests: XCTestCase {
+    func testTheHighlighterFindsHeadingsBulletsBoldAndLinks() {
+        let text = "# Title\n- one **strong** item\n2. two [site](https://example.org) and [[Other note]]\nplain **"
+        let spans = MarkdownHighlighter.spans(in: text)
+        let ns = text as NSString
+        func texts(_ kind: MarkdownHighlighter.Kind) -> [String] {
+            spans.filter { $0.kind == kind }.map { ns.substring(with: NSRange(location: $0.range.lowerBound, length: $0.range.count)) }
+        }
+        XCTAssertEqual(texts(.heading), ["# Title"])
+        XCTAssertEqual(texts(.bullet), ["- ", "2. "])
+        XCTAssertEqual(texts(.bold), ["**strong**"], "A lone ** is not bold")
+        XCTAssertEqual(texts(.link), ["[site](https://example.org)", "[[Other note]]"])
+        XCTAssertEqual(spans.map(\.range.lowerBound), spans.map(\.range.lowerBound).sorted(), "Document order")
+        XCTAssertTrue(MarkdownHighlighter.spans(in: "").isEmpty)
+    }
+
+    func testTheFilePathReadsLikeTheDisk() throws {
+        let t = Tree.seed()
+        let name = try XCTUnwrap(t.walk(under: rootID).first { $0.text == "Pick a name" })
+        XCTAssertEqual(t.filePath(of: name.id), "Everything / Launch the newsletter / pick-a-name.md")
+        XCTAssertEqual(Tree.fileName(for: "Short names read better in the inbox"), "short-names-read-better-in-the-inbox.md")
+        XCTAssertEqual(Tree.fileName(for: "  ?!  "), "untitled.md")
+        XCTAssertEqual(Tree.fileName(for: "Q4 roadmap"), "q4-roadmap.md")
+    }
+}
+
 final class NextStepTests: XCTestCase {
     private func world() -> (Tree, UUID) {
         var t = Tree()

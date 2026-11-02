@@ -14,9 +14,9 @@ public struct BudTVView: View {
 
     public var body: some View {
         TVCanvas(store: store)
+            .ignoresSafeArea()
             .overlay(alignment: .top) { trail }
-            .overlay(alignment: .bottom) { hint }
-            .background(Theme.window)
+            .background(Theme.window.ignoresSafeArea())
             .textRole(.body)
             .foregroundStyle(Theme.text)
             .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
@@ -48,16 +48,6 @@ public struct BudTVView: View {
         .padding(.top, 40)
     }
 
-    private var hint: some View {
-        Text("Swipe to move the light · click a bud with children to go in · click or Play/Pause ticks a to-do · Menu steps out · what you plant here stays on this TV until sync arrives")
-            .textRole(.caption)
-            .foregroundStyle(Theme.text3)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .background(Theme.glass, in: Capsule())
-            .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
-            .padding(.bottom, 40)
-    }
 }
 
 /// The orbit canvas for the focus engine: every card is a button placed by the shared layout,
@@ -87,9 +77,10 @@ struct TVCanvas: View {
                             TVCardFace(id: id, store: store, lit: focused == id)
                         }
                         .buttonStyle(.plain)
+                        .focusEffectDisabled()
                         .focused($focused, equals: id)
                         .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
-                        .scaleEffect(scale * (focused == id ? 1.08 : 1))
+                        .scaleEffect(scale * (focused == id ? 1.06 : 1))
                         .position(screenPoint(placed.position, in: size))
                         .zIndex(focused == id ? 2 : (placed.role == .center ? 1 : 0))
                         .animation(.easeOut(duration: 0.25), value: focused)
@@ -182,9 +173,10 @@ struct TVCardFace: View {
         .background(
             RoundedRectangle(cornerRadius: Radius.xl)
                 .fill(CardStyle.hub(lit: lit).fill)
-                .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(CardStyle.hub(lit: lit).line, lineWidth: lit ? 1.5 : 1))
-                .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(CardStyle.hub(lit: lit).line, lineWidth: 1))
+                .shadow(color: lit ? Theme.amethyst.opacity(0.55) : Theme.shadowStrong, radius: lit ? 28 : 10, y: lit ? 0 : 4)
         )
+        .overlay { focusRing(radius: Radius.xl) }
     }
 
     private func chip(_ bud: Bud) -> some View {
@@ -209,9 +201,17 @@ struct TVCardFace: View {
         .background(
             RoundedRectangle(cornerRadius: Radius.md)
                 .fill(style.fill)
-                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: lit ? 1.5 : 1))
-                .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 2, y: lit ? 0 : 2)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: 1))
+                .shadow(color: lit ? Theme.amethyst.opacity(0.55) : Theme.shadow, radius: lit ? 28 : 2, y: lit ? 0 : 2)
         )
+        .overlay { focusRing(radius: Radius.md) }
+    }
+
+    /// The focus stroke: 2 pt of amethyst at 60%, drawn only while the card is in focus.
+    @ViewBuilder private func focusRing(radius: CGFloat) -> some View {
+        if lit {
+            RoundedRectangle(cornerRadius: radius).stroke(Theme.amethyst.opacity(0.6), lineWidth: 2)
+        }
     }
 }
 

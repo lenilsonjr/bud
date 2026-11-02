@@ -213,6 +213,21 @@ public struct Tree: Codable, Equatable, Sendable {
         walk(under: rootID).filter(\.pinned)
     }
 
+    /// The file a bud would be on disk, as the document bar shows it:
+    /// "Everything / Launch the newsletter / pick-a-name.md".
+    public func filePath(of id: UUID) -> String {
+        let folders = ([rootID] + ancestors(of: id).reversed().filter { $0 != rootID }).map { title(of: $0) }
+        return (folders + [Tree.fileName(for: title(of: id))]).joined(separator: " / ")
+    }
+
+    /// A title as a file name: lowercase, words joined by dashes, nothing but letters and digits.
+    public static func fileName(for title: String) -> String {
+        let words = title.lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+        return (words.isEmpty ? "untitled" : words.joined(separator: "-")) + ".md"
+    }
+
     /// The titles above a bud, root left out: "Launch the newsletter › Pick a name".
     public func breadcrumb(of id: UUID) -> [String] {
         ancestors(of: id).reversed().filter { $0 != rootID }.map { title(of: $0) }

@@ -49,7 +49,7 @@ public final class ToastCenter: ObservableObject {
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The toast as the board draws it: one line and Undo, raised above the hint.
+/// The toast as the board draws it: one line and Undo, raised above the bottom edge.
 struct ToastView: View {
     @ObservedObject var center: ToastCenter
 
