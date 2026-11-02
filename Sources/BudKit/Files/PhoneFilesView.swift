@@ -16,7 +16,8 @@ struct PhoneFilesView: View {
             VStack(spacing: 0) {
                 if !pageFull {
                     Sidebar(store: store)
-                        .frame(height: (geo.size.height * flags.phoneSplit.share).rounded())
+                        .frame(height: (geo.size.height * flags.phoneSplit.share).rounded(), alignment: .top)
+                        .clipped()
                         .background(Theme.sidebar)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
