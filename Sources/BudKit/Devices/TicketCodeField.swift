@@ -64,19 +64,20 @@ struct TicketEntryField: View {
     private static let code = TextStyle(typeface: .mono, size: 13, weight: 400)
     private static let footer = TextStyle(typeface: .text, size: 12, weight: 400)
 
+    @Environment(\.stillPicture) private var still
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("bud1 …", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(Theme.font(Self.code))
-                .lineSpacing(13 * 0.65)
-                .lineLimit(3...8)
-                .foregroundStyle(Theme.text)
-                .autocorrectionDisabled()
-                #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.asciiCapable)
-                #endif
+            if still {
+                // A picture cannot draw the platform's text view; the text itself stands in.
+                Text(text.isEmpty ? "bud1 …" : text)
+                    .font(Theme.font(Self.code))
+                    .lineSpacing(13 * 0.65)
+                    .foregroundStyle(text.isEmpty ? Theme.text3 : Theme.text)
+                    .frame(maxWidth: .infinity, minHeight: 3 * 13 * 1.65, alignment: .topLeading)
+            } else {
+                field
+            }
             HStack(spacing: 6) {
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .medium))
@@ -95,6 +96,20 @@ struct TicketEntryField: View {
         .padding(14)
         .background(Theme.canvas, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+    }
+
+    private var field: some View {
+        TextField("bud1 …", text: $text, axis: .vertical)
+            .textFieldStyle(.plain)
+            .font(Theme.font(Self.code))
+            .lineSpacing(13 * 0.65)
+            .lineLimit(3...8)
+            .foregroundStyle(Theme.text)
+            .autocorrectionDisabled()
+            #if os(iOS)
+            .textInputAutocapitalization(.never)
+            .keyboardType(.asciiCapable)
+            #endif
     }
 
     private var symbol: String {
