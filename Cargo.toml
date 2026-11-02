@@ -12,8 +12,11 @@ repository = "https://github.com/lenilsonjr/bud"
 [workspace.lints.clippy]
 all = "warn"
 
-# netdev 0.46.3 does not compile for iOS: its IPv6 flags module reaches a libc struct that
-# exists for macOS only. The fix is upstream but only in 0.47, which netwatch (via iroh) does
-# not take yet, so the fixed commit, still at version 0.46.3, stands in until netwatch moves.
+# Two crates under iroh stop compiling for iOS and tvOS with libc 0.2.190 and later, which
+# moved the Apple routing-socket and interface definitions behind a macOS-only gate:
+# - netdev 0.46.3 is patched to its upstream iOS fix (public APIs only; still version 0.46.3,
+#   since netwatch does not take 0.47 yet);
+# - netwatch 0.19.3 has no fix yet, so Cargo.lock pins libc at 0.2.189, the last release that
+#   defines those symbols for every Apple target. Do not bump libc until netwatch gates them.
 [patch.crates-io]
 netdev = { git = "https://github.com/shellrow/netdev", rev = "b3bfb0fb5595cd143bfa0b9f07d1ad6e0ef0c313" }
