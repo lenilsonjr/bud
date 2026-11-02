@@ -94,8 +94,8 @@ struct DocumentView: View {
 
     // MARK: body
 
-    /// Reading, the body shows with headings, bullets, bold and links coloured; a click opens the
-    /// plain editor in its place, and the colours return when the editor loses focus.
+    /// Reading, the body is a page: headings, bullets, bold, links; a click opens the plain
+    /// editor with the source in its place, and the page returns when the editor loses focus.
     @ViewBuilder private var bodyEditor: some View {
         if editing {
             TextEditor(text: $draft)
@@ -112,7 +112,7 @@ struct DocumentView: View {
                     Text("Nothing written yet. Click to write.")
                         .foregroundStyle(Theme.text3)
                 } else {
-                    Text(highlighted(draft))
+                    RenderedBody(source: draft)
                 }
             }
             .textRole(.body)
@@ -120,27 +120,6 @@ struct DocumentView: View {
             .contentShape(Rectangle())
             .onTapGesture { editing = true }
         }
-    }
-
-    private func highlighted(_ text: String) -> AttributedString {
-        var out = AttributedString(text)
-        out.foregroundColor = Theme.text
-        for span in MarkdownHighlighter.spans(in: text) {
-            guard let lower = AttributedString.Index(String.Index(utf16Offset: span.range.lowerBound, in: text), within: out),
-                  let upper = AttributedString.Index(String.Index(utf16Offset: span.range.upperBound, in: text), within: out)
-            else { continue }
-            switch span.kind {
-            case .heading:
-                out[lower..<upper].font = Theme.font(.heading)
-            case .bullet:
-                out[lower..<upper].foregroundColor = Theme.leaf
-            case .bold:
-                out[lower..<upper].font = Theme.font(.cardTitle)
-            case .link:
-                out[lower..<upper].foregroundColor = Theme.amethyst
-            }
-        }
-        return out
     }
 
     private func scheduleSave() {
@@ -199,6 +178,50 @@ struct DocumentView: View {
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
         }
+    }
+}
+
+/// The body as a page: each block from `MarkdownBlocks` drawn in the type scale, links in
+/// amethyst and clickable, paragraphs with 1.55 line height.
+struct RenderedBody: View {
+    let source: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(MarkdownBlocks.parse(source).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .heading(let level, let text):
+                    Text(MarkdownBlocks.inline(text))
+                        .textRole(level == 1 ? .title : .heading)
+                        .foregroundStyle(Theme.text)
+                        .padding(.top, level == 1 ? 4 : 2)
+                case .bullets(let items):
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Circle()
+                                    .fill(Theme.leaf)
+                                    .frame(width: 5, height: 5)
+                                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
+                                paragraph(item)
+                            }
+                            .padding(.leading, 4)
+                        }
+                    }
+                case .paragraph(let text):
+                    paragraph(text)
+                }
+            }
+        }
+        .tint(Theme.amethyst)
+    }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(MarkdownBlocks.inline(text))
+            .textRole(.body)
+            .lineSpacing(14 * 0.55)
+            .foregroundStyle(Theme.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
