@@ -5,9 +5,8 @@ What it makes
   team/certs.tar.enc      certs/distribution.p12  (Apple Distribution — signs the apps, all platforms)
                           certs/installer.p12     (Mac Installer Distribution — signs the macOS .pkg)
                           certs/AppleWWDRCAG*.cer (the Apple intermediate each leaf chains to)
-  <slug>/profiles.tar.enc profiles/<App> iOS App Store.mobileprovision
-                          profiles/<App> macOS App Store.provisionprofile
-                          profiles/<App> tvOS App Store.mobileprovision
+  <slug>/profiles.tar.enc profiles/<name>.mobileprovision | .provisionprofile — one per --profile,
+                          or by default "<App> iOS App Store", "<App> macOS App Store", "<App> tvOS App Store"
 
 CI fetches both with a read-only key (see .github/workflows/testflight.yml); fastlane imports them
 (fastlane/Fastfile, prepare_signing). Private keys exist in plaintext only inside a temp dir that is
@@ -22,7 +21,12 @@ the temp dir and its path printed; upload it by hand rather than creating new ce
 
 Certificates are account-wide, so they are created ONCE per team. For a second app on the same team run
 with --reuse-certs DIR (DIR holds the decrypted certs/ from a previous run) and only profiles are made.
-APP_NAME must match the name fastlane/Fastfile spells in PROFILE_NAMES ("Bud iOS App Store", …).
+
+Which profiles: by default one per platform (iOS, macOS, tvOS) for APP_BUNDLE_ID, named
+"<APP_NAME> <platform> App Store". An app with extra signed targets (an extension, a watch app) or
+fewer platforms lists its profiles explicitly instead, one --profile per signed bundle id:
+  --profile iOS:com.example.app:"App App Store" --profile iOS:com.example.app.widgets:"App widgets App Store"
+The names must match what fastlane/Fastfile spells in PROFILE_NAMES.
 
 Environment
   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8   App Store Connect API key (ADMIN role) and path to its .p8
@@ -41,9 +45,9 @@ API = "https://api.appstoreconnect.apple.com"
 os.environ.setdefault("AWS_REQUEST_CHECKSUM_CALCULATION", "when_required")
 os.environ.setdefault("AWS_RESPONSE_CHECKSUM_VALIDATION", "when_required")
 CERT_TYPES = [("distribution", "DISTRIBUTION"), ("installer", "MAC_INSTALLER_DISTRIBUTION")]
-PROFILE_TYPES = [("iOS", "IOS_APP_STORE", "mobileprovision"),
-                 ("macOS", "MAC_APP_STORE", "provisionprofile"),
-                 ("tvOS", "TVOS_APP_STORE", "mobileprovision")]
+PROFILE_KINDS = {"iOS":   ("IOS_APP_STORE",  "mobileprovision"),   # also signs watchOS targets
+                 "macOS": ("MAC_APP_STORE",  "provisionprofile"),
+                 "tvOS":  ("TVOS_APP_STORE", "mobileprovision")}
 
 
 def env(name):
@@ -181,12 +185,27 @@ def resolve_bundle_id(asc, bundle_id):
     return bids[0]["id"]
 
 
-def create_profiles(asc, work, app_name, bid, cert_id):
+def profile_specs(args, app_name, bundle_id):
+    """[(kind, bundle_id, name)] — from --profile, or the three-platform default for APP_BUNDLE_ID."""
+    if not args.profile:
+        return [(k, bundle_id, f"{app_name} {k} App Store") for k in PROFILE_KINDS]
+    specs = []
+    for raw in args.profile:
+        parts = raw.split(":", 2)
+        if len(parts) != 3 or parts[0] not in PROFILE_KINDS or not parts[1] or not parts[2]:
+            sys.exit(f"--profile wants KIND:BUNDLE_ID:NAME with KIND one of {', '.join(PROFILE_KINDS)}: {raw!r}")
+        specs.append(tuple(parts))
+    if len({s[2] for s in specs}) != len(specs):
+        sys.exit("--profile names must be unique")
+    return specs
+
+
+def create_profiles(asc, work, specs, cert_id):
+    """specs: [(kind, bundle_id_record_id, name)] — same-name profiles are replaced."""
     pdir = os.path.join(work, "profiles")
     os.makedirs(pdir, exist_ok=True)
-    made = {}
-    for plat, ptype, ext in PROFILE_TYPES:
-        name = f"{app_name} {plat} App Store"
+    for kind, bid, name in specs:
+        ptype, ext = PROFILE_KINDS[kind]
         for old in asc.must("GET", f"/v1/profiles?filter[name]={urllib.request.quote(name)}&fields[profiles]=name").get("data", []):
             if old["attributes"]["name"] == name:
                 asc.must("DELETE", f"/v1/profiles/{old['id']}")
@@ -198,8 +217,7 @@ def create_profiles(asc, work, app_name, bid, cert_id):
         content = base64.b64decode(r["data"]["attributes"]["profileContent"])
         path = os.path.join(pdir, f"{name}.{ext}")
         open(path, "wb").write(content)
-        made[plat] = {"id": r["data"]["id"], "name": name, "file": os.path.basename(path)}
-        print(f"  profile {plat:<6} {r['data']['id']}  {name}")
+        print(f"  profile {kind:<6} {r['data']['id']}  {name}")
     return pdir
 
 
@@ -263,16 +281,19 @@ def shred(path):
     shutil.rmtree(path, ignore_errors=True)
 
 
-def preflight(asc, bundle_id, endpoint, bucket):
-    """--check: prove every prerequisite (auth, bundle id, certificate state, bucket) and create nothing."""
+def preflight(asc, specs, endpoint, bucket):
+    """--check: prove every prerequisite (auth, bundle ids, certificate state, bucket) and create nothing."""
     import boto3
     ok = True
     print("preflight:")
     print("  openssl:", sh("openssl", "version").decode().strip())
-    bids = [b for b in asc.must("GET", f"/v1/bundleIds?filter[identifier]={bundle_id}&fields[bundleIds]=identifier,platform").get("data", [])
-            if b["attributes"]["identifier"] == bundle_id]
-    print(f"  ASC auth OK; bundle id {bundle_id}: " + (f"{bids[0]['id']} ({bids[0]['attributes']['platform']})" if bids else "NOT FOUND"))
-    ok = ok and bool(bids)
+    asc.must("GET", "/v1/certificates?limit=1")
+    print("  ASC auth OK")
+    for kind, bundle_id, name in specs:
+        bids = [b for b in asc.must("GET", f"/v1/bundleIds?filter[identifier]={bundle_id}&fields[bundleIds]=identifier,platform").get("data", [])
+                if b["attributes"]["identifier"] == bundle_id]
+        print(f"  profile {kind:<6} {name!r} for {bundle_id}: " + (f"{bids[0]['id']} ({bids[0]['attributes']['platform']})" if bids else "bundle id NOT FOUND"))
+        ok = ok and bool(bids)
     for _, ctype in CERT_TYPES:
         ex = asc.must("GET", f"/v1/certificates?filter[certificateType]={ctype}&fields[certificates]=name").get("data", [])
         print(f"  existing {ctype:<26} {len(ex)}" + ("  (a run will refuse without --reuse-certs / --force-new-certs)" if ex else "  (none — a run will create one)"))
@@ -296,18 +317,21 @@ def main():
                     help="preflight only: verify auth, bundle id, existing certificates and bucket access; create nothing")
     ap.add_argument("--reuse-certs", metavar="DIR", help="decrypted certs/ dir from a previous run; make profiles only")
     ap.add_argument("--force-new-certs", action="store_true", help="create certificates even if the account already has that type")
+    ap.add_argument("--profile", action="append", metavar="KIND:BUNDLE_ID:NAME",
+                    help="a profile to make (repeatable; KIND iOS|macOS|tvOS); default: all three for APP_BUNDLE_ID")
     a = ap.parse_args()
 
     asc = ASC(env("ASC_KEY_ID"), env("ASC_ISSUER_ID"), env("ASC_KEY_P8"))
     app_name, slug, bundle_id = env("APP_NAME"), env("APP_SLUG"), env("APP_BUNDLE_ID")
     endpoint, bucket = env("B2_SIGNING_ENDPOINT"), env("B2_SIGNING_BUCKET")
     env("SIGNING_PASSPHRASE"); env("AWS_ACCESS_KEY_ID"); env("AWS_SECRET_ACCESS_KEY")
+    specs = profile_specs(a, app_name, bundle_id)
     if a.check:
-        preflight(asc, bundle_id, endpoint, bucket)
+        preflight(asc, specs, endpoint, bucket)
 
     # Every refusal happens here, before the first write to Apple.
     print("checks:")
-    bid = resolve_bundle_id(asc, bundle_id)
+    specs = [(kind, resolve_bundle_id(asc, bundle_id), name) for kind, bundle_id, name in specs]
     if a.reuse_certs:
         cert_id = dist_cert_id(asc, a.reuse_certs)
         print(f"  reusing certificates from {a.reuse_certs} (distribution cert {cert_id})")
@@ -335,7 +359,7 @@ def main():
                 rescue_certs(work, f"upload of team/certs.tar.enc failed: {e}")
 
         print("profiles:")
-        create_profiles(asc, work, app_name, bid, cert_id)
+        create_profiles(asc, work, specs, cert_id)
         print("bundle (profiles):")
         enc = encrypt_dir(work, "profiles")
         try:
