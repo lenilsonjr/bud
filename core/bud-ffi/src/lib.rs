@@ -142,10 +142,186 @@ impl VaultWatch {
     }
 }
 
+/// How a node reaches peers that are not on the same network.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum RelaySetting {
+    /// The public relays.
+    Default,
+    /// A relay of the person's own.
+    Custom { url: String },
+    /// No relay: direct connections only.
+    Off,
+}
+
+impl From<RelaySetting> for bud_core::Relay {
+    fn from(setting: RelaySetting) -> Self {
+        match setting {
+            RelaySetting::Default => bud_core::Relay::Default,
+            RelaySetting::Custom { url } => bud_core::Relay::Custom(url),
+            RelaySetting::Off => bud_core::Relay::Off,
+        }
+    }
+}
+
+impl From<bud_core::Relay> for RelaySetting {
+    fn from(relay: bud_core::Relay) -> Self {
+        match relay {
+            bud_core::Relay::Default => RelaySetting::Default,
+            bud_core::Relay::Custom(url) => RelaySetting::Custom { url },
+            bud_core::Relay::Off => RelaySetting::Off,
+        }
+    }
+}
+
+/// A peer the vault remembers. `last_seen` is seconds since the epoch, none before the first
+/// session.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PeerRecord {
+    pub id: String,
+    pub relay: RelaySetting,
+    pub last_seen: Option<u64>,
+}
+
+impl From<bud_core::PeerInfo> for PeerRecord {
+    fn from(peer: bud_core::PeerInfo) -> Self {
+        PeerRecord {
+            id: peer.id,
+            relay: peer.relay.into(),
+            last_seen: peer.last_seen.and_then(|seen| u64::try_from(seen).ok()),
+        }
+    }
+}
+
+/// What a node is doing: `idle` is true when no sync is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct SyncState {
+    pub idle: bool,
+    pub connected_peers: u64,
+    pub pending_changes: u64,
+}
+
+/// What one sync did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct SyncSummary {
+    pub created: u64,
+    pub updated: u64,
+    pub written: u64,
+    pub moved: u64,
+    pub ops: u64,
+}
+
+impl From<bud_core::SyncReport> for SyncSummary {
+    fn from(report: bud_core::SyncReport) -> Self {
+        SyncSummary {
+            created: report.created as u64,
+            updated: report.updated as u64,
+            written: report.written as u64,
+            moved: report.moved as u64,
+            ops: report.ops as u64,
+        }
+    }
+}
+
+/// A running peer node for one open vault. It stops when [`PeerNode::stop`] is called or this
+/// object is released.
+#[derive(uniffi::Object)]
+pub struct PeerNode {
+    node: Mutex<Option<bud_core::Node>>,
+}
+
+impl PeerNode {
+    fn with<T>(&self, call: impl FnOnce(&bud_core::Node) -> bud_core::Result<T>) -> Result<T> {
+        let guard = self
+            .node
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match guard.as_ref() {
+            Some(node) => Ok(call(node)?),
+            None => Err(bud_core::Error::Invalid("peer: the node is closed".to_string()).into()),
+        }
+    }
+}
+
+#[uniffi::export]
+impl PeerNode {
+    /// Stop the node. Every later call on it fails.
+    pub fn stop(&self) {
+        self.node
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+    }
+
+    /// This node's id.
+    pub fn id(&self) -> Result<String> {
+        self.with(|node| Ok(node.id()))
+    }
+
+    /// A pairing ticket as a string. With `with_addresses` it carries the addresses the node
+    /// listens on, for a peer that cannot look the node up.
+    pub fn ticket(&self, with_addresses: bool) -> Result<String> {
+        self.with(|node| Ok(Self::ticket_of(node, with_addresses)?.encode()))
+    }
+
+    /// The same ticket as the modules of a QR code, row by row; `true` is dark.
+    pub fn ticket_qr(&self, with_addresses: bool) -> Result<Vec<Vec<bool>>> {
+        self.with(|node| {
+            let qr = Self::ticket_of(node, with_addresses)?.qr()?;
+            Ok(qr
+                .dark
+                .chunks(qr.width.max(1))
+                .map(<[bool]>::to_vec)
+                .collect())
+        })
+    }
+
+    /// Pair with the vault that made `ticket`.
+    pub fn accept_ticket(&self, ticket: String) -> Result<PeerRecord> {
+        self.with(|node| Ok(node.accept_ticket(&ticket)?.into()))
+    }
+
+    pub fn peers(&self) -> Result<Vec<PeerRecord>> {
+        self.with(|node| Ok(node.peers()?.into_iter().map(Into::into).collect()))
+    }
+
+    pub fn forget_peer(&self, id: String) -> Result<()> {
+        self.with(|node| node.forget_peer(&id))
+    }
+
+    /// Look at the folder, exchange changes with every peer and wait for it.
+    pub fn sync_now(&self) -> Result<SyncSummary> {
+        self.with(|node| Ok(node.sync_now()?.into()))
+    }
+
+    pub fn state(&self) -> Result<SyncState> {
+        self.with(|node| {
+            let state = node.state()?;
+            Ok(SyncState {
+                idle: !state.syncing,
+                connected_peers: state.connected as u64,
+                pending_changes: state.pending as u64,
+            })
+        })
+    }
+}
+
+impl PeerNode {
+    fn ticket_of(
+        node: &bud_core::Node,
+        with_addresses: bool,
+    ) -> bud_core::Result<bud_core::Ticket> {
+        if with_addresses {
+            node.ticket_with_addresses()
+        } else {
+            node.ticket()
+        }
+    }
+}
+
 /// The vault of bud-core behind a mutex.
 #[derive(uniffi::Object)]
 pub struct Vault {
-    inner: Mutex<bud_core::Vault>,
+    inner: Arc<Mutex<bud_core::Vault>>,
 }
 
 /// Open the vault at `vault_dir` with its index at `index_path`, and bring the index up to date.
@@ -154,7 +330,17 @@ pub fn open_vault(vault_dir: String, index_path: String) -> Result<Arc<Vault>> {
     let mut vault = bud_core::Vault::open(vault_dir, index_path)?;
     vault.rescan()?;
     Ok(Arc::new(Vault {
-        inner: Mutex::new(vault),
+        inner: Arc::new(Mutex::new(vault)),
+    }))
+}
+
+/// Start a peer node for `vault`: it finds peers on the local network, syncs with them every few
+/// seconds and answers the ones that sync with it.
+#[uniffi::export]
+pub fn start_node(vault: Arc<Vault>, relay: RelaySetting) -> Result<Arc<PeerNode>> {
+    let node = bud_core::Node::start(Arc::clone(&vault.inner), relay.into())?;
+    Ok(Arc::new(PeerNode {
+        node: Mutex::new(Some(node)),
     }))
 }
 

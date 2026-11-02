@@ -348,6 +348,28 @@ impl Vault {
         Ok(report)
     }
 
+    /// How many files differ from what their document knows, or have no document yet: the edits
+    /// the next sync will take. Looks at the index, so call after [`Vault::rescan`].
+    pub fn pending_changes(&self) -> Result<usize> {
+        let known: HashMap<String, String> = {
+            let conn = lock(&self.conn);
+            let mut stmt = conn.prepare("SELECT path, known_text FROM docs")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        let mut pending = 0;
+        for bud in self.all()? {
+            if !bud.path.ends_with(".md") {
+                continue;
+            }
+            let file = std::fs::read_to_string(self.root.join(&bud.path)).unwrap_or_default();
+            if known.get(&bud.path) != Some(&file) {
+                pending += 1;
+            }
+        }
+        Ok(pending)
+    }
+
     /// The identity of the bud's document.
     pub fn doc_id(&self, path: &str) -> Result<Option<String>> {
         Ok(lock(&self.conn)

@@ -34,9 +34,11 @@ use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMode, RelayUrl, SecretKey};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
@@ -171,6 +173,18 @@ pub struct PeerInfo {
     pub id: String,
     pub relay: Relay,
     pub addrs: Vec<SocketAddr>,
+    /// When the peer last took part in a session, in seconds since the epoch; none before the
+    /// first.
+    pub last_seen: Option<i64>,
+}
+
+/// What a node is doing: whether a sync is running, how many peers it reached on their last
+/// session, and how many files have edits the next sync will take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeState {
+    pub syncing: bool,
+    pub connected: usize,
+    pub pending: usize,
 }
 
 /// How a node starts.
@@ -251,24 +265,53 @@ impl Vault {
 
     fn peer_list(&self) -> Result<Vec<PeerInfo>> {
         let conn = lock(&self.conn);
-        let mut stmt = conn.prepare("SELECT node, relay, addrs FROM peers ORDER BY added, node")?;
+        let mut stmt = conn.prepare(
+            "SELECT peers.node, relay, addrs, seen FROM peers
+             LEFT JOIN peer_seen ON peer_seen.node = peers.node ORDER BY added, peers.node",
+        )?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
+                r.get::<_, Option<i64>>(3)?,
             ))
         })?;
         let mut peers = Vec::new();
         for row in rows {
-            let (id, relay, addrs) = row?;
+            let (id, relay, addrs, last_seen) = row?;
             peers.push(PeerInfo {
                 id,
                 relay: Relay::from_text(&relay),
                 addrs: addrs.lines().filter_map(|a| a.parse().ok()).collect(),
+                last_seen,
             });
         }
         Ok(peers)
+    }
+
+    /// Note that a peer took part in a session just now.
+    fn touch_peer(&self, id: &str) -> Result<()> {
+        let seen = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        lock(&self.conn).execute(
+            "INSERT INTO peer_seen (node, seen) VALUES (?1, ?2)
+             ON CONFLICT(node) DO UPDATE SET seen = excluded.seen",
+            params![id, seen],
+        )?;
+        Ok(())
+    }
+
+    /// Forget a peer. The vault key stays: it is the vault's, not the peer's.
+    fn forget(&self, id: &str) -> Result<()> {
+        let conn = lock(&self.conn);
+        conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
+        match conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? {
+            0 => Err(Error::Invalid(format!("peer: no peer {id}"))),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -432,6 +475,26 @@ struct Shared {
     endpoint: Endpoint,
     vault: Arc<Mutex<Vault>>,
     relay: Relay,
+    /// Peers whose last session worked.
+    connected: Mutex<HashSet<String>>,
+    /// Sessions running now, dialed or answered.
+    active: AtomicUsize,
+}
+
+/// Counts a running session for as long as it lives.
+struct Busy<'a>(&'a AtomicUsize);
+
+impl<'a> Busy<'a> {
+    fn new(count: &'a AtomicUsize) -> Busy<'a> {
+        count.fetch_add(1, Ordering::SeqCst);
+        Busy(count)
+    }
+}
+
+impl Drop for Busy<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Shared {
@@ -439,8 +502,18 @@ impl Shared {
         lock(&self.vault)
     }
 
+    fn reached(&self, id: &str) {
+        let _ = self.vault().touch_peer(id);
+        lock(&self.connected).insert(id.to_string());
+    }
+
+    fn lost(&self, id: &str) {
+        lock(&self.connected).remove(id);
+    }
+
     /// Look at the folder, then sync with every peer. An error only when no peer could be synced.
     async fn sync_all(&self) -> Result<SyncReport> {
+        let _busy = Busy::new(&self.active);
         let mut report = {
             let mut vault = self.vault();
             vault.rescan()?;
@@ -454,9 +527,16 @@ impl Shared {
                 Ok(Ok(done)) => {
                     report.add(done);
                     reached = true;
+                    self.reached(&peer.id);
                 }
-                Ok(Err(err)) => failure = failure.or(Some(err)),
-                Err(_) => failure = failure.or(Some(peer_error("a peer did not answer"))),
+                Ok(Err(err)) => {
+                    self.lost(&peer.id);
+                    failure = failure.or(Some(err));
+                }
+                Err(_) => {
+                    self.lost(&peer.id);
+                    failure = failure.or(Some(peer_error("a peer did not answer")));
+                }
             }
         }
         match failure {
@@ -511,6 +591,7 @@ impl Shared {
     /// Answer one session a peer opened. A peer that cannot seal a message with the vault key is
     /// turned away and learns nothing.
     async fn serve(&self, incoming: Incoming) -> Result<()> {
+        let _busy = Busy::new(&self.active);
         let connection = incoming.await.map_err(peer_error)?;
         let remote = connection.remote_id();
         let key = self.vault().peer_key()?;
@@ -547,6 +628,7 @@ impl Shared {
         self.vault().apply_updates(&updates)?;
         send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
         send.finish().map_err(peer_error)?;
+        self.reached(&id_text(&remote));
         let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
         Ok(())
     }
@@ -584,6 +666,8 @@ impl Node {
             endpoint,
             vault,
             relay: options.relay,
+            connected: Mutex::new(HashSet::new()),
+            active: AtomicUsize::new(0),
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
@@ -676,6 +760,7 @@ impl Node {
             id: id_text(&id),
             relay: ticket.relay.clone(),
             addrs: ticket.addrs.clone(),
+            last_seen: None,
         };
         let vault = self.shared.vault();
         if vault.peer_list()?.iter().any(|known| known.id == peer.id) {
@@ -688,6 +773,29 @@ impl Node {
 
     pub fn peers(&self) -> Result<Vec<PeerInfo>> {
         self.shared.vault().peer_list()
+    }
+
+    /// Forget a peer by its id. It is no longer synced with; a ticket pairs it again.
+    pub fn forget_peer(&self, id: &str) -> Result<()> {
+        self.shared.vault().forget(id)?;
+        self.shared.lost(id);
+        Ok(())
+    }
+
+    /// Whether a sync is running, how many peers the last session reached, and how many files wait
+    /// to be synced. A peer that only dials this node counts as connected until a dial to it
+    /// fails.
+    pub fn state(&self) -> Result<NodeState> {
+        let pending = {
+            let mut vault = self.shared.vault();
+            vault.rescan()?;
+            vault.pending_changes()?
+        };
+        Ok(NodeState {
+            syncing: self.shared.active.load(Ordering::SeqCst) > 0,
+            connected: lock(&self.shared.connected).len(),
+            pending,
+        })
     }
 
     /// Look at the folder, then exchange changes with every peer and wait for it. Do not call it

@@ -66,3 +66,8 @@ CREATE TABLE IF NOT EXISTS peers (
     addrs TEXT NOT NULL DEFAULT '',
     added INTEGER NOT NULL
 );
+-- When each peer last took part in a session, in seconds since the epoch.
+CREATE TABLE IF NOT EXISTS peer_seen (
+    node TEXT PRIMARY KEY NOT NULL,
+    seen INTEGER NOT NULL
+);
