@@ -1,0 +1,138 @@
+import Foundation
+
+/// Whether a bud is a note or a to-do, as the vault's record says.
+public enum BudKind: String, Codable, Sendable {
+    case note, todo
+}
+
+/// Where a bud lives: Everything's tree, the Inbox, the Archive (a finished thread) or the Trash.
+public enum BudPlace: String, Codable, Sendable {
+    case everything, inbox, archive, trash
+}
+
+/// One bud as a vault has it, flat. It mirrors the record the Rust bindings export, with dates
+/// kept as `Date` so a round trip through the in-memory tree loses nothing.
+public struct BudRecord: Codable, Hashable, Sendable {
+    /// Where the bud is in the vault. The memory vault uses the bud's id.
+    public var path: String
+    /// The path of the bud above; nil for a top-level bud.
+    public var parent: String?
+    public var title: String
+    public var kind: BudKind
+    public var state: BudState?
+    public var when: Date?
+    public var due: Date?
+    public var pinned: Bool
+    public var created: Date?
+    public var source: String?
+    public var body: String
+    public var place: BudPlace
+
+    public init(
+        path: String, parent: String? = nil, title: String, kind: BudKind = .note, state: BudState? = nil,
+        when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date? = nil, source: String? = nil,
+        body: String = "", place: BudPlace = .everything
+    ) {
+        self.path = path
+        self.parent = parent
+        self.title = title
+        self.kind = kind
+        self.state = state
+        self.when = when
+        self.due = due
+        self.pinned = pinned
+        self.created = created
+        self.source = source
+        self.body = body
+        self.place = place
+    }
+}
+
+/// A bud with the titles above it, root first.
+public struct RowRecord: Hashable, Sendable {
+    public var bud: BudRecord
+    public var trail: [String]
+
+    public init(bud: BudRecord, trail: [String]) {
+        self.bud = bud
+        self.trail = trail
+    }
+}
+
+/// A search result.
+public struct HitRecord: Hashable, Sendable {
+    public var path: String
+    public var title: String
+    public var trail: [String]
+    public var snippet: String
+
+    public init(path: String, title: String, trail: [String], snippet: String) {
+        self.path = path
+        self.title = title
+        self.trail = trail
+        self.snippet = snippet
+    }
+}
+
+/// What is under a bud: every descendant, and the open to-dos among them.
+public struct CountsRecord: Hashable, Sendable {
+    public var inside: Int
+    public var openTodos: Int
+
+    public init(inside: Int, openTodos: Int) {
+        self.inside = inside
+        self.openTodos = openTodos
+    }
+}
+
+public enum VaultError: Error, Equatable, Sendable {
+    /// No bud at that path.
+    case notFound(String)
+    /// The vault refuses the change, such as a move under the bud's own branch.
+    case refused(String)
+}
+
+/// What `watch` hands back; cancelling stops the callbacks.
+public final class VaultWatch: @unchecked Sendable {
+    private let stop: @Sendable () -> Void
+
+    public init(stop: @escaping @Sendable () -> Void) { self.stop = stop }
+
+    public func cancel() { stop() }
+}
+
+/// Where BudKit reads and writes buds. The app plugs in a vault; a view never touches a file.
+/// Paths name buds; a vault that renames or moves a bud returns the new path.
+public protocol Vault: Sendable {
+    /// Every bud, parents before children, siblings in their order, the Trash's buds last.
+    func snapshot() async throws -> [BudRecord]
+
+    /// Returns the new bud's path. A nil parent is the top level. `preferredPath` is the path the
+    /// caller would like the bud to have; a vault that names its own buds may ignore it.
+    func create(parent: String?, title: String, kind: BudKind, source: String?, preferredPath: String?) async throws -> String
+    func setBody(_ path: String, _ text: String) async throws
+    /// A nil state makes the bud a note.
+    func setState(_ path: String, _ state: BudState?) async throws
+    func setWhen(_ path: String, _ when: Date?) async throws
+    func setDue(_ path: String, _ due: Date?) async throws
+    func setPinned(_ path: String, _ pinned: Bool) async throws
+    /// Returns the new path.
+    func rename(_ path: String, to title: String) async throws -> String
+    /// Gives the bud and its branch a new parent, last among its children; nil is the top level.
+    /// Returns the new path.
+    func move(_ path: String, to parent: String?) async throws -> String
+    func trash(_ path: String) async throws
+    /// Returns the restored path.
+    func restore(_ path: String) async throws -> String
+    func emptyTrash() async throws
+    func deleteForever(_ path: String) async throws
+
+    func search(_ query: String, limit: Int) async throws -> [HitRecord]
+    /// The open to-dos due on or before the day, and the buds scheduled for it.
+    func today(_ date: Date) async throws -> [RowRecord]
+    func counts(_ path: String) async throws -> CountsRecord
+    /// The open to-do to do next under a bud, or anywhere when `under` is nil.
+    func nextStep(under: String?, date: Date) async throws -> RowRecord?
+    /// Calls back once per batch of changes made outside the app.
+    func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch
+}

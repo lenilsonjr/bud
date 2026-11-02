@@ -286,18 +286,18 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func add(_ text: String, todo: Bool, under parent: UUID) -> Bud {
+    public mutating func add(_ text: String, todo: Bool, under parent: UUID, id: UUID = UUID()) -> Bud {
         let last = children(of: parent).last?.order ?? 0
-        let bud = Bud(text: text, state: todo ? .open : nil, parent: parent, order: last + 1)
+        let bud = Bud(id: id, text: text, state: todo ? .open : nil, parent: parent, order: last + 1)
         buds.append(bud)
         return bud
     }
 
     /// Capture: one line, no place in mind. It lands in the Inbox as a note, after the last.
     @discardableResult
-    public mutating func capture(_ line: String, source: String, created: Date = Date()) -> Bud {
+    public mutating func capture(_ line: String, source: String, created: Date = Date(), id: UUID = UUID()) -> Bud {
         let last = children(of: inboxID).last?.order ?? 0
-        let bud = Bud(text: line, parent: inboxID, order: last + 1, created: created, source: source)
+        let bud = Bud(id: id, text: line, parent: inboxID, order: last + 1, created: created, source: source)
         buds.append(bud)
         return bud
     }
