@@ -4,7 +4,9 @@ import XCTest
 final class FlagEnumTests: XCTestCase {
     func testTheChoicesReadAsTheirLabels() {
         XCTAssertEqual(Appearance.allCases.map(\.rawValue), ["System", "Light", "Dark"])
-        XCTAssertEqual(PhoneFilesLayout.allCases.map(\.rawValue), ["Split", "Sidebar"])
+        XCTAssertEqual(PhoneSplit.allCases.map(\.rawValue), ["30 / 70", "40 / 60"])
+        XCTAssertEqual(PhoneSplit.thirty.share, 0.3)
+        XCTAssertEqual(PhoneSplit.forty.share, 0.4)
     }
 }
 
@@ -21,17 +23,17 @@ final class FlagsTests: XCTestCase {
     func testAFreshInstallHasTheDefaults() throws {
         let flags = Flags(defaults: try freshDefaults())
         XCTAssertEqual(flags.appearance, .system)
-        XCTAssertEqual(flags.phoneFilesLayout, .split)
+        XCTAssertEqual(flags.phoneSplit, .thirty)
     }
 
     func testAChoiceIsKeptAndReadBack() throws {
         let defaults = try freshDefaults()
         let flags = Flags(defaults: defaults)
         flags.appearance = .dark
-        flags.phoneFilesLayout = .sidebar
+        flags.phoneSplit = .forty
         let again = Flags(defaults: defaults)
         XCTAssertEqual(again.appearance, .dark)
-        XCTAssertEqual(again.phoneFilesLayout, .sidebar)
+        XCTAssertEqual(again.phoneSplit, .forty)
     }
 
     func testAnUnknownStoredValueFallsBackToTheDefault() throws {

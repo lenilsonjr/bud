@@ -53,12 +53,7 @@ import SwiftUI
 /// at the bottom edge above the safe area on a compact width. A click on the scrim closes it.
 struct ModalHost: View {
     @ObservedObject var store: BudStore
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    private var compact: Bool { sizeClass == .compact }
-    #else
-    private var compact: Bool { false }
-    #endif
+    @Environment(\.compact) private var compact
 
     var body: some View {
         ZStack {

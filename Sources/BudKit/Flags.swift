@@ -10,11 +10,19 @@ public enum Appearance: String, CaseIterable, Sendable {
     case dark = "Dark"
 }
 
-/// The Files view on a phone: the tree above the page with a handle between, or a sidebar that
-/// slides in from the left. A flag while the two are tried on a device.
-public enum PhoneFilesLayout: String, CaseIterable, Sendable {
-    case split = "Split"
-    case sidebar = "Sidebar"
+/// How much of a phone's height the file navigator takes above the page: 30 / 70 or 40 / 60.
+/// A flag while the two are tried on a device.
+public enum PhoneSplit: String, CaseIterable, Sendable {
+    case thirty = "30 / 70"
+    case forty = "40 / 60"
+
+    /// The navigator's share of the height.
+    public var share: Double {
+        switch self {
+        case .thirty: return 0.3
+        case .forty: return 0.4
+        }
+    }
 }
 
 #if canImport(Combine)
@@ -27,7 +35,7 @@ public final class Flags: ObservableObject {
 
     enum Key {
         static let appearance = "bud.appearance"
-        static let phoneFilesLayout = "bud.try.phoneFilesLayout"
+        static let phoneSplit = "bud.try.phoneSplit"
     }
 
     private let defaults: UserDefaults
@@ -36,14 +44,14 @@ public final class Flags: ObservableObject {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
 
-    @Published public var phoneFilesLayout: PhoneFilesLayout {
-        didSet { defaults.set(phoneFilesLayout.rawValue, forKey: Key.phoneFilesLayout) }
+    @Published public var phoneSplit: PhoneSplit {
+        didSet { defaults.set(phoneSplit.rawValue, forKey: Key.phoneSplit) }
     }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         appearance = defaults.string(forKey: Key.appearance).flatMap(Appearance.init(rawValue:)) ?? .system
-        phoneFilesLayout = defaults.string(forKey: Key.phoneFilesLayout).flatMap(PhoneFilesLayout.init(rawValue:)) ?? .split
+        phoneSplit = defaults.string(forKey: Key.phoneSplit).flatMap(PhoneSplit.init(rawValue:)) ?? .thirty
     }
 }
 #endif

@@ -6,6 +6,12 @@ public struct BudRootView: View {
     @StateObject private var store: BudStore
     @ObservedObject private var flags = Flags.shared
     @State private var searching = false
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var compact: Bool { sizeClass == .compact }
+    #else
+    @Environment(\.compact) private var compact
+    #endif
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
@@ -40,6 +46,7 @@ public struct BudRootView: View {
         .tint(Theme.leaf)
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
+        .environment(\.compact, compact)
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }
     }
@@ -61,7 +68,8 @@ public struct BudRootView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { searching = false }
             CommandPalette(store: store) { searching = false }
-                .padding(.top, 72)
+                .padding(.horizontal, compact ? 12 : 0)
+                .padding(.top, compact ? 8 : 72)
         }
         .transition(.opacity)
     }

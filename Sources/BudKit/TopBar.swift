@@ -8,34 +8,56 @@ struct TopBar: View {
     @ObservedObject var store: BudStore
     let onAdd: () -> Void
     let onSearch: () -> Void
+    @Environment(\.compact) private var compact
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: compact ? 10 : 14) {
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
             Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
-            breadcrumb
-                .layoutPriority(1)
+            if compact { lastCrumb } else { breadcrumb.layoutPriority(1) }
             Spacer(minLength: 8)
-            if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
-            goAnywhere
-            if store.surface == .canvas { zoom }
-            Button(action: onAdd) {
-                BudButtonLabel(title: "Add here", systemImage: "plus")
+            if compact {
+                if let step = store.nextStep { bullseye(step.bud) }
+                Button(action: onSearch) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(Theme.text2)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Go anywhere")
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                        .foregroundStyle(Theme.text)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Add here")
+            } else {
+                if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
+                goAnywhere
+                if store.surface == .canvas { zoom }
+                Button(action: onAdd) {
+                    BudButtonLabel(title: "Add here", systemImage: "plus")
+                }
+                .buttonStyle(.budSecondary)
             }
-            .buttonStyle(.budSecondary)
             #if os(iOS)
             Button { store.modal = .settings } label: {
                 Image(systemName: "gearshape")
                     .foregroundStyle(Theme.text2)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Settings")
             #endif
         }
-        .padding(.leading, leadingInset)
-        .padding(.trailing, 14)
+        .padding(.leading, compact ? 12 : leadingInset)
+        .padding(.trailing, compact ? 8 : 14)
         .frame(height: 52)
         .frame(maxWidth: .infinity)
         .background(Theme.window)
@@ -85,6 +107,29 @@ struct TopBar: View {
             }
         }
         .lineLimit(1)
+    }
+
+    /// On a phone, only where you are: the last crumb, or the place.
+    private var lastCrumb: some View {
+        Text(placeName ?? store.tree.title(of: store.center))
+            .textRole(.label)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(Theme.text)
+    }
+
+    /// The next step on a phone: the bullseye alone jumps to it.
+    private func bullseye(_ bud: Bud) -> some View {
+        Button {
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = bud.id }
+        } label: {
+            Image(systemName: "scope")
+                .foregroundStyle(Theme.leaf)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Next step: \(Self.shortTitle(bud.text))")
     }
 
     /// The next step: the bullseye jumps to it in the current view, Done closes it from here.
