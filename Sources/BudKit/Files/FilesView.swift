@@ -14,16 +14,28 @@ struct FilesView: View {
         if compact {
             PhoneFilesView(store: store)
         } else {
-            HStack(spacing: 0) {
-                Sidebar(store: store)
-                    .frame(width: Self.sidebarWidth)
-                    .background(Theme.sidebar)
-                Rectangle()
-                    .fill(Theme.line)
-                    .frame(width: 1)
-                FilesPage(store: store)
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    if store.sidebar.isShown(in: geo.size) {
+                        Sidebar(store: store)
+                            .frame(width: Self.sidebarWidth)
+                            .background(Theme.sidebar)
+                        Rectangle()
+                            .fill(Theme.line)
+                            .frame(width: 1)
+                    }
+                    FilesPage(store: store)
+                }
+                .animation(.easeOut(duration: 0.2), value: store.sidebar.isShown(in: geo.size))
+                .onAppear { sync(geo.size) }
+                .onChange(of: geo.size) { _, now in sync(now) }
             }
         }
+    }
+
+    private func sync(_ size: CGSize) {
+        store.surfaceSize = size
+        store.sidebar.resized(to: size)
     }
 }
 
