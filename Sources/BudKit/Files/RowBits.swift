@@ -70,9 +70,11 @@ struct NeutralTag: View {
 
 /// The page column: 760 wide, centred in the main area, as the design draws every page.
 struct PageColumn: ViewModifier {
+    @Environment(\.compact) private var compact
+
     func body(content: Content) -> some View {
         content
-            .padding(28)
+            .padding(compact ? 16 : 28)
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
     }

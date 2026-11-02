@@ -10,6 +10,7 @@ struct OutlinePage: View {
     @State private var showClosed = false
     @State private var enrich = ""
     @State private var moving: Bud? = nil
+    @Environment(\.compact) private var compact
 
     private static let title = TextStyle(typeface: .display, size: 32, weight: 500)
 
@@ -60,17 +61,22 @@ struct OutlinePage: View {
             Text(eyebrow(id))
                 .textRole(.eyebrow)
                 .foregroundStyle(Theme.leaf)
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if compact {
                 Text(id == rootID ? "Everything" : store.tree.title(of: id))
                     .textStyle(Self.title)
                     .foregroundStyle(Theme.text)
-                Spacer(minLength: 12)
-                Button { showClosed.toggle() } label: { BudButtonLabel(title: "Show closed") }
-                    .buttonStyle(showClosed ? .budGhost : .budSecondary)
-                Button { store.modal = .adding(under: id) } label: {
-                    BudButtonLabel(title: id == rootID ? "Capture" : "Enrich", systemImage: "plus")
+                HStack(spacing: 10) {
+                    headerButtons(id)
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.budPrimary)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(id == rootID ? "Everything" : store.tree.title(of: id))
+                        .textStyle(Self.title)
+                        .foregroundStyle(Theme.text)
+                    Spacer(minLength: 12)
+                    headerButtons(id)
+                }
             }
             if hidden > 0 {
                 Text("\(hidden) closed hidden")
@@ -84,6 +90,16 @@ struct OutlinePage: View {
                     .foregroundStyle(Theme.text2)
             }
         }
+    }
+
+    /// Show closed and Enrich (Capture at Everything), beside the title or under it on a phone.
+    @ViewBuilder private func headerButtons(_ id: UUID) -> some View {
+        Button { showClosed.toggle() } label: { BudButtonLabel(title: "Show closed") }
+            .buttonStyle(showClosed ? .budGhost : .budSecondary)
+        Button { store.modal = .adding(under: id) } label: {
+            BudButtonLabel(title: id == rootID ? "Capture" : "Enrich", systemImage: "plus")
+        }
+        .buttonStyle(.budPrimary)
     }
 
     /// PLACE for Everything, PLACE · THREAD for a first-level bud, BUD below that.
