@@ -52,7 +52,7 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
-    func testRendersTheDocument() throws {
+    func testRendersTheOutline() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
         }
@@ -60,8 +60,27 @@ final class SnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
-        store.setBody(newsletter.id, "# First issue\n\n- one story, **one tip**, one date\n- a link to [the club](https://example.org)")
+        let name = try XCTUnwrap(store.tree.children(of: newsletter.id).first { $0.text == "Pick a name" })
         store.openAsFile(newsletter.id)
+        for scheme in [ColorScheme.light, .dark] {
+            let page = OutlinePage(store: store, expanded: [name.id]).frame(width: size.width - FilesView.sidebarWidth, height: size.height)
+            let data = try render(page.background(Theme.canvas), scheme: scheme)
+            let file = folder.appendingPathComponent("outline-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
+    func testRendersTheDocument() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let short = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
+        store.setBody(short.id, "# First issue\n\n- one story, **one tip**, one date\n- a link to [the club](https://example.org)")
+        store.openAsFile(short.id)
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
             let file = folder.appendingPathComponent("document-\(scheme == .dark ? "dark" : "light").png")
