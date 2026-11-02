@@ -9,7 +9,7 @@ use crate::frontmatter;
 use crate::scan;
 use crate::{insert_row, Error, Kind, Placement, Properties, Result, State, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const TRASH: &str = ".trash";
@@ -74,9 +74,11 @@ fn now_iso() -> String {
 
 /// Write `text` to a temp file in the same folder, then rename it over `target`.
 pub(crate) fn write_atomic(target: &Path, text: &str) -> std::io::Result<()> {
-    let mut tmp = target.as_os_str().to_os_string();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
+    // A dot name, which a scan skips, in the same folder so the rename stays on one volume.
+    let mut name = std::ffi::OsString::from(".");
+    name.push(target.file_name().unwrap_or_default());
+    name.push(".tmp");
+    let tmp = target.with_file_name(name);
     std::fs::write(&tmp, text)?;
     if let Err(err) = std::fs::rename(&tmp, target) {
         let _ = std::fs::remove_file(&tmp);

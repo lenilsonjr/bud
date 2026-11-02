@@ -410,30 +410,68 @@ fn set_mode(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
+const FAILING: [(&str, &str); 4] = [
+    ("Locked.md", "L"),
+    ("Locked/Existing.md", "E"),
+    ("Mover.md", "M"),
+    ("Mover/Child.md", "C"),
+];
+
+fn assert_untouched(vault: &Vault, dir: &Path, before: &[Bud]) {
+    assert_eq!(rows(vault), before);
+    assert!(dir.join("Mover.md").is_file());
+    assert!(dir.join("Mover/Child.md").is_file());
+    assert!(dir.join("Locked/Existing.md").is_file());
+    assert!(!dir.join("Locked/Mover.md").exists());
+    assert!(!dir.join("Locked/Renamed.md").exists());
+}
+
+/// A plain file stands where a folder has to be, so the move fails for every user, root included.
 #[test]
-fn a_move_that_fails_leaves_the_index_and_the_files_as_they_were() {
-    let (mut vault, dir, _index) = vault_with(&[
-        ("Locked.md", "L"),
-        ("Locked/Existing.md", "E"),
-        ("Mover.md", "M"),
-        ("Mover/Child.md", "C"),
-    ]);
+fn a_move_that_cannot_make_its_folder_changes_no_row() {
+    let (mut vault, dir, _index) = vault_with(&FAILING);
+    std::fs::remove_dir_all(dir.path().join("Locked")).unwrap();
+    std::fs::write(dir.path().join("Locked"), "not a folder").unwrap();
+    std::fs::write(dir.path().join(".trash"), "not a folder").unwrap();
+    vault.rescan().unwrap();
     let before = rows(&vault);
-    set_mode(&dir.path().join("Locked"), 0o555);
+
     let err = vault.move_to("Mover.md", Some("Locked.md")).unwrap_err();
     assert!(matches!(err, Error::Io(_)), "{err}");
-    let err = vault.trash("Mover.md");
-    set_mode(&dir.path().join("Locked"), 0o755);
-    assert!(err.is_ok(), "the trash is not locked");
-    vault.restore(".trash/Mover.md").unwrap();
-
-    // Rename in a read-only folder fails the same way and changes no row.
-    set_mode(&dir.path().join("Locked"), 0o555);
-    let err = vault.rename("Locked/Existing.md", "Renamed").unwrap_err();
-    set_mode(&dir.path().join("Locked"), 0o755);
+    let err = vault.trash("Mover.md").unwrap_err();
     assert!(matches!(err, Error::Io(_)), "{err}");
     assert_eq!(rows(&vault), before);
+    assert!(dir.path().join("Mover.md").is_file());
     assert!(dir.path().join("Mover/Child.md").is_file());
-    assert!(dir.path().join("Locked/Existing.md").is_file());
-    assert!(!dir.path().join("Locked/Mover.md").exists());
+}
+
+/// The same with a read-only target folder. Root ignores permission bits, so the probe decides
+/// whether the folder really is locked for this user.
+#[test]
+fn a_move_or_rename_into_a_read_only_folder_changes_no_row() {
+    let (mut vault, dir, _index) = vault_with(&FAILING);
+    let before = rows(&vault);
+    let locked = dir.path().join("Locked");
+    set_mode(&locked, 0o555);
+    let enforced = std::fs::write(locked.join(".probe"), "x").is_err();
+    let moved = vault.move_to("Mover.md", Some("Locked.md"));
+    let renamed = vault.rename("Locked/Existing.md", "Renamed");
+    set_mode(&locked, 0o755);
+    if !enforced {
+        return;
+    }
+    assert!(matches!(moved.unwrap_err(), Error::Io(_)));
+    assert!(matches!(renamed.unwrap_err(), Error::Io(_)));
+    assert_untouched(&vault, dir.path(), &before);
+}
+
+#[test]
+fn atomic_writes_leave_no_temp_file_in_view() {
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", "x")]);
+    vault.set_body("Note.md", "y").unwrap();
+    let names: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, vec!["Note.md".to_string()]);
 }
