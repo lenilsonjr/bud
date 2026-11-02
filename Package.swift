@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Bud",
-    platforms: [.macOS(.v14), .iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17), .tvOS(.v17)],
     products: [
         .library(name: "BudKit", targets: ["BudKit"]),
         .executable(name: "BudMac", targets: ["BudMac"]),

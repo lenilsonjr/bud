@@ -9,6 +9,7 @@ Package.resolved
 # XcodeGen output + per-target generated Info.plists (generated from project.yml, never committed).
 Resources/Info-iOS.plist
 Resources/Info-macOS.plist
+Resources/Info-tvOS.plist
 Resources/Bud-macOS.entitlements
 
 # Build artifacts.

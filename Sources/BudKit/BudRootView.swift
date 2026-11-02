@@ -1,4 +1,4 @@
-#if canImport(SwiftUI)
+#if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
 /// The whole prototype: the canvas, a trail back to Everything, and a way to add buds by touch.

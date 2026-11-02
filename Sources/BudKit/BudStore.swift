@@ -28,7 +28,13 @@ public final class BudStore: ObservableObject {
     }
 
     nonisolated public static var defaultFile: URL? {
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        // tvOS offers no persistent app folder, only Caches, which the system may reclaim.
+        #if os(tvOS)
+        let home = FileManager.SearchPathDirectory.cachesDirectory
+        #else
+        let home = FileManager.SearchPathDirectory.applicationSupportDirectory
+        #endif
+        guard let base = FileManager.default.urls(for: home, in: .userDomainMask).first else { return nil }
         let dir = base.appendingPathComponent("Bud", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("buds.json")

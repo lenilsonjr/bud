@@ -3,6 +3,7 @@ options:
   deploymentTarget:
     iOS: "17.0"
     macOS: "14.0"
+    tvOS: "17.0"
   createIntermediateGroups: true
   groupSortPosition: top
 # One place defines BUNDLE_ID_PREFIX / APP_SLUG / DEVELOPMENT_TEAM, inherited by every target.
@@ -91,6 +92,30 @@ targets:
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         NSHumanReadableCopyright: ""
         ITSAppUsesNonExemptEncryption: false
+  Bud-tvOS:
+    type: application
+    platform: tvOS
+    deploymentTarget: "17.0"
+    sources:
+      - App
+      - Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_NAME: Bud
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+    dependencies:
+      - package: BudKit
+        product: BudKit
+    info:
+      path: Resources/Info-tvOS.plist
+      properties:
+        CFBundleName: Bud
+        CFBundleDisplayName: Bud
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        UIUserInterfaceStyle: Automatic
+        ITSAppUsesNonExemptEncryption: false
 schemes:
   Bud iOS:
     build:
@@ -104,6 +129,14 @@ schemes:
     build:
       targets:
         Bud-macOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  Bud tvOS:
+    build:
+      targets:
+        Bud-tvOS: all
     run:
       config: Debug
     archive:

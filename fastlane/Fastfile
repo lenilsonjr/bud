@@ -10,6 +10,8 @@
 #   fastlane ios release  push a v* tag   → iOS TestFlight,   marketing version from the tag
 #   fastlane mac beta     push to develop → macOS TestFlight, auto build number
 #   fastlane mac release  push a v* tag   → macOS TestFlight, marketing version from the tag
+#   fastlane tvos beta    push to develop → tvOS TestFlight,  auto build number
+#   fastlane tvos release push a v* tag   → tvOS TestFlight,  marketing version from the tag
 
 default_platform(:ios)
 
@@ -76,6 +78,38 @@ platform :ios do
       app_identifier:                    APP_IDENTIFIER,
       distribute_external:               false,
       skip_submission:                   true,     # group's hasAccessToAllBuilds auto-delivers
+      changelog:                         changelog,
+      skip_waiting_for_build_processing: false
+    )
+  end
+end
+
+platform :tvos do
+  before_all { asc_login }
+
+  desc "develop → tvOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_tvos(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "tag v* → tvOS TestFlight (marketing version from the tag)"
+  lane(:release) { deliver_tvos(ENV["APP_CHANGELOG"] || "Tagged release build.") }
+
+  def deliver_tvos(changelog)
+    gym(
+      project:          PROJECT,
+      scheme:           "Bud tvOS",
+      configuration:    "Release",
+      destination:      "generic/platform=tvOS",
+      export_method:    "app-store",
+      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
+      xcargs:           version_xcargs(next_build_for("TV_OS")),
+      output_directory: "build",
+      output_name:      "Bud-tvOS.ipa",
+      clean:            true
+    )
+    upload_to_testflight(
+      app_identifier:                    APP_IDENTIFIER,
+      app_platform:                      "appletvos",
+      distribute_external:               false,
+      skip_submission:                   true,
       changelog:                         changelog,
       skip_waiting_for_build_processing: false
     )
