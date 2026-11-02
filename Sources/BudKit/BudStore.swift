@@ -98,6 +98,16 @@ public final class BudStore: ObservableObject {
         return planted
     }
 
+    /// One line to where it belongs: the Inbox from Everything (a capture, a note, with its
+    /// source), or under the bud on screen (a bud of the kind asked for).
+    @discardableResult
+    public func plant(_ text: String, todo: Bool, at target: PlantTarget, source: String = BudStore.platformSource) -> Bud? {
+        switch target {
+        case .inbox: return capture(text, source: source)
+        case .under(let parent): return add(text, todo: todo, under: parent)
+        }
+    }
+
     /// The word a capture carries for the device it was made on.
     nonisolated public static var platformSource: String {
         #if os(macOS)

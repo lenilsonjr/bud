@@ -237,7 +237,8 @@ struct TVAddTarget: Identifiable {
     let id: UUID
 }
 
-/// One line of text from the TV keyboard or dictation, planted under the current bud.
+/// One line of text from the TV keyboard or dictation: under the bud on screen, or in the Inbox
+/// when the screen shows Everything. Return plants, Menu cancels.
 struct TVCaptureSheet: View {
     @ObservedObject var store: BudStore
     let parent: UUID
@@ -245,18 +246,27 @@ struct TVCaptureSheet: View {
     @State private var text = ""
     @State private var todo = true
 
+    private var target: PlantTarget { PlantTarget.forCenter(parent) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-            Text("New bud under \(store.tree.title(of: parent))")
+            Text(target.title(in: store.tree))
                 .textRole(.title)
                 .foregroundStyle(Theme.text)
+            if target == .inbox {
+                Text("Lands in the Inbox. Give it a home later.")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+            }
             TextField("What is it?", text: $text)
                 .onSubmit(plant)
-            Picker("Kind", selection: $todo) {
-                Text("To-do").tag(true)
-                Text("Note").tag(false)
+            if target != .inbox {
+                Picker("Kind", selection: $todo) {
+                    Text("To-do").tag(true)
+                    Text("Note").tag(false)
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
             HStack {
                 Button("Cancel") { dismiss() }
                 Spacer()
@@ -275,7 +285,7 @@ struct TVCaptureSheet: View {
 
     private func plant() {
         guard !trimmed.isEmpty else { return }
-        store.add(trimmed, todo: todo, under: parent)
+        store.plant(trimmed, todo: todo, at: target)
         dismiss()
     }
 }

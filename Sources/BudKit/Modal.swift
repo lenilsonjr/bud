@@ -21,7 +21,10 @@ enum Modal: Hashable, Identifiable {
     /// Enrich under an ordinary card; the hub is not a place to plant under, so it captures into
     /// the Inbox instead.
     static func adding(under id: UUID) -> Modal {
-        id == rootID ? .capture : .add(parent: id)
+        switch PlantTarget.forCenter(id) {
+        case .inbox: return .capture
+        case .under(let parent): return .add(parent: parent)
+        }
     }
 }
 
