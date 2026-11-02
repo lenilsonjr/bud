@@ -1,9 +1,14 @@
 import XCTest
 @testable import BudKit
 
-@MainActor
+/// Not a `@MainActor` class: the Linux test runner's discovery cannot cast isolated test
+/// methods, so each test hops onto the main actor itself.
 final class CaptureRelayTests: XCTestCase {
-    func testLinesWaitUntilAWindowListensThenArriveInOrder() {
+    func testLinesWaitUntilAWindowListensThenArriveInOrder() async {
+        await MainActor.run { relayKeepsOrder() }
+    }
+
+    @MainActor private func relayKeepsOrder() {
         let relay = CaptureRelay()
         relay.send(.init(text: "First", from: "Safari"))
         relay.send(.init(text: "Second", todo: true))
