@@ -121,8 +121,9 @@ struct SyncDot: View {
     }
 }
 
-/// The same states riding on the gear on iPhone and iPad: a dot at its corner, with the count
-/// when changes wait, so Canvas and Files stay centred and the tap already leads to Devices.
+/// The same states riding on the gear on iPhone and iPad: a dot at its corner, the count when
+/// changes wait, the cycle mark while syncing, so Canvas and Files stay centred and the tap
+/// already leads to Devices.
 struct SyncBadge: View {
     @ObservedObject var devices: DeviceStore
 
@@ -139,6 +140,13 @@ struct SyncBadge: View {
                         .frame(height: 14)
                         .background(indicator.isHollow ? Theme.window : Theme.leaf, in: Capsule())
                         .overlay(Capsule().stroke(Theme.leaf, lineWidth: indicator.isHollow ? 1.5 : 0))
+                } else if case .syncing = indicator {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Theme.leaf)
+                        .frame(width: 14, height: 14)
+                        .background(Theme.leafSoft, in: Circle())
+                        .overlay(Circle().stroke(Theme.window, lineWidth: 1.5))
                 } else {
                     Circle()
                         .fill(Theme.leaf)

@@ -57,7 +57,7 @@ struct TopBar: View {
                     .foregroundStyle(Theme.text2)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
-                    .overlay(alignment: .topTrailing) { SyncBadge(devices: store.devices).offset(x: 3, y: -2) }
+                    .overlay(alignment: .topTrailing) { SyncBadge(devices: store.devices).offset(x: 1, y: -3) }
             }
             .buttonStyle(.plain)
             .help("Settings")
