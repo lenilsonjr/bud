@@ -6,17 +6,18 @@ import SwiftUI
 /// the page has the whole screen, and brings it back.
 struct PhoneFilesView: View {
     @ObservedObject var store: BudStore
-    @EnvironmentObject private var flags: Flags
     @State private var pageFull = false
 
     static let handleHeight: CGFloat = 36
+    /// The navigator's share of the height: 30 / 70, kept after trying 40 / 60 on a phone.
+    static let navigatorShare: Double = 0.3
 
     var body: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 if !pageFull {
                     Sidebar(store: store)
-                        .frame(height: (geo.size.height * flags.phoneSplit.share).rounded(), alignment: .top)
+                        .frame(height: (geo.size.height * Self.navigatorShare).rounded(), alignment: .top)
                         .clipped()
                         .background(Theme.sidebar)
                         .transition(.move(edge: .top).combined(with: .opacity))
