@@ -48,8 +48,7 @@ struct OutlinePage: View {
                 }
                 enrichLine(id)
             }
-            .padding(28)
-            .frame(maxWidth: 720, alignment: .leading)
+            .pageColumn()
         }
         .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }

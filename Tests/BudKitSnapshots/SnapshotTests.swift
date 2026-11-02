@@ -80,6 +80,7 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let short = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
         store.setBody(short.id, "# First issue\n\n- one story, **one tip**, one date\n- a link to [the club](https://example.org)")
+        store.setDue(short.id, Date(timeIntervalSince1970: 1_793_750_400))
         store.openAsFile(short.id)
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)

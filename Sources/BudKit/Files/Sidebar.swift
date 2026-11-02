@@ -88,6 +88,7 @@ struct Sidebar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(selected ? Theme.leafSoft : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(selected ? Theme.leafLine : .clear, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
