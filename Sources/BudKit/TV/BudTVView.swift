@@ -110,7 +110,7 @@ struct TVCanvas: View {
     /// Slides the camera just enough that the focused card sits inside the viewport.
     private func keep(_ id: UUID?, visible size: CGSize) {
         guard let id, let placed = store.layout.cards[id] else { return }
-        let s = Metrics.size(of: id)
+        let s = Metrics.size(hub: placed.hub)
         let half = CGSize(width: s.width / 2 * scale, height: s.height / 2 * scale)
         let p = screenPoint(placed.position, in: size)
         var dx: CGFloat = 0, dy: CGFloat = 0
@@ -160,24 +160,32 @@ struct TVCardFace: View {
 
     var body: some View {
         if id == rootID {
-            hub
+            hub(Image(systemName: "leaf.fill"), title: "Everything", caption: "\(store.tree.children(of: rootID).count) threads")
         } else if let bud = store.tree.bud(id) {
-            chip(bud)
+            if store.layout.cards[id]?.hub == true {
+                hub(KindMark(bud: bud, style: CardStyle.hub(lit: lit)), title: bud.text, caption: CardStyle.caption(for: bud, in: store.tree))
+            } else {
+                chip(bud)
+            }
         }
     }
 
-    private var hub: some View {
+    /// The hub face: Everything with the leaf mark, or the centered thread with its own mark.
+    private func hub(_ mark: some View, title: String, caption: String) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: "leaf.fill")
+            mark
                 .textRole(.heading)
                 .foregroundStyle(Theme.hubMark)
-            Text("Everything")
-                .textRole(.title)
+            Text(title)
+                .textStyle(TextStyle(typeface: .display, size: 20, weight: 500))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.hubInk)
-            Text("\(store.tree.children(of: rootID).count) threads")
+            Text(caption)
                 .textRole(.caption)
                 .foregroundStyle(Theme.hubMeta)
         }
+        .padding(.horizontal, 12)
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
         .background(
             RoundedRectangle(cornerRadius: Radius.xl)

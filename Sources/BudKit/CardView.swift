@@ -18,7 +18,11 @@ struct CardView: View {
             if id == rootID {
                 hub
             } else if let bud = store.tree.bud(id) {
-                chip(bud)
+                if store.layout.cards[id]?.hub == true {
+                    threadHub(bud)
+                } else {
+                    chip(bud)
+                }
             }
         }
         .opacity(lit ? 1 : light)
@@ -46,6 +50,41 @@ struct CardView: View {
         .background(hubBackground)
         .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
+    }
+
+    /// Inside a thread the thread is the hub (A2): its box in the corner when it is a to-do, the
+    /// title in the display face, what it holds, and Enrich where Everything has Capture.
+    private func threadHub(_ bud: Bud) -> some View {
+        let style = CardStyle.hub(lit: lit)
+        return VStack(spacing: 6) {
+            Text(bud.text)
+                .textStyle(TextStyle(typeface: .display, size: 20, weight: 500))
+                .strikethrough(bud.isDone)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(bud.isDone ? style.meta : style.ink)
+            Text(CardStyle.caption(for: bud, in: store.tree))
+                .textRole(.caption)
+                .foregroundStyle(style.meta)
+            Button("Enrich", action: onAdd)
+                .buttonStyle(.plain)
+                .textRole(.label)
+                .foregroundStyle(Theme.hubAccent)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .frame(width: Metrics.hub.width, height: Metrics.hub.height)
+        .overlay(alignment: .topLeading) {
+            if bud.isTodo {
+                Button(action: onToggle) { KindMark(bud: bud, style: style) }
+                    .buttonStyle(.plain)
+                    .padding(12)
+            }
+        }
+        .background(hubBackground)
+        .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
+        .onTapGesture(perform: onTap)
+        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
     }
 
     private func chip(_ bud: Bud) -> some View {

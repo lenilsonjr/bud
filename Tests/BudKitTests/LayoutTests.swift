@@ -198,7 +198,9 @@ final class LightTests: XCTestCase {
     func testTheCurrentOrbitIsLitAndTheRestDimsUnlessLifted() {
         XCTAssertEqual(lightLevel(role: .center, lifted: false), 1)
         XCTAssertEqual(lightLevel(role: .ring, lifted: false), 1)
-        for role in [CardRole.deep, .ghost, .kin] {
+        XCTAssertEqual(lightLevel(role: .ghost, lifted: false), 0.75, "The trail rests at three quarters")
+        XCTAssertEqual(lightLevel(role: .ghost, lifted: true), 1)
+        for role in [CardRole.deep, .kin] {
             XCTAssertEqual(lightLevel(role: role, lifted: false), 0.35, "\(role) rests dim")
             XCTAssertEqual(lightLevel(role: role, lifted: true), 1, "\(role) lifts under the light")
         }
@@ -462,5 +464,35 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(layout.cards.count, tree.walk(under: rootID).count + 1)
         XCTAssertTrue(overlaps(layout).isEmpty, "Still no overlaps with a crowded web")
         XCTAssertGreaterThan(layout.orbits[review.id]!.rx, layout.orbits[rootID]!.rx, "A crowded bud grows its own orbit outward instead of shrinking its children")
+    }
+
+    func testTheCenteredThreadIsTheHubAndEverythingTrailsAsAHub() throws {
+        let tree = Tree.seed()
+        let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let layout = LayoutEngine.layout(of: tree, center: newsletter.id)
+        XCTAssertEqual(layout.cards[newsletter.id]?.hub, true, "A centered thread draws as the hub")
+        XCTAssertEqual(layout.cards[rootID]?.hub, true, "Everything is a hub even as the trail")
+        for kid in tree.children(of: newsletter.id) {
+            XCTAssertEqual(layout.cards[kid.id]?.hub, false)
+        }
+        let leaf = try XCTUnwrap(tree.walk(under: rootID).first { !tree.hasChildren($0.id) })
+        XCTAssertEqual(LayoutEngine.layout(of: tree, center: leaf.id).cards[leaf.id]?.hub, false, "A centered leaf stays a chip")
+        XCTAssertEqual(Metrics.size(hub: true), Metrics.hub)
+        XCTAssertEqual(Metrics.size(hub: false), Metrics.chip)
+    }
+
+    func testNoCardOverlapsTheHubSizedCenter() throws {
+        let tree = Tree.seed()
+        let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let layout = LayoutEngine.layout(of: tree, center: newsletter.id)
+        let ids = layout.order
+        for i in ids.indices {
+            for j in ids.indices where j > i {
+                let a = try XCTUnwrap(layout.cards[ids[i]]), b = try XCTUnwrap(layout.cards[ids[j]])
+                let s = Metrics.size(hub: a.hub), t = Metrics.size(hub: b.hub)
+                let apart = abs(a.position.x - b.position.x) >= (s.width + t.width) / 2 || abs(a.position.y - b.position.y) >= (s.height + t.height) / 2
+                XCTAssertTrue(apart, "\(tree.title(of: a.id)) overlaps \(tree.title(of: b.id))")
+            }
+        }
     }
 }

@@ -21,7 +21,7 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(Palette.canvas, Tone("#EDF3E7", "#0F1912"))
         XCTAssertEqual(Palette.card, Tone("#CDE3C1", "#21392A"))
         XCTAssertEqual(Palette.cardLit, Tone("#8CCC8C", "#8CCC8C"))
-        XCTAssertEqual(Palette.hub, Tone("#24432B", "#24432B"))
+        XCTAssertEqual(Palette.hub, Tone("#24432B", "#16361F"), "Darker and deeper than the chips in dark, so it still reads as the hub")
         XCTAssertEqual(Palette.text, Tone("#14281B", "#EEF5EA"))
         XCTAssertEqual(Palette.leaf, Tone("#3B7A45", "#8CCC8C"))
         XCTAssertEqual(Palette.amethyst, Tone("#5B2A9E", "#C3B2EE"))

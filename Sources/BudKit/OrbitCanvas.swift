@@ -173,7 +173,7 @@ public struct OrbitCanvas: View {
         var best: (UUID, CGFloat)? = nil
         for id in layout.order {
             guard let placed = layout.cards[id] else { continue }
-            let s = Metrics.size(of: id)
+            let s = Metrics.size(hub: placed.hub)
             let dx = max(0, abs(at.x - placed.position.x) - s.width / 2)
             let dy = max(0, abs(at.y - placed.position.y) - s.height / 2)
             let d = hypot(dx, dy)
