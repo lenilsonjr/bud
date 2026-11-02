@@ -14,16 +14,37 @@ struct FilesView: View {
         if compact {
             PhoneFilesView(store: store)
         } else {
-            HStack(spacing: 0) {
-                Sidebar(store: store)
-                    .frame(width: Self.sidebarWidth)
-                    .background(Theme.sidebar)
-                Rectangle()
-                    .fill(Theme.line)
-                    .frame(width: 1)
-                FilesPage(store: store)
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    if sidebarShown(in: geo.size) {
+                        Sidebar(store: store)
+                            .frame(width: Self.sidebarWidth)
+                            .background(Theme.sidebar)
+                        Rectangle()
+                            .fill(Theme.line)
+                            .frame(width: 1)
+                    }
+                    FilesPage(store: store)
+                }
+                .animation(.easeOut(duration: 0.2), value: sidebarShown(in: geo.size))
+                .onAppear { sync(geo.size) }
+                .onChange(of: geo.size) { _, now in sync(now) }
             }
         }
+    }
+
+    /// The Mac always shows the sidebar; only iOS collapses it, and only iOS has the button.
+    private func sidebarShown(in size: CGSize) -> Bool {
+        #if os(iOS)
+        store.sidebar.isShown(in: size)
+        #else
+        true
+        #endif
+    }
+
+    private func sync(_ size: CGSize) {
+        store.surfaceSize = size
+        store.sidebar.resized(to: size)
     }
 }
 

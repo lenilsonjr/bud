@@ -12,6 +12,9 @@ struct TopBar: View {
 
     var body: some View {
         HStack(spacing: compact ? 10 : 14) {
+            #if os(iOS)
+            if !compact && store.surface == .files { sidebarToggle }
+            #endif
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
@@ -66,6 +69,23 @@ struct TopBar: View {
         .background(WindowDragArea())
         #endif
     }
+
+    #if os(iOS)
+    /// Shows or collapses the Files sidebar.
+    private var sidebarToggle: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { store.sidebar.toggle(in: store.surfaceSize) }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .foregroundStyle(Theme.text2)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show or hide the sidebar")
+        .accessibilityLabel("Show or hide the sidebar")
+    }
+    #endif
 
     /// Room for the traffic lights on the Mac; the design's own inset elsewhere.
     private var leadingInset: CGFloat {
