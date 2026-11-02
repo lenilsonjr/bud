@@ -31,10 +31,10 @@ public struct SettingsView: View {
             Text("Settings")
                 .textStyle(Self.title)
                 .foregroundStyle(Theme.text)
-            section("Appearance", caption: "Light and dark follow the system unless you choose one.") {
+            section("Appearance", caption: "Bud follows the system until you pick a side.") {
                 Segmented(selection: $flags.appearance, options: Appearance.allCases) { $0.rawValue }
             }
-            section("Vault", caption: "Where your buds are kept. A folder of Markdown files is the plan; today it is one file here.") {
+            section("Vault", caption: "The folder of Markdown files Bud reads and writes.") {
                 Text(vaultPath)
                     .textRole(.mono)
                     .lineLimit(2)
@@ -64,6 +64,9 @@ public struct SettingsView: View {
                 switch modal {
                 case .showTicket: TicketSheet(devices: devices, close: { local = nil })
                 case .joinVault: JoinSheet(devices: devices, close: { local = nil })
+                case let .removeDevice(id):
+                    RemoveDeviceDialog(devices: devices, id: id, close: { local = nil }, present: { local = $0 })
+                case .rotateKey: RotateKeyDialog(devices: devices, close: { local = nil })
                 default: EmptyView()
                 }
             }

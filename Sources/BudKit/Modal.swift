@@ -8,14 +8,18 @@ enum Modal: Hashable, Identifiable {
     case settings
     /// Delete one branch from the Trash for good; with nil, empty the whole Trash.
     case deleteForever(id: UUID?)
-    /// Settings › Devices: the ticket sheet and the join sheet.
+    /// Settings › Devices: the ticket sheet, the join sheet, and the two dialogs.
     case showTicket
     case joinVault
+    case removeDevice(id: String)
+    case rotateKey
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
     static let showTicketID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!
     static let joinVaultID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
+    static let removeDeviceID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
+    static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
 
     var id: UUID {
         switch self {
@@ -26,6 +30,8 @@ enum Modal: Hashable, Identifiable {
         case .deleteForever(let id): return id ?? Self.emptyTrashID
         case .showTicket: return Self.showTicketID
         case .joinVault: return Self.joinVaultID
+        case .removeDevice: return Self.removeDeviceID
+        case .rotateKey: return Self.rotateKeyID
         }
     }
 
@@ -98,6 +104,10 @@ struct ModalHost: View {
             case .deleteForever(let id): DeleteForeverDialog(store: store, id: id)
             case .showTicket: TicketSheet(devices: store.devices, close: { store.modal = .settings })
             case .joinVault: JoinSheet(devices: store.devices, close: { store.modal = .settings })
+            case let .removeDevice(id):
+                RemoveDeviceDialog(
+                    devices: store.devices, id: id, close: { store.modal = .settings }, present: { store.modal = $0 })
+            case .rotateKey: RotateKeyDialog(devices: store.devices, close: { store.modal = .settings })
             }
         }
         .modalCard()

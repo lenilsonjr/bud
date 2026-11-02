@@ -30,12 +30,12 @@ public final class ToastCenter: ObservableObject {
         }
     }
 
-    /// Runs the current action's undo and drops the toast.
+    /// Runs the current action's undo and drops the toast; a toast that only reports stays.
     public func undo() {
-        guard let toast = current else { return }
+        guard let toast = current, let undo = toast.action.undo else { return }
         timer?.cancel()
         current = nil
-        toast.action.undo()
+        undo()
     }
 
     public func dismiss(_ id: UUID? = nil) {
@@ -49,21 +49,32 @@ public final class ToastCenter: ObservableObject {
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The toast as the board draws it: one line and Undo, raised above the bottom edge.
+/// The toast as the board draws it: a mark when it has one, one line and Undo when the action can
+/// be taken back, raised above the bottom edge.
 struct ToastView: View {
     @ObservedObject var center: ToastCenter
 
     var body: some View {
         if let toast = center.current {
             HStack(spacing: 14) {
+                if let symbol = toast.action.systemImage {
+                    Image(systemName: symbol)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 15, height: 15)
+                        .foregroundStyle(Theme.hubAccent)
+                        .padding(.trailing, -4)
+                }
                 Text(toast.action.message)
                     .textRole(.body)
                     .foregroundStyle(Theme.hubInk)
-                Button("Undo") { center.undo() }
-                    .buttonStyle(.plain)
-                    .textRole(.label)
-                    .foregroundStyle(Theme.hubAccent)
-                    .keyboardShortcut("z", modifiers: .command)
+                if toast.action.undo != nil {
+                    Button("Undo") { center.undo() }
+                        .buttonStyle(.plain)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.hubAccent)
+                        .keyboardShortcut("z", modifiers: .command)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

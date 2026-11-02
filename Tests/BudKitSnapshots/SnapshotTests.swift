@@ -269,6 +269,36 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheDeviceDialogs() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let fixtures = MemoryPeers.fixtures()
+        let devices = DeviceStore(peers: MemoryPeers())
+        await devices.refresh()
+        let remove = RemoveDeviceDialog(devices: devices, id: fixtures[4].id, close: {}, present: { _ in })
+        let midway = RotationProgress(total: 2, done: 1, reports: [fixtures[1].id: true])
+        let rotate = RotateKeyBody(
+            lines: DevicesText.rotationLines(Array(fixtures[0...2]), progress: midway, kind: .mac),
+            count: DevicesText.rotationCount(midway))
+        let dialogs: [(String, AnyView)] = [("remove-device", AnyView(remove)), ("rotate-key", AnyView(rotate))]
+        for (name, dialog) in dialogs {
+            for scheme in [ColorScheme.light, .dark] {
+                let card = dialog
+                    .modalCard()
+                    .frame(width: ModalMetrics.width)
+                    .padding(32)
+                    .background(Theme.canvas)
+                let data = try render(card, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
