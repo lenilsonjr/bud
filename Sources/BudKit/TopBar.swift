@@ -156,7 +156,10 @@ struct TopBar: View {
         .textRole(.label)
         .foregroundStyle(Theme.text2)
         .monospacedDigit()
-        .frame(minWidth: 40)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
         .help("Back to 100%")
     }
 }
