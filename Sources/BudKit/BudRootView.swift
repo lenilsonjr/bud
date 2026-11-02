@@ -40,6 +40,8 @@ public struct BudRootView: View {
         .tint(Theme.leaf)
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
+        .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
+        .onDisappear { CaptureRelay.shared.stopListening() }
     }
 
     @ViewBuilder private var surface: some View {

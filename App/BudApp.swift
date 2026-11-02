@@ -7,6 +7,10 @@ import BudKit
 // instead: the same orbit canvas driven by the remote's focus, plus capture and completion.
 @main
 struct BudApp: App {
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(BudAppDelegate.self) private var delegate
+    #endif
+
     var body: some Scene {
         WindowGroup {
             #if os(tvOS)
