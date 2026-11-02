@@ -36,7 +36,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
-        let view = OrbitCanvas(store: store)
+        let view = BudRootView(store: store)
             .frame(width: size.width, height: size.height)
             .environment(\.colorScheme, scheme)
         let renderer = ImageRenderer(content: view)

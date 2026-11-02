@@ -83,6 +83,21 @@ public struct Tree: Codable, Equatable, Sendable {
         descendants(of: id).compactMap(bud).filter { $0.state == .open }.count
     }
 
+    /// Descendants in reading order: each bud before its children, siblings in their order.
+    public func walk(under id: UUID) -> [Bud] {
+        var out: [Bud] = []
+        for child in children(of: id) {
+            out.append(child)
+            out.append(contentsOf: walk(under: child.id))
+        }
+        return out
+    }
+
+    /// The one open to-do to do next under a bud: the first in reading order. Dates come later.
+    public func nextStep(under id: UUID) -> Bud? {
+        walk(under: id).first { $0.state == .open }
+    }
+
     @discardableResult
     public mutating func add(_ text: String, todo: Bool, under parent: UUID) -> Bud {
         let last = children(of: parent).last?.order ?? 0

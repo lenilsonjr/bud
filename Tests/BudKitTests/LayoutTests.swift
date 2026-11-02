@@ -35,6 +35,22 @@ final class TreeTests: XCTestCase {
     }
 }
 
+final class NextStepTests: XCTestCase {
+    func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
+        var t = Tree.seed()
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let name = try XCTUnwrap(t.children(of: newsletter.id).first { $0.text == "Pick a name" })
+        XCTAssertEqual(t.nextStep(under: rootID)?.id, newsletter.id, "The first open to-do at the top is the next step")
+        XCTAssertEqual(t.nextStep(under: newsletter.id)?.id, name.id, "Inside a bud, its first open child comes first")
+        t.toggle(name.id)
+        XCTAssertNotEqual(t.nextStep(under: newsletter.id)?.id, name.id, "A done to-do is never the next step")
+        XCTAssertEqual(t.nextStep(under: newsletter.id)?.parent, name.id, "Its open children come before the next sibling")
+        let note = t.add("Just a note", todo: false, under: rootID)
+        XCTAssertNil(t.nextStep(under: note.id), "A note with nothing inside has no next step")
+        XCTAssertEqual(t.walk(under: rootID).count, t.descendants(of: rootID).count)
+    }
+}
+
 final class LayoutTests: XCTestCase {
     func overlaps(_ layout: Layout) -> [(UUID, UUID)] {
         var out: [(UUID, UUID)] = []
