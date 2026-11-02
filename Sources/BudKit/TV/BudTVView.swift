@@ -75,6 +75,7 @@ struct TVCanvas: View {
         GeometryReader { geo in
             let size = geo.size
             let layout = store.layout
+            let lifted = focused.map { store.tree.orbit(of: $0) } ?? []
             ZStack {
                 Theme.canvas
                 EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
@@ -87,7 +88,7 @@ struct TVCanvas: View {
                         }
                         .buttonStyle(.plain)
                         .focused($focused, equals: id)
-                        .opacity(focused == id ? 1 : Theme.light(for: placed.role))
+                        .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
                         .scaleEffect(scale * (focused == id ? 1.08 : 1))
                         .position(screenPoint(placed.position, in: size))
                         .zIndex(focused == id ? 2 : (placed.role == .center ? 1 : 0))

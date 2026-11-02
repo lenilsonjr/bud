@@ -10,6 +10,15 @@ public enum CardRole: String, Sendable {
     case center, ring, deep, ghost, kin
 }
 
+/// How bright a card is at rest: the center and its ring in full light, everything outside
+/// that orbit dimmed, unless the light has lifted its orbit.
+public func lightLevel(role: CardRole, lifted: Bool) -> Double {
+    switch role {
+    case .center, .ring: return 1
+    case .deep, .ghost, .kin: return lifted ? 1 : 0.35
+    }
+}
+
 public struct Placed: Equatable {
     public var id: UUID
     public var position: CGPoint

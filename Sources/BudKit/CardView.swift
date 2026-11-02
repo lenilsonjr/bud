@@ -6,6 +6,8 @@ struct CardView: View {
     @ObservedObject var store: BudStore
     let role: CardRole
     let lit: Bool
+    /// 1 in the current orbit or under the light, 0.35 outside it.
+    let light: Double
     let onTap: () -> Void
     let onOpen: () -> Void
     let onAdd: () -> Void
@@ -19,8 +21,9 @@ struct CardView: View {
                 chip(bud)
             }
         }
-        .opacity(lit ? 1 : Theme.light(for: role))
+        .opacity(lit ? 1 : light)
         .animation(.easeOut(duration: 0.35), value: lit)
+        .animation(.easeOut(duration: 0.35), value: light)
     }
 
     private var hub: some View {
