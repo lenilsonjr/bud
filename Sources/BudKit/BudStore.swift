@@ -2,6 +2,9 @@
 import Foundation
 import Combine
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The two ways of looking at the same tree.
 public enum Surface: String, CaseIterable, Sendable {
@@ -25,12 +28,17 @@ public final class BudStore: ObservableObject {
             if center != oldValue {
                 relayout()
                 lens = nil
+                inboxOpen = false
             }
         }
     }
+    /// Whether Files shows the Inbox instead of the center's page; a change of center clears it.
+    @Published public var inboxOpen = false
     @Published public var surface: Surface = .canvas
     /// The lens Files shows instead of the center's page; a change of center clears it.
-    @Published public var lens: Lens? = nil
+    @Published public var lens: Lens? = nil {
+        didSet { if lens != nil { inboxOpen = false } }
+    }
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
     /// The undo toast; every undoable change goes through it.
@@ -88,6 +96,46 @@ public final class BudStore: ObservableObject {
         return planted
     }
 
+    /// The word a capture carries for the device it was made on.
+    nonisolated public static var platformSource: String {
+        #if os(macOS)
+        return "mac"
+        #elseif os(tvOS)
+        return "tv"
+        #else
+        return UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        #endif
+    }
+
+    /// Captures one line into the Inbox and offers to take it back. A blank line captures nothing.
+    @discardableResult
+    public func capture(_ text: String, source: String = BudStore.platformSource) -> Bud? {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return nil }
+        var captured: Bud?
+        commit { captured = $0.capture(line, source: source) }
+        guard let captured else { return nil }
+        let id = captured.id
+        toasts.show(Undoable(message: "Captured to the Inbox") { [weak self] in
+            Task { @MainActor in self?.remove(id) }
+        })
+        return captured
+    }
+
+    /// Gives a bud and its branch a new parent and offers to move it back. A move the tree
+    /// refuses (under itself or its own descendant) does nothing and says nothing.
+    @discardableResult
+    public func move(_ id: UUID, under parent: UUID) -> Bool {
+        guard let from = tree.bud(id)?.parent else { return false }
+        var moved = false
+        commit { moved = $0.move(id, under: parent) }
+        guard moved else { return false }
+        toasts.show(Undoable(message: "Moved to \(tree.title(of: parent))") { [weak self] in
+            Task { @MainActor in self?.commit { $0.move(id, under: from) } }
+        })
+        return true
+    }
+
     public func update(_ id: UUID, text: String, todo: Bool) {
         commit { $0.update(id, text: text, todo: todo) }
     }
@@ -120,12 +168,21 @@ public final class BudStore: ObservableObject {
     public func openAsFile(_ id: UUID) {
         center = id
         lens = nil
+        inboxOpen = false
         surface = .files
     }
 
     /// The Files view on a lens.
     public func open(_ lens: Lens) {
         self.lens = lens
+        inboxOpen = false
+        surface = .files
+    }
+
+    /// The Files view on the Inbox.
+    public func openInbox() {
+        lens = nil
+        inboxOpen = true
         surface = .files
     }
 

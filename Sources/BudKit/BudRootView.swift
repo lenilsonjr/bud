@@ -18,7 +18,7 @@ public struct BudRootView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            TopBar(store: store, onAdd: { adding = AddTarget(parent: store.center) }, onSearch: { searching = true })
+            TopBar(store: store, onAdd: { adding = .capture }, onSearch: { searching = true })
             surface
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 10) {
@@ -39,7 +39,7 @@ public struct BudRootView: View {
         .textRole(.body)
         .foregroundStyle(Theme.text)
         .tint(Theme.leaf)
-        .sheet(item: $adding) { target in AddSheet(store: store, parent: target.parent) }
+        .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
     }
 
     @ViewBuilder private var surface: some View {
