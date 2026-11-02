@@ -7,7 +7,6 @@ import SwiftUI
 struct InboxPage: View {
     @ObservedObject var store: BudStore
     @State private var filter: InboxFilter = .all
-    @State private var adding: AddTarget? = nil
     @State private var moving: Bud? = nil
 
     var body: some View {
@@ -52,7 +51,6 @@ struct InboxPage: View {
             .padding(28)
             .frame(maxWidth: 720, alignment: .leading)
         }
-        .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
         .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }
 
@@ -79,7 +77,7 @@ struct InboxPage: View {
             }
             Spacer()
             tag(inside == 0 ? "raw" : (inside == 1 ? "1 inside" : "\(inside) inside"))
-            Button("Enrich") { adding = AddTarget(parent: bud.id) }
+            Button("Enrich") { store.modal = .add(parent: bud.id) }
                 .buttonStyle(.bordered)
             Button("Move to…") { moving = bud }
                 .buttonStyle(.bordered)

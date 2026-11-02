@@ -16,7 +16,6 @@ public struct OrbitCanvas: View {
     @State private var pinchOrigin: CGFloat? = nil
     @State private var lamp: CGPoint? = nil
     @State private var opened: UUID? = nil
-    @State private var adding: AddTarget? = nil
     @State private var viewport: CGSize = .zero
     @FocusState private var focused: Bool
 
@@ -58,7 +57,7 @@ public struct OrbitCanvas: View {
                             light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
                             onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                             onOpen: { open(id) },
-                            onAdd: { adding = addTarget(for: id) },
+                            onAdd: { store.modal = .adding(under: id) },
                             onToggle: { store.toggle(id) }
                         )
                         .scaleEffect(scale)
@@ -67,7 +66,7 @@ public struct OrbitCanvas: View {
                     }
                 }
                 if let opened, let placed = layout.cards[opened] {
-                    DetailCard(id: opened, store: store, onEnrich: { adding = AddTarget(parent: opened) }, onClose: close)
+                    DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
                         .scaleEffect(scale)
                         .position(screenPoint(placed.position, in: size))
                         .zIndex(3)
@@ -113,7 +112,6 @@ public struct OrbitCanvas: View {
             opened = nil
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
         }
-        .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
     }
 
     /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.
@@ -212,12 +210,7 @@ public struct OrbitCanvas: View {
     /// N: a new bud under the lit card, or under the center when nothing is lit. The hub is not
     /// a place to plant under: there N captures.
     private func addUnderTheLitCard() {
-        adding = addTarget(for: litCard(in: store.layout, viewport: viewport) ?? store.center)
-    }
-
-    /// Enrich under an ordinary card; the hub captures into the Inbox instead.
-    private func addTarget(for id: UUID) -> AddTarget {
-        id == rootID ? .capture : AddTarget(parent: id)
+        store.modal = .adding(under: litCard(in: store.layout, viewport: viewport) ?? store.center)
     }
 
     private func stepOut() {

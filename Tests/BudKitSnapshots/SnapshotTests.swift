@@ -127,11 +127,33 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
-            let sheet = AddSheet(store: store, parent: newsletter.id).frame(width: 420)
-            let data = try render(sheet, scheme: scheme)
+            store.modal = .add(parent: newsletter.id)
+            let data = try render(store: store, scheme: scheme)
             let file = folder.appendingPathComponent("sheet-add-\(scheme == .dark ? "dark" : "light").png")
             try data.write(to: file)
-            XCTAssertGreaterThan(data.count, 5_000, "\(file.lastPathComponent) looks empty")
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
+    func testRendersTheFourButtons() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for scheme in [ColorScheme.light, .dark] {
+            let row = HStack(spacing: 12) {
+                Button { } label: { BudButtonLabel(title: "Add", systemImage: "plus") }.buttonStyle(.budPrimary)
+                Button { } label: { BudButtonLabel(title: "Cancel") }.buttonStyle(.budSecondary)
+                Button { } label: { BudButtonLabel(title: "Pin") }.buttonStyle(.budGhost)
+                Button { } label: { BudButtonLabel(title: "Delete") }.buttonStyle(.budDestructive)
+            }
+            .padding(24)
+            .background(Theme.surface)
+            let data = try render(row, scheme: scheme)
+            let file = folder.appendingPathComponent("buttons-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
         }
     }
 
@@ -143,11 +165,11 @@ final class SnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let store = BudStore(fileURL: nil)
         for scheme in [ColorScheme.light, .dark] {
-            let sheet = AddSheet(store: store, mode: .capture).frame(width: 420)
-            let data = try render(sheet, scheme: scheme)
+            store.modal = .capture
+            let data = try render(store: store, scheme: scheme)
             let file = folder.appendingPathComponent("sheet-capture-\(scheme == .dark ? "dark" : "light").png")
             try data.write(to: file)
-            XCTAssertGreaterThan(data.count, 5_000, "\(file.lastPathComponent) looks empty")
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
         }
     }
 

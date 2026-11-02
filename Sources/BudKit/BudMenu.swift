@@ -5,9 +5,9 @@ import SwiftUI
 /// control click on the Mac. Add inside…, Open, Open as file, Close or Reopen (Make a to-do for
 /// a note), Move to…, then Trash. The hub (Everything) has no menu.
 ///
-/// Add inside… and Open take closures where the surface has its own way (the canvas plants
-/// through its sheet and opens the card in place); without them the menu presents the quick add
-/// sheet itself and Open opens the bud as a file.
+/// Add inside… and Open take closures where the surface has its own way (the TV plants through
+/// its own sheet, the canvas opens the card in place); without them Add inside… raises the quick
+/// add modal for the bud and Open opens the bud as a file.
 struct BudMenu: ViewModifier {
     let id: UUID
     @ObservedObject var store: BudStore
@@ -15,7 +15,6 @@ struct BudMenu: ViewModifier {
     var onOpen: (() -> Void)? = nil
 
     #if !os(tvOS)
-    @State private var adding: AddTarget? = nil
     @State private var moving: Bud? = nil
     #endif
 
@@ -42,7 +41,7 @@ struct BudMenu: ViewModifier {
         content
             .contextMenu {
                 Button("Add inside…", systemImage: "plus") {
-                    if let onAdd { onAdd() } else { adding = AddTarget(parent: id) }
+                    if let onAdd { onAdd() } else { store.modal = .add(parent: id) }
                 }
                 Button("Open", systemImage: "arrow.up.left.and.arrow.down.right") {
                     if let onOpen { onOpen() } else { store.openAsFile(id) }
@@ -55,7 +54,6 @@ struct BudMenu: ViewModifier {
                 Divider()
                 trashItem
             }
-            .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
             .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }
     #endif
