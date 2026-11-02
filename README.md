@@ -8,7 +8,9 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
   the SwiftUI views and `Theme.swift` sit beside them. `Resources/Fonts` holds Fraunces, Figtree
   and JetBrains Mono with their OFL licences; `Theme` registers them at runtime.
 - `Sources/BudMac` — a macOS runner so the canvas works without an Xcode project.
-- `Tests/BudKitTests` — model and layout tests; they run on Linux too.
+- `Tests/BudKitTests` — model, layout and theme tests; they run on Linux too.
+- `Tests/BudKitSnapshots` — renders the canvas to PNGs when `BUD_SNAPSHOT_DIR` is set (macOS only);
+  every pull request attaches them as an artifact.
 - `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS, tvOS) that hosts
   `BudRootView` from `BudKit`, or `BudTVView` on Apple TV: the same orbit canvas with the
   remote moving the light from card to card, one line of capture, Play/Pause to tick a to-do.
