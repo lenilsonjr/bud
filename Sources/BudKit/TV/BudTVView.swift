@@ -1,36 +1,26 @@
 #if canImport(SwiftUI) && os(tvOS)
 import SwiftUI
 
-/// Bud on Apple TV: the children of the current bud as a row of cards for the remote, a trail
-/// back to Everything, one line of capture, and Play/Pause to tick a to-do. No canvas here.
+/// Bud on Apple TV: the same orbit canvas, driven by the remote. Swiping moves the focus from
+/// card to card, the light rests on the focused one, a click centers a bud with children or
+/// ticks a to-do, Menu steps out, Play/Pause ticks the to-do in focus. Capture is one line.
 public struct BudTVView: View {
     @StateObject private var store: BudStore
     @State private var capturing = false
-    @FocusState private var focusedCard: UUID?
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            trail
-            cards
-            Spacer(minLength: 0)
-            footer
-        }
-        .padding(.horizontal, 80)
-        .padding(.vertical, 60)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.canvas)
-        .textRole(.body)
-        .foregroundStyle(Theme.text)
-        .onExitCommand { stepOut() }
-        .onPlayPauseCommand { toggleFocused() }
-        .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
+        TVCanvas(store: store)
+            .overlay(alignment: .top) { trail }
+            .overlay(alignment: .bottom) { hint }
+            .background(Theme.window)
+            .textRole(.body)
+            .foregroundStyle(Theme.text)
+            .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
     }
-
-    // MARK: where you are
 
     private var trail: some View {
         HStack(spacing: 14) {
@@ -39,10 +29,10 @@ public struct BudTVView: View {
                     Text("›").foregroundStyle(Theme.text3)
                 }
                 Text(store.tree.title(of: id))
-                    .textRole(index == store.centerTrail.count - 1 ? .title : .heading)
-                    .foregroundStyle(index == store.centerTrail.count - 1 ? Theme.text : Theme.text2)
+                    .textRole(index == store.centerTrail.count - 1 ? .heading : .label)
+                    .foregroundStyle(index == store.centerTrail.count - 1 ? Theme.leaf : Theme.text2)
             }
-            Spacer()
+            Spacer(minLength: 24)
             Button {
                 capturing = true
             } label: {
@@ -50,107 +40,195 @@ public struct BudTVView: View {
             }
             .textRole(.label)
         }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 14)
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.lg))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.line, lineWidth: 1))
+        .padding(.horizontal, 60)
+        .padding(.top, 40)
     }
 
-    // MARK: the row
+    private var hint: some View {
+        Text("Swipe to move the light · click a bud with children to go in · click or Play/Pause ticks a to-do · Menu steps out · what you plant here stays on this TV until sync arrives")
+            .textRole(.caption)
+            .foregroundStyle(Theme.text3)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(Theme.glass, in: Capsule())
+            .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
+            .padding(.bottom, 40)
+    }
+}
 
-    private var children: [Bud] { store.tree.children(of: store.center) }
+/// The orbit canvas for the focus engine: every card is a button placed by the shared layout,
+/// so a swipe on the remote lands on the nearest card in that direction. The camera sits on the
+/// center and only slides when the focus wanders out of view.
+struct TVCanvas: View {
+    @ObservedObject var store: BudStore
+    @State private var camera: CGPoint = .zero
+    @FocusState private var focused: UUID?
 
-    @ViewBuilder private var cards: some View {
-        if children.isEmpty {
-            Text("Nothing here yet. Capture a thought to plant the first bud.")
-                .textRole(.heading)
-                .foregroundStyle(Theme.text3)
-                .padding(.top, 40)
-        } else {
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 36) {
-                    ForEach(children) { bud in
+    private let scale: CGFloat = 1.6
+    private let margin: CGFloat = 140
+
+    var body: some View {
+        GeometryReader { geo in
+            let size = geo.size
+            let layout = store.layout
+            ZStack {
+                Theme.canvas
+                ForEach(layout.order, id: \.self) { id in
+                    if let placed = layout.cards[id] {
                         Button {
-                            open(bud)
+                            tap(id)
                         } label: {
-                            TVCard(bud: bud, children: store.tree.children(of: bud.id).count, open: store.tree.openCount(under: bud.id))
+                            TVCardFace(id: id, store: store, lit: focused == id)
                         }
-                        .buttonStyle(.card)
-                        .focused($focusedCard, equals: bud.id)
+                        .buttonStyle(.plain)
+                        .focused($focused, equals: id)
+                        .opacity(focused == id ? 1 : Theme.light(for: placed.role))
+                        .scaleEffect(scale * (focused == id ? 1.08 : 1))
+                        .position(screenPoint(placed.position, in: size))
+                        .zIndex(focused == id ? 2 : (placed.role == .center ? 1 : 0))
+                        .animation(.easeOut(duration: 0.25), value: focused)
                     }
                 }
-                .padding(.vertical, 40)
-                .padding(.horizontal, 20)
             }
-            .scrollClipDisabled()
+            .frame(width: size.width, height: size.height)
+            .clipped()
+            .onChange(of: focused) { _, id in keep(id, visible: size) }
+            .onChange(of: store.center) { _, id in
+                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
+                focused = id
+            }
+            .onAppear { focused = store.center }
+        }
+        .onExitCommand { stepOut() }
+        .onPlayPauseCommand { toggleFocused() }
+    }
+
+    private func screenPoint(_ p: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: size.width / 2 + (p.x - camera.x) * scale, y: size.height / 2 + (p.y - camera.y) * scale)
+    }
+
+    /// Slides the camera just enough that the focused card sits inside the viewport.
+    private func keep(_ id: UUID?, visible size: CGSize) {
+        guard let id, let placed = store.layout.cards[id] else { return }
+        let s = Metrics.size(of: id)
+        let half = CGSize(width: s.width / 2 * scale, height: s.height / 2 * scale)
+        let p = screenPoint(placed.position, in: size)
+        var dx: CGFloat = 0, dy: CGFloat = 0
+        if p.x - half.width < margin { dx = (p.x - half.width - margin) / scale }
+        if p.x + half.width > size.width - margin { dx = (p.x + half.width - size.width + margin) / scale }
+        if p.y - half.height < margin { dy = (p.y - half.height - margin) / scale }
+        if p.y + half.height > size.height - margin { dy = (p.y + half.height - size.height + margin) / scale }
+        guard dx != 0 || dy != 0 else { return }
+        withAnimation(.spring(duration: 0.6, bounce: 0)) {
+            camera.x += dx
+            camera.y += dy
         }
     }
 
-    private var footer: some View {
-        Text("Click a bud with children to go in. Menu steps out. Play/Pause ticks the to-do in focus. What you plant here stays on this TV until sync arrives.")
-            .textRole(.caption)
-            .foregroundStyle(Theme.text3)
-    }
-
-    // MARK: moves
-
-    private func open(_ bud: Bud) {
-        if store.tree.hasChildren(bud.id) {
-            withAnimation(.easeInOut(duration: 0.3)) { store.center = bud.id }
-        } else if bud.isTodo {
-            store.toggle(bud.id)
+    private func tap(_ id: UUID) {
+        if id == rootID || store.tree.hasChildren(id) {
+            guard id != store.center else { return }
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
+        } else if store.tree.bud(id)?.isTodo == true {
+            store.toggle(id)
         }
     }
 
     private func toggleFocused() {
-        guard let id = focusedCard, store.tree.bud(id)?.isTodo == true else { return }
+        guard let id = focused, store.tree.bud(id)?.isTodo == true else { return }
         store.toggle(id)
     }
 
     private func stepOut() {
         guard store.center != rootID else { return }
-        withAnimation(.easeInOut(duration: 0.3)) { store.back() }
+        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.back() }
     }
 }
 
-/// One card in the row: the kind mark, the title, and what it holds.
-struct TVCard: View {
-    let bud: Bud
-    let children: Int
-    let open: Int
+/// The face of a card: the hub for Everything, a chip for a bud. No buttons inside, so the
+/// whole face is one focus target for the remote.
+struct TVCardFace: View {
+    let id: UUID
+    @ObservedObject var store: BudStore
+    let lit: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                if bud.isTodo {
-                    Image(systemName: bud.isDone ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(bud.isDone ? Theme.leaf : meta)
-                } else {
-                    Circle().fill(Theme.leaf).frame(width: 10, height: 10)
-                }
-                Text(subtitle)
-                    .textRole(.label)
+        if id == rootID {
+            hub
+        } else if let bud = store.tree.bud(id) {
+            chip(bud)
+        }
+    }
+
+    private var hub: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "circle.hexagongrid")
+                .textRole(.heading)
+                .foregroundStyle(Theme.hubMark)
+            Text("Everything")
+                .textRole(.title)
+                .foregroundStyle(Theme.hubInk)
+            Text("\(store.tree.children(of: rootID).count) threads")
+                .textRole(.caption)
+                .foregroundStyle(Theme.hubMeta)
+        }
+        .frame(width: Metrics.hub.width, height: Metrics.hub.height)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.xl)
+                .fill(Theme.hub)
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(lit ? Theme.hubAccent : Theme.hubLine, lineWidth: lit ? 1.5 : 1))
+                .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
+        )
+    }
+
+    private func chip(_ bud: Bud) -> some View {
+        let ink = lit ? Theme.cardLitInk : Theme.cardInk
+        let meta = lit ? Theme.cardLitMeta : (bud.isTodo ? Theme.cardMeta : Theme.cardNoteMeta)
+        let fill = lit ? Theme.cardLit : (bud.isTodo ? Theme.card : Theme.cardNote)
+        let line = lit ? Theme.cardLitLine : (bud.isTodo ? Theme.cardLine : Theme.cardNoteLine)
+        return HStack(alignment: .top, spacing: 8) {
+            if bud.isTodo {
+                Image(systemName: bud.isDone ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(bud.isDone ? Theme.leaf : meta)
+            } else {
+                Circle()
+                    .fill(Theme.leaf)
+                    .frame(width: 6, height: 6)
+                    .padding(.top, 6)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(bud.text)
+                    .strikethrough(bud.isDone)
+                    .textRole(.cardTitle)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(bud.isDone ? meta : ink)
+                Text(subtitle(bud))
+                    .textRole(.caption)
                     .foregroundStyle(meta)
             }
-            Text(bud.text)
-                .strikethrough(bud.isDone)
-                .textRole(.heading)
-                .foregroundStyle(bud.isDone ? meta : ink)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
             Spacer(minLength: 0)
         }
-        .padding(24)
-        .frame(width: 360, height: 200, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(fill))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(line, lineWidth: 2))
+        .padding(10)
+        .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md)
+                .fill(fill)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(line, lineWidth: lit ? 1.5 : 1))
+                .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 6, y: lit ? 0 : 2)
+        )
     }
 
-    private var subtitle: String {
-        if children == 0 { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
-        return "\(children) inside" + (open > 0 ? " · \(open) open" : "")
+    private func subtitle(_ bud: Bud) -> String {
+        let kids = store.tree.children(of: bud.id)
+        if kids.isEmpty { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
+        let open = store.tree.openCount(under: bud.id)
+        return "\(kids.count) connected" + (open > 0 ? " · \(open) open" : "")
     }
-
-    private var ink: Color { Theme.cardInk }
-    private var meta: Color { bud.isTodo ? Theme.cardMeta : Theme.cardNoteMeta }
-    private var fill: Color { bud.isTodo ? Theme.card : Theme.cardNote }
-    private var line: Color { bud.isTodo ? Theme.cardLine : Theme.cardNoteLine }
 }
 
 /// One line of text from the TV keyboard or dictation, planted under the current bud.
