@@ -26,14 +26,15 @@ public struct BudRootView: View {
         VStack(spacing: 0) {
             TopBar(store: store, onAdd: { store.modal = .capture }, onSearch: { searching = true })
             surface
-                .overlay(alignment: .bottom) {
-                    ToastView(center: store.toasts)
-                        .padding(12)
-                    .animation(.spring(duration: 0.4, bounce: 0.2), value: store.toasts.current?.id)
-                }
         }
         .overlay { if searching { palette } }
         .overlay { ModalHost(store: store) }
+        // Above the modal too, so a toast from a dialog shows while Settings still covers the window.
+        .overlay(alignment: .bottom) {
+            ToastView(center: store.toasts)
+                .padding(12)
+                .animation(.spring(duration: 0.4, bounce: 0.2), value: store.toasts.current?.id)
+        }
         .background(Theme.window.ignoresSafeArea())
         .background {
             // ⌘K from anywhere in the window, drawn nowhere.
