@@ -70,10 +70,17 @@ CREATE TABLE IF NOT EXISTS peers (
 CREATE TABLE IF NOT EXISTS peer_denied (
     node TEXT PRIMARY KEY NOT NULL
 );
--- The tickets this vault issued and that nobody redeemed yet; a ticket leaves the table the
--- first time it is redeemed.
+-- The tickets this vault issued and that nobody redeemed yet, with when each was made in
+-- milliseconds since the epoch; a ticket leaves the table the first time it is redeemed, or when
+-- it is older than its lifetime.
 CREATE TABLE IF NOT EXISTS tickets_issued (
-    id BLOB PRIMARY KEY NOT NULL
+    id     BLOB PRIMARY KEY NOT NULL,
+    issued INTEGER NOT NULL
+);
+-- Peers the last key rotation could not move: they hold the old key until a session with them
+-- works again.
+CREATE TABLE IF NOT EXISTS peer_missed (
+    node TEXT PRIMARY KEY NOT NULL
 );
 -- The ticket this vault accepted from a peer, until the first session with that peer worked.
 CREATE TABLE IF NOT EXISTS peer_ticket (

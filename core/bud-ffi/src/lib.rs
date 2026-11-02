@@ -180,6 +180,8 @@ pub struct PeerRecord {
     pub id: String,
     pub relay: RelaySetting,
     pub last_seen: Option<u64>,
+    /// The last key rotation could not move this peer: it holds the old key.
+    pub missed: bool,
 }
 
 impl From<bud_core::PeerInfo> for PeerRecord {
@@ -188,6 +190,7 @@ impl From<bud_core::PeerInfo> for PeerRecord {
             id: peer.id,
             relay: peer.relay.into(),
             last_seen: peer.last_seen.and_then(|seen| u64::try_from(seen).ok()),
+            missed: peer.missed,
         }
     }
 }
@@ -289,7 +292,7 @@ impl PeerNode {
     }
 
     /// Make a new vault key and give it to every peer. Returns the ids of the peers it could not
-    /// reach; they hold the old key and are turned away.
+    /// reach and that still hold the old key, and are turned away. `peers` marks them as `missed`.
     pub fn rotate_key(&self) -> Result<Vec<String>> {
         self.with(|node| Ok(node.rotate_key()?.missed))
     }

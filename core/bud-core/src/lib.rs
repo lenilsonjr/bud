@@ -31,7 +31,7 @@ pub use sync::{Heads, SyncReport, Updates};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -205,7 +205,11 @@ impl Vault {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version != SCHEMA_VERSION {
-            conn.execute_batch("DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts;")?;
+            // Issued tickets are short-lived, so an older shape of their table is dropped too.
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts;
+                 DROP TABLE IF EXISTS tickets_issued;",
+            )?;
         }
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;

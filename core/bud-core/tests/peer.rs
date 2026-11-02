@@ -419,6 +419,58 @@ fn a_ticket_that_was_never_issued_pairs_nothing() {
     assert!(a.node.peers().unwrap().is_empty());
 }
 
+#[test]
+fn an_expired_ticket_is_refused_and_a_fresh_one_works() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    a.node.set_ticket_lifetime(Duration::from_millis(500));
+    let stale = a.node.ticket_with_addresses().unwrap().encode();
+    std::thread::sleep(Duration::from_millis(900));
+    b.node.accept_ticket(&stale).unwrap();
+    assert!(
+        b.node.sync_now().is_err(),
+        "an expired ticket pairs nothing"
+    );
+    assert_eq!(b.read("Gift ideas.md"), None);
+    assert!(a.node.peers().unwrap().is_empty());
+    // A fresh ticket works, and making it drops the expired one from the table.
+    a.node.set_ticket_lifetime(Duration::from_secs(60));
+    let fresh = a.node.ticket_with_addresses().unwrap().encode();
+    c.node.accept_ticket(&fresh).unwrap();
+    c.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 1);
+}
+
+#[test]
+fn a_lost_acknowledgement_does_not_make_a_peer_missed() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    b.node.drop_next_key_acks(1);
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 1);
+    assert!(report.missed.is_empty());
+    assert_eq!(b.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
+    assert!(!a.node.peers().unwrap()[0].missed);
+    b.node.sync_now().unwrap();
+}
+
+#[test]
+fn a_peer_that_kept_the_old_key_is_missed_and_marked() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let old = a.node.ticket().unwrap().key;
+    // b no longer knows a, so it turns the new key away.
+    b.node.forget_peer(&a.node.id()).unwrap();
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 0);
+    assert_eq!(report.missed, vec![b.node.id()]);
+    assert_eq!(b.node.ticket().unwrap().key, old);
+    let peers = a.node.peers().unwrap();
+    assert!(peers[0].missed);
+}
+
 /// A stranger that dials the node and says nothing it can open is dropped, and the node goes on.
 #[test]
 fn a_stranger_with_an_oversized_or_silent_frame_is_dropped() {
