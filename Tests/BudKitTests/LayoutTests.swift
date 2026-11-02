@@ -144,6 +144,56 @@ final class SearcherTests: XCTestCase {
     }
 }
 
+final class UndoTests: XCTestCase {
+    func testAnUndoableRunsItsClosure() {
+        final class Box: @unchecked Sendable { var ran = 0 }
+        let box = Box()
+        let action = Undoable(message: "Planted under Everything") { box.ran += 1 }
+        XCTAssertEqual(action.message, "Planted under Everything")
+        action.undo()
+        XCTAssertEqual(box.ran, 1)
+    }
+
+    #if canImport(Combine)
+    @MainActor
+    func testTheToastShowsThenGoesOnUndoOrTimeOrTheNextOne() async throws {
+        final class Box: @unchecked Sendable { var undone: [String] = [] }
+        let box = Box()
+        let center = ToastCenter(duration: .milliseconds(60))
+
+        center.show(Undoable(message: "one") { box.undone.append("one") })
+        XCTAssertEqual(center.current?.action.message, "one")
+        center.undo()
+        XCTAssertNil(center.current, "Undo drops the toast")
+        XCTAssertEqual(box.undone, ["one"])
+
+        center.show(Undoable(message: "two") { box.undone.append("two") })
+        center.show(Undoable(message: "three") { box.undone.append("three") })
+        XCTAssertEqual(center.current?.action.message, "three", "A new toast replaces the one before it")
+
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNil(center.current, "Time takes the toast away")
+        XCTAssertEqual(box.undone, ["one"], "Nothing undone on its own")
+    }
+
+    @MainActor
+    func testPlantingOffersUndoThatRemovesTheBud() throws {
+        let store = BudStore(fileURL: nil)
+        let before = store.tree.children(of: rootID).count
+        let planted = try XCTUnwrap(store.add("Water the fern", todo: true, under: rootID))
+        XCTAssertEqual(store.toasts.current?.action.message, "Planted under Everything")
+        store.toasts.undo()
+        let exp = expectation(description: "removed on the main actor")
+        Task { @MainActor in
+            XCTAssertNil(store.tree.bud(planted.id))
+            XCTAssertEqual(store.tree.children(of: rootID).count, before)
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1)
+    }
+    #endif
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()

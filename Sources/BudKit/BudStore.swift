@@ -21,6 +21,8 @@ public final class BudStore: ObservableObject {
     @Published public var surface: Surface = .canvas
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
+    /// The undo toast; every undoable change goes through it.
+    public let toasts = ToastCenter()
 
     private let fileURL: URL?
 
@@ -54,11 +56,19 @@ public final class BudStore: ObservableObject {
     /// The open to-do to do next inside the current bud, or nil when there is none.
     public var nextStep: Bud? { tree.nextStep(under: center) }
 
-    /// Plants a bud under a parent. A blank line plants nothing.
-    public func add(_ text: String, todo: Bool, under parent: UUID) {
+    /// Plants a bud under a parent and offers to take it back. A blank line plants nothing.
+    @discardableResult
+    public func add(_ text: String, todo: Bool, under parent: UUID) -> Bud? {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty else { return }
-        commit { $0.add(line, todo: todo, under: parent) }
+        guard !line.isEmpty else { return nil }
+        var planted: Bud?
+        commit { planted = $0.add(line, todo: todo, under: parent) }
+        guard let planted else { return nil }
+        let id = planted.id
+        toasts.show(Undoable(message: "Planted under \(tree.title(of: parent))") { [weak self] in
+            Task { @MainActor in self?.remove(id) }
+        })
+        return planted
     }
 
     public func update(_ id: UUID, text: String, todo: Bool) {

@@ -68,6 +68,22 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheToastAfterPlanting() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        store.add("Write the welcome note", todo: true, under: rootID)
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("toast-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheQuickAddSheet() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")

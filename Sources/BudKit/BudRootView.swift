@@ -20,7 +20,13 @@ public struct BudRootView: View {
         VStack(spacing: 0) {
             TopBar(store: store, onAdd: { adding = AddTarget(parent: store.center) }, onSearch: { searching = true })
             surface
-                .overlay(alignment: .bottom) { hint }
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 10) {
+                        ToastView(center: store.toasts)
+                        hint
+                    }
+                    .animation(.spring(duration: 0.4, bounce: 0.2), value: store.toasts.current?.id)
+                }
         }
         .overlay { if searching { palette } }
         .background(Theme.window.ignoresSafeArea())
