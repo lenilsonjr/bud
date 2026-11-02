@@ -1,10 +1,6 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-struct EditTarget: Identifiable {
-    let id: UUID
-}
-
 struct AddTarget: Identifiable {
     let parent: UUID
     var id: UUID { parent }
@@ -72,54 +68,6 @@ struct AddSheet: View {
         guard !line.isEmpty else { return }
         store.add(line, todo: todo, under: parent)
         dismiss()
-    }
-}
-
-struct EditSheet: View {
-    @ObservedObject var store: BudStore
-    let id: UUID
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    @State private var todo = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Edit bud")
-                .textRole(.heading)
-                .foregroundStyle(Theme.text)
-            TextField("Text", text: $text)
-                .textFieldStyle(.roundedBorder)
-            Picker("Kind", selection: $todo) {
-                Text("Note").tag(false)
-                Text("To-do").tag(true)
-            }
-            .pickerStyle(.segmented)
-            HStack {
-                Button("Delete", role: .destructive) {
-                    store.remove(id)
-                    dismiss()
-                }
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    store.update(id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), todo: todo)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(minWidth: 360)
-        .textRole(.body)
-        .background(Theme.surface)
-        .onAppear {
-            if let bud = store.tree.bud(id) {
-                text = bud.text
-                todo = bud.isTodo
-            }
-        }
     }
 }
 #endif

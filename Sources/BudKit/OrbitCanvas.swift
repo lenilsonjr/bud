@@ -5,7 +5,8 @@ import SwiftUI
 /// every card to its parent so a far card still reads as part of its thread.
 /// The camera is the board point at the middle of the viewport; the scale only changes
 /// when you pinch. Drag or scroll to move, tap a card with children to center it,
-/// tap a leaf to edit it. The light rests on the card under the pointer; N plants a bud under it.
+/// tap a leaf to open it in place. The light rests on the card under the pointer; Space opens
+/// that card, N plants a bud under it.
 public struct OrbitCanvas: View {
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
@@ -13,7 +14,7 @@ public struct OrbitCanvas: View {
     @State private var dragOrigin: CGPoint? = nil
     @State private var pinchOrigin: CGFloat? = nil
     @State private var lamp: CGPoint? = nil
-    @State private var editing: EditTarget? = nil
+    @State private var opened: UUID? = nil
     @State private var adding: AddTarget? = nil
     @State private var viewport: CGSize = .zero
     @FocusState private var focused: Bool
@@ -33,7 +34,10 @@ public struct OrbitCanvas: View {
                 Theme.canvas
                     .contentShape(Rectangle())
                     .gesture(panGesture)
-                    .onTapGesture { focused = true }
+                    .onTapGesture {
+                        focused = true
+                        close()
+                    }
                 EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
                     .allowsHitTesting(false)
                 ForEach(layout.order, id: \.self) { id in
@@ -44,6 +48,7 @@ public struct OrbitCanvas: View {
                             role: placed.role,
                             lit: lit == id,
                             onTap: { tap(id) },
+                            onOpen: { open(id) },
                             onAdd: { adding = AddTarget(parent: id) },
                             onToggle: { store.toggle(id) }
                         )
@@ -51,6 +56,13 @@ public struct OrbitCanvas: View {
                         .position(screenPoint(placed.position, in: size))
                         .zIndex(lit == id ? 2 : (placed.role == .center ? 1 : 0))
                     }
+                }
+                if let opened, let placed = layout.cards[opened] {
+                    DetailCard(id: opened, store: store, onEnrich: { adding = AddTarget(parent: opened) }, onClose: close)
+                        .scaleEffect(scale)
+                        .position(screenPoint(placed.position, in: size))
+                        .zIndex(3)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
                 }
             }
             .frame(width: size.width, height: size.height)
@@ -76,7 +88,12 @@ public struct OrbitCanvas: View {
         .focused($focused)
         .onAppear { focused = true }
         .onKeyPress(.escape) {
-            stepOut()
+            if opened != nil { close() } else { stepOut() }
+            return .handled
+        }
+        .onKeyPress(.space) {
+            guard let lit = litCard(in: store.layout, viewport: viewport) else { return .ignored }
+            open(lit)
             return .handled
         }
         .onKeyPress(KeyEquivalent("n")) {
@@ -84,9 +101,9 @@ public struct OrbitCanvas: View {
             return .handled
         }
         .onChange(of: store.center) { _, _ in
+            opened = nil
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
         }
-        .sheet(item: $editing) { target in EditSheet(store: store, id: target.id) }
         .sheet(item: $adding) { target in AddSheet(store: store, parent: target.parent) }
     }
 
@@ -146,16 +163,27 @@ public struct OrbitCanvas: View {
         return best?.0
     }
 
+    /// A card with children centers on the first click and opens on the next; a leaf opens at once.
     private func tap(_ id: UUID) {
         if id == rootID || store.tree.hasChildren(id) {
             if id == store.center {
-                if id != rootID { editing = EditTarget(id: id) }
+                if id != rootID { open(id) }
                 return
             }
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
         } else {
-            editing = EditTarget(id: id)
+            open(id)
         }
+    }
+
+    private func open(_ id: UUID) {
+        guard id != rootID else { return }
+        withAnimation(.spring(duration: 0.35, bounce: 0.2)) { opened = id }
+    }
+
+    private func close() {
+        guard opened != nil else { return }
+        withAnimation(.easeOut(duration: 0.2)) { opened = nil }
     }
 
     /// N: a new bud under the lit card, or under the center when nothing is lit.
