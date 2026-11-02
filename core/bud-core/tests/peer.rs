@@ -52,16 +52,6 @@ impl Peer {
     }
 }
 
-/// A file as its properties and body: the sync module writes keys in its own order, so the order
-/// of the keys is not what two copies are compared by.
-fn same(text: Option<String>) -> Option<(Vec<String>, String)> {
-    let text = text?;
-    let (yaml, body) = bud_core::split_frontmatter(&text);
-    let mut lines: Vec<String> = yaml.unwrap_or("").lines().map(str::to_string).collect();
-    lines.sort();
-    Some((lines, body.to_string()))
-}
-
 fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(8) {
@@ -175,7 +165,7 @@ fn an_edit_on_one_vault_appears_in_the_other() {
         "Launch the newsletter/Pick a name/Shortlist three candidates.md",
         "Routines/Weekly review.md",
     ] {
-        assert_eq!(same(b.read(name)), same(a.read(name)), "{name}");
+        assert_eq!(b.read(name), a.read(name), "{name}");
     }
 
     let name = "Launch the newsletter/Design notes.md";
@@ -184,8 +174,7 @@ fn an_edit_on_one_vault_appears_in_the_other() {
     a.node.sync_now().unwrap();
     b.node.sync_now().unwrap();
     eventually("the edit reaches b", || {
-        // Only the properties the document model carries travel; the body is what is compared.
-        same(b.read(name)).map(|(_, body)| body) == same(Some(edited.clone())).map(|(_, body)| body)
+        b.read(name) == Some(edited.clone())
     });
 }
 
@@ -292,12 +281,35 @@ fn a_folder_bud_on_one_vault_comes_back_unchanged() {
 }
 
 #[test]
-#[ignore = "properties outside the six the document model carries do not travel yet"]
 fn every_frontmatter_key_reaches_the_other_vault() {
     let (a, b) = paired(None);
     b.node.sync_now().unwrap();
     let name = "Launch the newsletter/Design notes.md";
     assert_eq!(b.read(name), a.read(name));
+    assert!(b.read(name).unwrap().contains("tags: [brand]\ncreated:"));
+}
+
+#[test]
+fn unknown_keys_arrive_in_the_senders_order() {
+    let a = Peer::new(Some(&fixture()), None);
+    let name = "Gift ideas.md";
+    let text = "---\nzeta: 1\nstate: open\naliases:\n  - Mail\n  # kept\nalpha: [x, 'y']\nsource: phone\n---\nBody\n";
+    a.write(name, text);
+    let b = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    b.node.sync_now().unwrap();
+    assert_eq!(b.read(name), a.read(name));
+    // An edit of an unknown key on the second vault comes back to the first.
+    let edited = text.replace("alpha: [x, 'y']", "alpha: [z]");
+    b.write(name, &edited);
+    b.node.sync_now().unwrap();
+    a.node.sync_now().unwrap();
+    eventually("the key edit reaches a", || {
+        a.read(name) == Some(edited.clone())
+    });
 }
 
 /// A stranger that dials the node and says nothing it can open is dropped, and the node goes on.

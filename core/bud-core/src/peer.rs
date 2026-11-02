@@ -18,10 +18,9 @@
 //! its own heads, the dialer sends the changes the other lacks, and the other confirms. Both sides
 //! apply what they got through the sync module, which writes the files.
 //!
-//! What travels is what the document model carries: the body and the keys `state`, `when`, `due`,
-//! `pinned`, `created` and `source`. Other frontmatter keys, such as `tags`, stay on the machine
-//! that wrote them and are missing from a file made on the other side. The ignored test
-//! `every_frontmatter_key_reaches_the_other_vault` states the goal.
+//! What travels is the body and every frontmatter key: `state`, `when`, `due`, `pinned`, `created`
+//! and `source` as properties, any other key, such as `tags`, as the lines the sender wrote, with
+//! the order of the keys. A file made on the other side holds the same block.
 
 use crate::lock;
 use crate::sync::{Heads, Updates};

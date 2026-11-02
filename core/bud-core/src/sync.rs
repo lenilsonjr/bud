@@ -152,6 +152,55 @@ fn set_props(map: &LoroMap, props: &Properties) -> Result<()> {
     Ok(())
 }
 
+/// Whether the document keeps the unknown keys at all: a document made before they travelled has
+/// no order entry, and its file is the truth for them until it is looked at once.
+fn tracks_layout(doc: &LoroDoc) -> bool {
+    text_of(doc.get_map("layout").get("order")).is_some()
+}
+
+/// The unknown keys the document holds, in the order it holds for them.
+fn layout_of(doc: &LoroDoc) -> frontmatter::Layout {
+    let order: Vec<String> = text_of(doc.get_map("layout").get("order"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let map = doc.get_map("extra");
+    let mut extras: Vec<(String, String)> = map
+        .keys()
+        .filter_map(|key| Some((key.to_string(), text_of(map.get(&key))?)))
+        .collect();
+    let at = |key: &str| order.iter().position(|k| k == key).unwrap_or(usize::MAX);
+    extras.sort_by(|a, b| at(&a.0).cmp(&at(&b.0)).then_with(|| a.0.cmp(&b.0)));
+    frontmatter::Layout { extras, order }
+}
+
+/// Make the document hold the unknown keys of the block `yaml`, each as its lines.
+fn set_layout(doc: &LoroDoc, yaml: Option<&str>) -> Result<()> {
+    let fail = |err: loro::LoroError| Error::Invalid(format!("document: {err}"));
+    let wanted = yaml.map(frontmatter::layout).unwrap_or_default();
+    let map = doc.get_map("extra");
+    let stale: Vec<String> = map
+        .keys()
+        .map(|key| key.to_string())
+        .filter(|key| !wanted.extras.iter().any(|(k, _)| k == key))
+        .collect();
+    for key in stale {
+        map.delete(&key).map_err(fail)?;
+    }
+    for (key, text) in &wanted.extras {
+        if text_of(map.get(key)).as_deref() != Some(text.as_str()) {
+            map.insert(key, text.as_str()).map_err(fail)?;
+        }
+    }
+    let order = wanted.order.join("\n");
+    let layout = doc.get_map("layout");
+    if text_of(layout.get("order")).as_deref() != Some(order.as_str()) {
+        layout.insert("order", order.as_str()).map_err(fail)?;
+    }
+    Ok(())
+}
+
 /// Turn the difference between the text the document has and `new` into text operations.
 fn set_text(text: &LoroText, new: &str) -> Result<()> {
     let old: Vec<char> = text.to_string().chars().collect();
@@ -195,6 +244,7 @@ fn absorb(doc: &LoroDoc, file: &str) -> Result<usize> {
         &doc.get_map("props"),
         &yaml.map(frontmatter::parse).unwrap_or_default(),
     )?;
+    set_layout(doc, yaml)?;
     doc.commit();
     Ok(doc.len_ops() - before)
 }
@@ -686,6 +736,11 @@ impl Vault {
         if file != known {
             report.ops = absorb(&doc, &file)?;
             report.updated = 1;
+        } else if !tracks_layout(&doc) {
+            let before = doc.len_ops();
+            set_layout(&doc, frontmatter::split(&file).0)?;
+            doc.commit();
+            report.ops = doc.len_ops() - before;
         }
         // The document first, so a failed write leaves it with what it was given.
         self.store(path, &id, &doc, None)?;
@@ -696,8 +751,9 @@ impl Vault {
         let file_props = yaml.map(frontmatter::parse).unwrap_or_default();
         let mut path = path.to_string();
         let mut wrote = false;
-        if props != file_props {
-            self.set_properties(&path, &props)?;
+        let layout = layout_of(&doc);
+        if props != file_props || frontmatter::write_layout(&file, &layout) != file {
+            self.write_properties(&path, &props, Some(&layout))?;
             if !is_file {
                 self.docs_follow(&path, &format!("{path}.md"))?;
                 path.push_str(".md");

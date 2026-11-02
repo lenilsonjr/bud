@@ -16,7 +16,8 @@ mod watch;
 
 pub use edit::sanitize_filename;
 pub use frontmatter::{
-    parse as parse_frontmatter, split as split_frontmatter, write as write_frontmatter, Properties,
+    layout as frontmatter_layout, parse as parse_frontmatter, split as split_frontmatter,
+    write as write_frontmatter, write_layout as write_frontmatter_layout, Layout, Properties,
 };
 
 use rusqlite::{params, Connection, OptionalExtension, Row as SqlRow};
@@ -273,6 +274,16 @@ impl Vault {
     /// place, and the index row follows. A bud that is only a folder gets `Name.md` beside the
     /// folder first, and its children now belong to that file.
     pub fn set_properties(&mut self, path: &str, props: &Properties) -> Result<()> {
+        self.write_properties(path, props, None)
+    }
+
+    /// [`Vault::set_properties`], and with a layout the unknown keys of the block follow it too.
+    pub(crate) fn write_properties(
+        &mut self,
+        path: &str,
+        props: &Properties,
+        layout: Option<&Layout>,
+    ) -> Result<()> {
         let bud = self
             .bud(path)?
             .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
@@ -288,7 +299,10 @@ impl Vault {
         } else {
             std::fs::read_to_string(&absolute)?
         };
-        let written = frontmatter::write(&text, props);
+        let mut written = frontmatter::write(&text, props);
+        if let Some(layout) = layout {
+            written = frontmatter::write_layout(&written, layout);
+        }
         edit::write_atomic(&absolute, &written)?;
         let mtime = edit::mtime_of(&absolute);
         let (_, body) = frontmatter::split(&written);
