@@ -1,7 +1,8 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// The canvas: cards positioned by the layout, one camera over all of them.
+/// The canvas: cards positioned by the layout, one camera over all of them, a thin line from
+/// every card to its parent so a far card still reads as part of its thread.
 /// The camera is the board point at the middle of the viewport; the scale only changes
 /// when you pinch. Drag or scroll to move, tap a card with children to center it,
 /// tap a leaf to edit it. The light rests on the card under the pointer.
@@ -32,6 +33,8 @@ public struct OrbitCanvas: View {
                     .contentShape(Rectangle())
                     .gesture(panGesture)
                     .onTapGesture { focused = true }
+                EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
+                    .allowsHitTesting(false)
                 ForEach(layout.order, id: \.self) { id in
                     if let placed = layout.cards[id] {
                         CardView(
@@ -150,6 +153,36 @@ public struct OrbitCanvas: View {
 
     private func stepOut() {
         withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.back() }
+    }
+}
+
+/// The lines: one straight stroke per edge, parent centre to child centre, drawn under the cards.
+/// The current thread gets the stronger line; ghost and kin clusters the fainter one.
+struct EdgesLayer: View {
+    let layout: Layout
+    let scale: CGFloat
+    let screenPoint: (CGPoint) -> CGPoint
+
+    var body: some View {
+        Canvas { context, _ in
+            var strong = Path()
+            var faint = Path()
+            for edge in layout.edges {
+                guard let from = layout.cards[edge.from], let to = layout.cards[edge.to] else { continue }
+                let a = screenPoint(from.position)
+                let b = screenPoint(to.position)
+                if to.role == .ghost || to.role == .kin {
+                    faint.move(to: a)
+                    faint.addLine(to: b)
+                } else {
+                    strong.move(to: a)
+                    strong.addLine(to: b)
+                }
+            }
+            let width = max(0.75, scale)
+            context.stroke(strong, with: .color(Theme.lineStrong), lineWidth: width)
+            context.stroke(faint, with: .color(Theme.line), lineWidth: width)
+        }
     }
 }
 
