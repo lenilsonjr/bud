@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The left pane of Files: Places, Lenses, and Everything opened into the tree. Only Everything
-/// has rows today; the Inbox lists its captures; Archive and Trash wait for the vault.
+/// has rows; the Inbox, the Archive and the Trash are pages of their own.
 struct Sidebar: View {
     @ObservedObject var store: BudStore
     @State private var expanded: Set<UUID> = []
@@ -12,8 +12,8 @@ struct Sidebar: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 2) {
                     eyebrow("Places")
-                    place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.inboxOpen) { store.openInbox() }
-                    place("Everything", glyph: "leaf.fill", count: nil, selected: !store.inboxOpen && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.inboxOpen = false }
+                    place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.place == .inbox) { store.openInbox() }
+                    place("Everything", glyph: "leaf.fill", count: nil, selected: store.place == nil && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.place = nil }
                         .budDrop { store.move($0, under: rootID) }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
@@ -21,9 +21,9 @@ struct Sidebar: View {
                                 bud: bud,
                                 tree: store.tree,
                                 depth: row.depth,
-                                selected: !store.inboxOpen && store.lens == nil && store.center == bud.id,
+                                selected: store.place == nil && store.lens == nil && store.center == bud.id,
                                 expanded: expanded.contains(bud.id),
-                                onSelect: { store.center = bud.id; store.inboxOpen = false },
+                                onSelect: { store.center = bud.id; store.place = nil },
                                 onDisclose: { toggle(bud.id) }
                             )
                             .budMenu(bud.id, store: store)
@@ -31,8 +31,8 @@ struct Sidebar: View {
                             .id(bud.id)
                         }
                     }
-                    place("Archive", glyph: "archivebox", count: nil, selected: false, action: nil)
-                    place("Trash", glyph: "trash", count: nil, selected: false, action: nil)
+                    place("Archive", glyph: "archivebox", count: store.tree.archived().count, selected: store.place == .archive) { store.openArchive() }
+                    place("Trash", glyph: "trash", count: store.tree.trashed.count, selected: store.place == .trash) { store.openTrash() }
                     eyebrow("Lenses").padding(.top, 14)
                     let today = store.tree.today()
                     place("Today", glyph: "sun.max", count: today.due.count + today.scheduled.count, selected: store.lens == .today) { store.lens = .today }

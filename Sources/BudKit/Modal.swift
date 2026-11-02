@@ -6,8 +6,11 @@ enum Modal: Hashable, Identifiable {
     case capture
     case closeBranch(id: UUID)
     case settings
+    /// Delete one branch from the Trash for good; with nil, empty the whole Trash.
+    case deleteForever(id: UUID?)
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
+    static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
 
     var id: UUID {
         switch self {
@@ -15,6 +18,7 @@ enum Modal: Hashable, Identifiable {
         case .capture: return inboxID
         case .closeBranch(let id): return id
         case .settings: return Self.settingsID
+        case .deleteForever(let id): return id ?? Self.emptyTrashID
         }
     }
 
@@ -88,6 +92,7 @@ struct ModalHost: View {
             case .capture: AddSheet(store: store, mode: .capture)
             case .closeBranch(let id): CloseBranchDialog(store: store, id: id)
             case .settings: SettingsView(flags: .shared, onDone: { store.modal = nil })
+            case .deleteForever(let id): DeleteForeverDialog(store: store, id: id)
             }
         }
         .modalCard()

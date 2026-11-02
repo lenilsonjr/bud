@@ -17,6 +17,12 @@ public enum Lens: String, CaseIterable, Sendable {
     case today = "Today", todos = "To-dos", pinned = "Pinned"
 }
 
+/// A place that holds buds and has a page of its own in Files, beside Everything's tree: the
+/// Inbox (captures), the Archive (finished chapters) and the Trash (recoverable branches).
+public enum Place: String, CaseIterable, Sendable {
+    case inbox = "Inbox", archive = "Archive", trash = "Trash"
+}
+
 /// The tree, the current center of the web, and the layout derived from both.
 /// Every mutation saves to disk; the layout is recomputed once per change, not per frame.
 @MainActor
@@ -28,16 +34,21 @@ public final class BudStore: ObservableObject {
             if center != oldValue {
                 relayout()
                 lens = nil
-                inboxOpen = false
+                place = nil
             }
         }
     }
-    /// Whether Files shows the Inbox instead of the center's page; a change of center clears it.
-    @Published public var inboxOpen = false
+    /// The place Files shows instead of the center's page; a change of center or lens clears it.
+    @Published public var place: Place? = nil
+    /// Whether Files shows the Inbox.
+    public var inboxOpen: Bool {
+        get { place == .inbox }
+        set { place = newValue ? .inbox : nil }
+    }
     @Published public var surface: Surface = .canvas
     /// The lens Files shows instead of the center's page; a change of center clears it.
     @Published public var lens: Lens? = nil {
-        didSet { if lens != nil { inboxOpen = false } }
+        didSet { if lens != nil { place = nil } }
     }
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
@@ -243,6 +254,24 @@ public final class BudStore: ObservableObject {
         })
     }
 
+    /// Puts a branch back from the Trash and offers to trash it again.
+    public func restore(_ id: UUID) {
+        guard let branch = tree.trashed.first(where: { $0.id == id }) else { return }
+        commit { $0.restore(id) }
+        toasts.show(Undoable(message: "Restored \(branch.head.text)") { [weak self] in
+            Task { @MainActor in self?.commit { $0.trash(id) } }
+        })
+    }
+
+    /// Drops a branch from the Trash for good. Not undoable: the dialog asks first.
+    public func deleteForever(_ id: UUID) {
+        commit { $0.deleteForever(id) }
+    }
+
+    public func emptyTrash() {
+        commit { $0.emptyTrash() }
+    }
+
     /// Makes a note a to-do, open. A to-do stays what it is.
     public func makeTodo(_ id: UUID) {
         guard let bud = tree.bud(id), !bud.isTodo else { return }
@@ -253,14 +282,20 @@ public final class BudStore: ObservableObject {
     public func openAsFile(_ id: UUID) {
         center = id
         lens = nil
-        inboxOpen = false
+        place = nil
         surface = .files
     }
 
     /// The Files view on a lens.
     public func open(_ lens: Lens) {
         self.lens = lens
-        inboxOpen = false
+        surface = .files
+    }
+
+    /// The Files view on a place.
+    public func open(_ place: Place) {
+        lens = nil
+        self.place = place
         surface = .files
     }
 
@@ -278,11 +313,9 @@ public final class BudStore: ObservableObject {
     }
 
     /// The Files view on the Inbox.
-    public func openInbox() {
-        lens = nil
-        inboxOpen = true
-        surface = .files
-    }
+    public func openInbox() { open(.inbox) }
+    public func openArchive() { open(.archive) }
+    public func openTrash() { open(.trash) }
 
     public func back() {
         guard center != rootID else { return }

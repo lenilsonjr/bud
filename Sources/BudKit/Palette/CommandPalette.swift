@@ -148,6 +148,7 @@ struct CommandPalette: View {
         case .inbox: return "tray"
         case .everything: return "leaf.fill"
         case .archive: return "archivebox"
+        case .trash: return "trash"
         case .today: return "sun.max"
         case .todos: return "checkmark.square"
         case .pinned: return "pin"
@@ -165,7 +166,6 @@ struct CommandPalette: View {
         case .bud(let hit):
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: hit.id, inFiles: inFiles) }
         case .destination(let d):
-            // Archive waits for the vault.
             switch d {
             case .everything:
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = rootID }
@@ -174,7 +174,8 @@ struct CommandPalette: View {
             case .todos: store.open(.todos)
             case .pinned: store.open(.pinned)
             case .inbox: store.openInbox()
-            case .archive: break
+            case .archive: store.openArchive()
+            case .trash: store.openTrash()
             }
         }
         onClose()
