@@ -13,14 +13,14 @@ struct Sidebar: View {
                 VStack(alignment: .leading, spacing: 2) {
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: 0, selected: false, action: nil)
-                    place("Everything", glyph: "leaf.fill", count: nil, selected: store.center == rootID) { store.center = rootID }
+                    place("Everything", glyph: "leaf.fill", count: nil, selected: store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
                             TreeRow(
                                 bud: bud,
                                 tree: store.tree,
                                 depth: row.depth,
-                                selected: store.center == bud.id,
+                                selected: store.lens == nil && store.center == bud.id,
                                 expanded: expanded.contains(bud.id),
                                 onSelect: { store.center = bud.id },
                                 onDisclose: { toggle(bud.id) }
@@ -31,9 +31,10 @@ struct Sidebar: View {
                     place("Archive", glyph: "archivebox", count: nil, selected: false, action: nil)
                     place("Trash", glyph: "trash", count: nil, selected: false, action: nil)
                     eyebrow("Lenses").padding(.top, 14)
-                    place("Today", glyph: "sun.max", count: 0, selected: false, action: nil)
-                    place("To-dos", glyph: "checkmark.square", count: nil, selected: false, action: nil)
-                    place("Pinned", glyph: "pin", count: nil, selected: false, action: nil)
+                    let today = store.tree.today()
+                    place("Today", glyph: "sun.max", count: today.due.count + today.scheduled.count, selected: store.lens == .today) { store.lens = .today }
+                    place("To-dos", glyph: "checkmark.square", count: nil, selected: store.lens == .todos) { store.lens = .todos }
+                    place("Pinned", glyph: "pin", count: nil, selected: store.lens == .pinned) { store.lens = .pinned }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)

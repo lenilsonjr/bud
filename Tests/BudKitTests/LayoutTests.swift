@@ -272,6 +272,45 @@ final class PropertiesTests: XCTestCase {
     }
 }
 
+final class LensTests: XCTestCase {
+    func testTodayIsDueThenScheduledOverdueFirst() throws {
+        var t = Tree()
+        let day = Date(timeIntervalSince1970: 1_800_000_000)
+        let thread = t.add("Thread", todo: true, under: rootID)
+        let overdue = t.add("Overdue", todo: true, under: thread.id)
+        let dueToday = t.add("Due today", todo: true, under: thread.id)
+        let dueLater = t.add("Due later", todo: true, under: thread.id)
+        let scheduled = t.add("Scheduled note", todo: false, under: thread.id)
+        let both = t.add("Both", todo: true, under: thread.id)
+        let done = t.add("Done and due", todo: true, under: thread.id)
+        t.setDue(overdue.id, day.addingTimeInterval(-86_400 * 3))
+        t.setDue(dueToday.id, day)
+        t.setDue(dueLater.id, day.addingTimeInterval(86_400 * 2))
+        t.setWhen(scheduled.id, day.addingTimeInterval(-3_600))
+        t.setDue(both.id, day); t.setWhen(both.id, day)
+        t.setDue(done.id, day); t.toggle(done.id)
+
+        let today = t.today(on: day)
+        XCTAssertEqual(today.due.map(\.text), ["Overdue", "Both", "Due today"], "Overdue first, then by due date, then by title")
+        XCTAssertEqual(today.scheduled.map(\.id), [scheduled.id], "Scheduled, and Both shows only once")
+        XCTAssertFalse(today.due.contains { $0.id == done.id }, "A done to-do leaves the lens")
+        XCTAssertFalse(today.due.contains { $0.id == dueLater.id })
+    }
+
+    func testOpenTodosGroupByThreadAndPinnedListsThePins() throws {
+        let t = Tree.seed()
+        let groups = t.openTodos()
+        XCTAssertEqual(groups.first?.thread.text, "Launch the newsletter")
+        XCTAssertTrue(groups.allSatisfy { !$0.todos.isEmpty })
+        XCTAssertTrue(groups.allSatisfy { $0.todos.allSatisfy { $0.state == .open } })
+        XCTAssertFalse(groups.contains { $0.thread.text == "Routines" }, "A note thread with no to-dos has no group")
+        XCTAssertEqual(groups.flatMap(\.todos).count, t.openCount(under: rootID), "Every open to-do appears once")
+        XCTAssertEqual(t.pinned().map(\.text), ["Launch the newsletter"])
+        let name = try XCTUnwrap(t.walk(under: rootID).first { $0.text == "Pick a name" })
+        XCTAssertEqual(t.breadcrumb(of: name.id), ["Launch the newsletter"], "The root is left out")
+    }
+}
+
 final class NextStepTests: XCTestCase {
     private func world() -> (Tree, UUID) {
         var t = Tree()

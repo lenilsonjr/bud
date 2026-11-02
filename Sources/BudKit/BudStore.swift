@@ -9,6 +9,11 @@ public enum Surface: String, CaseIterable, Sendable {
     case files = "Files"
 }
 
+/// A query across every thread, shown as a page in Files.
+public enum Lens: String, CaseIterable, Sendable {
+    case today = "Today", todos = "To-dos", pinned = "Pinned"
+}
+
 /// The tree, the current center of the web, and the layout derived from both.
 /// Every mutation saves to disk; the layout is recomputed once per change, not per frame.
 @MainActor
@@ -16,9 +21,16 @@ public final class BudStore: ObservableObject {
     @Published public private(set) var tree: Tree
     @Published public private(set) var layout: Layout
     @Published public var center: UUID {
-        didSet { if center != oldValue { relayout() } }
+        didSet {
+            if center != oldValue {
+                relayout()
+                lens = nil
+            }
+        }
     }
     @Published public var surface: Surface = .canvas
+    /// The lens Files shows instead of the center's page; a change of center clears it.
+    @Published public var lens: Lens? = nil
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
     /// The undo toast; every undoable change goes through it.
@@ -107,6 +119,13 @@ public final class BudStore: ObservableObject {
     /// Open as file: the Files view with this bud as the page. The center is the selection there.
     public func openAsFile(_ id: UUID) {
         center = id
+        lens = nil
+        surface = .files
+    }
+
+    /// The Files view on a lens.
+    public func open(_ lens: Lens) {
+        self.lens = lens
         surface = .files
     }
 

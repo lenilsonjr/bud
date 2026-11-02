@@ -176,6 +176,37 @@ public struct Tree: Codable, Equatable, Sendable {
         return rows
     }
 
+    /// Today: open to-dos due on or before the day (overdue first), and buds scheduled for the
+    /// day or earlier. A bud that is both due and scheduled shows once, under Due.
+    public func today(on day: Date = Date(), calendar: Calendar = .current) -> (due: [Bud], scheduled: [Bud]) {
+        let end = calendar.startOfDay(for: day).addingTimeInterval(86_400)
+        let all = walk(under: rootID)
+        let due = all.filter { $0.state == .open && ($0.due.map { $0 < end } ?? false) }
+            .sorted { ($0.due!, $0.text) < ($1.due!, $1.text) }
+        let dueIDs = Set(due.map(\.id))
+        let scheduled = all.filter { !dueIDs.contains($0.id) && !$0.isDone && ($0.when.map { $0 < end } ?? false) }
+            .sorted { ($0.when!, $0.text) < ($1.when!, $1.text) }
+        return (due, scheduled)
+    }
+
+    /// Every open to-do, grouped by the top-level thread it sits under, threads in their order.
+    public func openTodos() -> [(thread: Bud, todos: [Bud])] {
+        children(of: rootID).compactMap { thread in
+            let todos = ([thread] + walk(under: thread.id)).filter { $0.state == .open }
+            return todos.isEmpty ? nil : (thread, todos)
+        }
+    }
+
+    /// Every pinned bud, in reading order.
+    public func pinned() -> [Bud] {
+        walk(under: rootID).filter(\.pinned)
+    }
+
+    /// The titles above a bud, root left out: "Launch the newsletter › Pick a name".
+    public func breadcrumb(of id: UUID) -> [String] {
+        ancestors(of: id).reversed().filter { $0 != rootID }.map { title(of: $0) }
+    }
+
     /// The orbit a bud belongs to: its parent and every sibling, itself included. The root's
     /// orbit is the root alone.
     public func orbit(of id: UUID) -> Set<UUID> {
