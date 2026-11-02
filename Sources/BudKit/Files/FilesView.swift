@@ -32,7 +32,7 @@ struct OutlinePage: View {
     var body: some View {
         let id = store.center
         let kids = store.tree.children(of: id)
-        ScrollView {
+        MaybeScroll {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.tree.title(of: id))

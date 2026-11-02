@@ -91,7 +91,9 @@ final class SnapshotTests: XCTestCase {
     }
 
     private func render(_ content: some View, scheme: ColorScheme) throws -> Data {
-        let view = content.environment(\.colorScheme, scheme)
+        let view = content
+            .environment(\.colorScheme, scheme)
+            .environment(\.stillPicture, true)
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         let appearance = try XCTUnwrap(NSAppearance(named: scheme == .dark ? .darkAqua : .aqua))
