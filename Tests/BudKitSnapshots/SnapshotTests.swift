@@ -240,6 +240,35 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheTicketSheet() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let made = Date(timeIntervalSince1970: 1_800_000_000)
+        let peers = MemoryPeers(now: { made })
+        let ticket = try await peers.ticket(withAddresses: false)
+        let states: [(String, TicketSheetState)] = [
+            ("ticket-fresh", TicketSheetState(ticket: ticket, now: made.addingTimeInterval(2), redeemedBy: nil)),
+            ("ticket-expired", TicketSheetState(ticket: ticket, now: made.addingTimeInterval(601), redeemedBy: nil)),
+            ("ticket-joined", TicketSheetState(ticket: ticket, now: made.addingTimeInterval(30), redeemedBy: MemoryPeers.fixtures()[1].id)),
+        ]
+        for (name, state) in states {
+            for scheme in [ColorScheme.light, .dark] {
+                let sheet = TicketSheetBody(ticket: ticket, state: state, onCopy: {}, onRefresh: {}, onDone: {})
+                    .modalCard()
+                    .frame(width: ModalMetrics.width)
+                    .padding(32)
+                    .background(Theme.canvas)
+                let data = try render(sheet, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
