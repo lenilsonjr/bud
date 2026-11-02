@@ -47,8 +47,8 @@ struct AddSheet: View {
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, 12)
                 .frame(height: 38)
-                .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(typing ? Theme.leafLine : Theme.lineStrong, lineWidth: 1))
+                .background(Theme.canvas, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous).stroke(typing ? Theme.leafLine : Theme.lineStrong, lineWidth: 1))
                 .focused($typing)
                 .onSubmit(plant)
             if !capturing {

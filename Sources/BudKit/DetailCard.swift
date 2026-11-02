@@ -45,9 +45,9 @@ struct DetailCard: View {
             .padding(14)
             .frame(width: Self.width, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.detail, style: .continuous)
                     .fill(Theme.raised)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.detail, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
                     .shadow(color: Theme.shadowStrong, radius: 14, y: 6)
             )
             .onAppear { title = bud.text }

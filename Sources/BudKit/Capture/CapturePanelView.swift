@@ -34,8 +34,8 @@ public struct CapturePanelView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 44)
-            .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(typing ? Theme.leafLine : Theme.lineStrong, lineWidth: 1))
+            .background(Theme.canvas, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous).stroke(typing ? Theme.leafLine : Theme.lineStrong, lineWidth: 1))
             HStack(spacing: 12) {
                 Text("Kind")
                     .textRole(.label)
@@ -50,8 +50,8 @@ public struct CapturePanelView: View {
         }
         .padding(16)
         .frame(width: Self.size.width, height: Self.size.height)
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).stroke(Theme.line, lineWidth: 1))
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadowStrong, radius: 24, y: 12)
         .textRole(.body)
         .foregroundStyle(Theme.text)

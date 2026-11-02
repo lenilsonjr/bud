@@ -40,8 +40,8 @@ struct MoveToPicker: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(typing ? Theme.leafLine : Theme.line, lineWidth: 1))
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous).stroke(typing ? Theme.leafLine : Theme.line, lineWidth: 1))
             .padding(.bottom, 8)
             ScrollViewReader { proxy in
                 MaybeScroll {

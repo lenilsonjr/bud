@@ -67,8 +67,8 @@ struct ToastView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Theme.hub, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).stroke(Theme.hubLine, lineWidth: 1))
+            .background(Theme.hub, in: RoundedRectangle(cornerRadius: Radius.toast, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.toast, style: .continuous).stroke(Theme.hubLine, lineWidth: 1))
             .shadow(color: Theme.shadowStrong, radius: 12, y: 6)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .id(toast.id)

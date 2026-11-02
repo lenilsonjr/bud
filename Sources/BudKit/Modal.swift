@@ -107,7 +107,7 @@ struct ModalHost: View {
 extension View {
     /// The raised card: fill, 1 pt stroke, 22 pt corners and 24 pt of padding.
     func modalCard() -> some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous)
         return padding(ModalMetrics.padding)
             .background(Theme.raised, in: shape)
             .overlay(shape.stroke(Theme.lineStrong, lineWidth: 1))

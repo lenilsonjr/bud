@@ -58,8 +58,8 @@ struct CardView: View {
         }
         .opacity(inkLight)
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
-        .background(hubBackground.overlay(wash(Radius.xl)))
-        .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
+        .background(hubBackground.overlay(wash(Radius.hub)))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
     }
 
@@ -93,9 +93,9 @@ struct CardView: View {
             }
         }
         .opacity(inkLight)
-        .background(hubBackground.overlay(wash(Radius.xl)))
-        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.xl))
-        .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
+        .background(hubBackground.overlay(wash(Radius.hub)))
+        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.hub))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
     }
@@ -131,18 +131,18 @@ struct CardView: View {
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
         .opacity(inkLight)
-        .background(chipBackground(bud).overlay(wash(Radius.md)))
-        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.md))
-        .contentShape(RoundedRectangle(cornerRadius: Radius.md))
+        .background(chipBackground(bud).overlay(wash(Radius.card)))
+        .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.card))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         .onTapGesture(perform: onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
     }
 
     private func chipBackground(_ bud: Bud) -> some View {
         let style = CardStyle.chip(for: bud, lit: lit)
-        return RoundedRectangle(cornerRadius: Radius.md)
+        return RoundedRectangle(cornerRadius: Radius.card)
             .fill(style.fill)
-            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(style.line, lineWidth: lit ? 1.5 : 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.card).stroke(style.line, lineWidth: lit ? 1.5 : 1))
             .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 2, y: lit ? 0 : 2)
     }
 
@@ -171,9 +171,9 @@ struct CardView: View {
 
     private var hubBackground: some View {
         let style = CardStyle.hub(lit: lit)
-        return RoundedRectangle(cornerRadius: Radius.xl)
+        return RoundedRectangle(cornerRadius: Radius.hub)
             .fill(style.fill)
-            .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(style.line, lineWidth: lit ? 1.5 : 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.hub).stroke(style.line, lineWidth: lit ? 1.5 : 1))
             .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
     }
 }

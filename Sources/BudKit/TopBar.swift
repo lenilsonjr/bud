@@ -182,7 +182,7 @@ struct TopBar: View {
         .padding(.leading, 10)
         .padding(.trailing, 4)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.leafLine, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: Radius.button).stroke(Theme.leafLine, lineWidth: 1))
         #if os(iOS)
         // On an iPad the pill keeps its label ahead of the breadcrumb and the rest of the bar.
         .layoutPriority(2)
@@ -218,8 +218,8 @@ struct TopBar: View {
             #else
             .frame(width: 180)
             #endif
-            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.line, lineWidth: 1))
+            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.field, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous).stroke(Theme.line, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -235,8 +235,8 @@ struct TopBar: View {
         .monospacedDigit()
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(Theme.glass, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
         .help("Back to 100%")
     }
 }
@@ -253,7 +253,7 @@ struct Keycap: View {
             .foregroundStyle(Theme.text3)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.keycap, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
     }
 }
 

@@ -92,12 +92,25 @@ public enum Palette {
     public static let window = Tone("#F7F9F3", "#0C140F")
 }
 
-/// Corner radii: controls and checkboxes, cards and fields, bars and panels, sheets and the hub.
+/// Corner radii. The named ones are the Foundations board's scale, one per kind of element;
+/// the four sizes stay for rows and small chrome the board does not name.
 public enum Radius {
     public static let sm: CGFloat = 6
     public static let md: CGFloat = 10
     public static let lg: CGFloat = 14
     public static let xl: CGFloat = 22
+
+    public static let keycap: CGFloat = 4
+    public static let chip: CGFloat = 5
+    public static let iconButton: CGFloat = 7
+    public static let button: CGFloat = 8
+    public static let field: CGFloat = 8
+    public static let segmented: CGFloat = 9
+    public static let card: CGFloat = 10
+    public static let toast: CGFloat = 12
+    public static let detail: CGFloat = 14
+    public static let hub: CGFloat = 20
+    public static let sheet: CGFloat = 22
 }
 
 /// The three bundled typefaces, by family name and file.
