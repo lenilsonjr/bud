@@ -381,6 +381,10 @@ impl Vault {
                  WHERE path = ?5",
                 params![path_now, parent_now, place.as_str(), title, path],
             )?;
+            tx.execute(
+                "UPDATE docs SET path = ?1 WHERE path = ?2",
+                params![path_now, path],
+            )?;
         }
         tx.commit()?;
         Ok(new_path)
