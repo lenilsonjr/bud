@@ -153,12 +153,7 @@ struct CommandPalette: View {
         guard rows.indices.contains(picked) else { return }
         switch rows[picked] {
         case .bud(let hit):
-            if inFiles {
-                store.openAsFile(hit.id)
-            } else {
-                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = hit.id }
-                store.surface = .canvas
-            }
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: hit.id, inFiles: inFiles) }
         case .destination(let d):
             // Archive waits for the vault.
             switch d {

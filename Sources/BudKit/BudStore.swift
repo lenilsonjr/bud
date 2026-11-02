@@ -179,6 +179,19 @@ public final class BudStore: ObservableObject {
         surface = .files
     }
 
+    /// Go anywhere to a bud: an inbox bud opens the Inbox page, since it has no place on the
+    /// canvas and no file of its own; any other bud is centered, or opened as a file in Files.
+    public func go(to id: UUID, inFiles: Bool) {
+        if tree.ancestors(of: id).contains(inboxID) {
+            openInbox()
+        } else if inFiles {
+            openAsFile(id)
+        } else {
+            center = id
+            surface = .canvas
+        }
+    }
+
     /// The Files view on the Inbox.
     public func openInbox() {
         lens = nil

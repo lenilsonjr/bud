@@ -15,6 +15,20 @@ final class CaptureStoreTests: XCTestCase {
         XCTAssertEqual(store.toasts.current?.action.message, "Captured to the Inbox")
     }
 
+    func testGoingToAnInboxBudOpensTheInboxNotTheCanvas() throws {
+        let store = BudStore(fileURL: nil)
+        let captured = try XCTUnwrap(store.capture("A thought"))
+        store.go(to: captured.id, inFiles: false)
+        XCTAssertTrue(store.inboxOpen)
+        XCTAssertEqual(store.surface, .files)
+        XCTAssertEqual(store.center, rootID, "an inbox bud never becomes the center")
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.go(to: thread.id, inFiles: false)
+        XCTAssertFalse(store.inboxOpen)
+        XCTAssertEqual(store.center, thread.id)
+        XCTAssertEqual(store.surface, .canvas)
+    }
+
     func testCaptureRefusesABlankLine() {
         let store = BudStore(fileURL: nil)
         let before = store.tree
