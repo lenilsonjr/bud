@@ -1,14 +1,10 @@
-question: BUD-42 can't be built as written, and I haven't changed anything. Which of these do you want?
+```text
+Asked: BUD-42 can't be built as written, and I haven't changed anything. Which of these do you want?
+Answered: move the ticket to blocked and ill discuss with the product owner
+```
 
-1. **Forbidden files.** The XCFramework needs tvOS and tvOS-simulator slices, which means editing `scripts/build-core.sh`. Linking it into the tvOS target needs `project.yml`. Both are off limits to me. Should I leave the tvOS slices and target wiring for you to do, or will you allow those two files for this ticket?
-2. **Missing pieces.** `core/bud-ffi/src/lib.rs` exposes the vault but nothing for sync, peers or tickets. The core has `peer.rs` and `sync.rs`, but Swift has no binding to them. The Swift app doesn't use the vault at all: `BudTVView` runs on `BudStore` with a single file, not a vault folder. Three of the four criteria are therefore several tickets of work:
-   - Caches location with a rebuild-on-empty fetch.
-   - A foreground endpoint.
-   - A ticket-entry pairing screen.
-
-   Which scope do you want?
-   - (a) Rust and Swift groundwork only: export sync, pairing and ticket calls through `bud-ffi` with `cargo test`, plus a Linux-testable Swift type that picks the vault and index paths and decides whether to fetch on an empty folder.
-   - (b) Everything, including moving the TV app onto the vault, once you've settled option 1.
-   - (c) Split the ticket first.
-
-I recommend 1 (you do the build script and `project.yml` edits) together with 2(a).
+BUILD round 2
+Applied: none. The review file was empty this round, so there were no findings to apply. I changed nothing and the tree is clean.
+Declined: none.
+Open: BUD-42 can't be built as written, and I don't have the details of why. The operator answered that the ticket should move to blocked while they discuss it with the product owner. Nothing here is implemented, so the branch carries no tvOS work. The ticket needs a decision from the product owner before anyone builds it.
+Tests: none run. No code changed.
