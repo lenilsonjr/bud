@@ -1,4 +1,4 @@
-# Signed internal TestFlight delivery for iOS and macOS, in parallel.
+# Signed internal TestFlight delivery for iOS, macOS and tvOS, in parallel.
 #
 #   push to develop  → lane beta    → TestFlight, auto build number
 #   push a v* tag     → lane release → TestFlight, marketing version = the tag
@@ -25,9 +25,9 @@ permissions:
 jobs:
   testflight:
     strategy:
-      fail-fast: false        # a macOS hiccup must not block the iOS ship (or vice versa)
+      fail-fast: false        # one platform's hiccup must not block the others
       matrix:
-        platform: [ios, mac]
+        platform: [ios, mac, tvos]
     runs-on: macos-26         # iOS 26 SDK; Xcode also carries the iOS 17 / macOS 14 SDKs
     timeout-minutes: 60
     steps:

@@ -1,4 +1,4 @@
-# Compile gate — builds both apps (no signing, no secrets) on PRs so a broken change can't merge.
+# Compile gate — builds every app (no signing, no secrets) on PRs so a broken change can't merge.
 name: Build check
 
 on:
@@ -25,6 +25,9 @@ jobs:
           - platform: macOS
             scheme: "Bud macOS"
             destination: "generic/platform=macOS"
+          - platform: tvOS
+            scheme: "Bud tvOS"
+            destination: "generic/platform=tvOS"
     runs-on: macos-26
     timeout-minutes: 40
     steps:
