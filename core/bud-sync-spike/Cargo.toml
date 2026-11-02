@@ -1,0 +1,38 @@
+# Throwaway spike for BUD-38: compares automerge and loro on the fixture vault.
+# Not a member of the workspace on purpose, so the gate never compiles it.
+[package]
+name = "bud-sync-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[features]
+automerge = ["dep:automerge"]
+loro = ["dep:loro"]
+
+[dependencies]
+automerge = { version = "0.12", optional = true }
+loro = { version = "1", optional = true }
+
+[[bin]]
+name = "baseline"
+path = "src/bin/baseline.rs"
+
+[[bin]]
+name = "spike-automerge"
+path = "src/bin/spike_automerge.rs"
+required-features = ["automerge"]
+
+[[bin]]
+name = "spike-loro"
+path = "src/bin/spike_loro.rs"
+required-features = ["loro"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
