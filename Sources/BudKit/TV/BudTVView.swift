@@ -1,25 +1,112 @@
 #if canImport(SwiftUI) && os(tvOS)
 import SwiftUI
 
+/// The tabs of the TV: the orbit canvas and Devices. Files can join them later.
+enum TVTab: String, CaseIterable, Hashable {
+    case canvas = "Canvas"
+    case devices = "Devices"
+}
+
 /// Bud on Apple TV: the same orbit canvas, driven by the remote. Swiping moves the focus from
 /// card to card, the light rests on the focused one, a click centers a bud with children or
-/// ticks a to-do, Menu steps out, Play/Pause ticks the to-do in focus. Capture is one line.
+/// ticks a to-do, Menu steps out, Play/Pause ticks the to-do in focus. Capture is one line. A
+/// glass pill at the top switches to Devices, where the TV pairs the next device or joins a vault.
 public struct BudTVView: View {
     @StateObject private var store: BudStore
-    @State private var capturing = false
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
     }
 
     public var body: some View {
-        TVCanvas(store: store)
-            .ignoresSafeArea()
-            .overlay(alignment: .top) { trail }
-            .background(Theme.window.ignoresSafeArea())
-            .textRole(.body)
-            .foregroundStyle(Theme.text)
-            .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
+        TVShell(store: store)
+    }
+}
+
+/// The window's contents, watching both the store and its devices so the join and the first
+/// fetch can move the screen along.
+struct TVShell: View {
+    @ObservedObject var store: BudStore
+    @ObservedObject var devices: DeviceStore
+    @State private var capturing = false
+    @State private var tab: TVTab = .canvas
+    @State private var joining = false
+    @State private var fetching = false
+    @FocusState private var focusedTab: TVTab?
+
+    init(store: BudStore) {
+        self.store = store
+        self.devices = store.devices
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            tabs
+            switch tab {
+            case .canvas:
+                TVCanvas(store: store)
+                    .ignoresSafeArea()
+                    .overlay(alignment: .top) { trail }
+            case .devices:
+                TVDevicesTab(devices: devices, onJoin: { joining = true })
+            }
+        }
+        .background(Theme.window.ignoresSafeArea())
+        .textRole(.body)
+        .foregroundStyle(Theme.text)
+        .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
+        .fullScreenCover(isPresented: $joining) { TVJoinModal(devices: devices, close: { joining = false }) }
+        .fullScreenCover(isPresented: $fetching) { fetchScreen }
+        .task { await devices.start() }
+        .onChange(of: devices.joinPhase) { _, phase in
+            guard case let .joined(_, received, total) = phase else { return }
+            joining = false
+            if TVDevicesText.fetchIsDone(received: received, total: total) { finishFetch() } else { fetching = true }
+        }
+        .onChange(of: devices.lastSummary) { _, _ in
+            // The first sync finished before the fetch reported a total: the cards can open.
+            if fetching { finishFetch() }
+        }
+    }
+
+    /// G18 while the vault comes over; the cards open on their own when it is done.
+    @ViewBuilder private var fetchScreen: some View {
+        if case let .joined(device, received, total) = devices.joinPhase {
+            TVFetchScreen(device: device, received: received, total: total)
+        } else {
+            Theme.window.ignoresSafeArea()
+        }
+    }
+
+    private func finishFetch() {
+        fetching = false
+        devices.resetJoin()
+        tab = .canvas
+    }
+
+    /// The glass pill of tabs: the focused one glows amethyst, the chosen one reads in full ink.
+    private var tabs: some View {
+        HStack(spacing: 8) {
+            ForEach(TVTab.allCases, id: \.self) { item in
+                let shape = RoundedRectangle(cornerRadius: 32, style: .continuous)
+                let lit = focusedTab == item
+                Button { tab = item } label: {
+                    Text(item.rawValue)
+                        .font(Theme.font(TextStyle(typeface: .text, size: 29, weight: tab == item ? 600 : 500)))
+                        .foregroundStyle(tab == item ? Theme.text : Theme.text2)
+                        .padding(.horizontal, 34)
+                        .padding(.vertical, 14)
+                        .background(lit || tab == item ? Theme.amethystSoft : .clear, in: shape)
+                        .overlay(shape.stroke(lit ? Theme.amethyst : .clear, lineWidth: 2))
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($focusedTab, equals: item)
+            }
+        }
+        .padding(8)
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: 40, style: .continuous))
+        .frame(height: 150)
     }
 
     private var trail: some View {

@@ -1,0 +1,48 @@
+import Foundation
+
+/// The words of the Apple TV Devices tab, kept pure so they test on their own.
+public enum TVDevicesText {
+    /// The status line under the title: "2 connected · everything synced".
+    public static func status(_ state: SyncState?) -> String {
+        guard let state else { return "Not connected yet" }
+        let connected = state.connectedPeers == 1 ? "1 connected" : "\(state.connectedPeers) connected"
+        if !state.idle { return "\(connected) · syncing" }
+        if state.pendingChanges > 0 {
+            let waiting = state.pendingChanges == 1 ? "1 change waiting" : "\(state.pendingChanges) changes waiting"
+            return "\(connected) · \(waiting)"
+        }
+        return "\(connected) · everything synced"
+    }
+
+    /// The meta line of this Apple TV's row.
+    public static let thisDevice = "This Apple TV · keeps a copy in its cache"
+
+    /// The plain sentence under the list; no hint bubble.
+    public static let holdHint = "Press and hold a device to remove it or rotate the key."
+
+    /// The pair column's instruction.
+    public static let pairNote = "On your iPhone or iPad: Settings › Devices › Add this iPhone to a vault, then scan this."
+
+    /// "Works once · new code in 9:58"; the store makes a new ticket when this one runs out.
+    public static func expiry(_ ticket: Ticket?, now: Date) -> String {
+        guard let ticket else { return "Making a ticket…" }
+        return "Works once · new code in \(PeerText.countdown(until: ticket.expiresAt, now: now))"
+    }
+
+    /// The join modal's instruction and the line that points at the iPhone keyboard.
+    public static let joinNote = "Type the ticket from a device that has the vault. Spaces and capitals don’t matter."
+    public static let phoneKeyboard = "Easier on your iPhone: tap the keyboard notification on it and type or paste there."
+
+    /// The first-sync screen: "Joined. Fetching the whole vault from a91c…7t0e on the local network."
+    public static func fetchBody(from device: Device) -> String {
+        "Joined. Fetching the whole vault from \(PeerText.shortID(device.id)) \(JoinText.reachPhrase(device.reach))."
+    }
+
+    public static let fetchNote = "Cards open when it’s done"
+
+    /// Whether the first fetch is over: every bud of a known total has arrived.
+    public static func fetchIsDone(received: Int, total: Int?) -> Bool {
+        guard let total else { return false }
+        return received >= total
+    }
+}

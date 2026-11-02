@@ -28,7 +28,7 @@ public struct QRLayout: Hashable, Sendable {
     }
 }
 
-#if canImport(SwiftUI) && !os(tvOS)
+#if canImport(SwiftUI)
 import SwiftUI
 
 /// The QR tile of the board: hub ink behind, the code in hub green, a hairline around; when the
