@@ -33,7 +33,13 @@ struct AddSheet: View {
                     .foregroundStyle(Theme.text3)
             }
             TextField("What is it?", text: $text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .textRole(.body)
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(typing ? Theme.leafLine : Theme.line, lineWidth: 1))
                 .focused($typing)
                 .onSubmit(plant)
             HStack(spacing: 12) {
@@ -55,6 +61,7 @@ struct AddSheet: View {
         .frame(minWidth: 360)
         .textRole(.body)
         .background(Theme.surface)
+        .tint(Theme.leaf)
         .onAppear {
             todo = store.tree.suggestsTodo(under: parent)
             typing = true
