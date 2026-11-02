@@ -37,10 +37,12 @@ struct DevicesSection: View {
             Text(DevicesText.intro)
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
+                .fixedSize(horizontal: false, vertical: true)
             if let notice {
                 Text(notice)
                     .textRole(.caption)
                     .foregroundStyle(Theme.rose)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if DevicesText.isEmpty(devices.devices) {
                 invitation
