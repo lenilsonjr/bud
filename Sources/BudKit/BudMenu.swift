@@ -63,7 +63,7 @@ struct BudMenu: ViewModifier {
         if let bud = store.tree.bud(id) {
             if bud.isTodo {
                 Button(bud.isDone ? "Reopen" : "Close", systemImage: bud.isDone ? "circle" : "checkmark.circle") {
-                    store.toggle(id)
+                    store.tick(id)
                 }
             } else {
                 Button("Make a to-do", systemImage: "checkmark.square") { store.makeTodo(id) }

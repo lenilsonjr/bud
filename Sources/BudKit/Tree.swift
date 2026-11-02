@@ -317,6 +317,31 @@ public struct Tree: Codable, Equatable, Sendable {
         buds[i].state = state == .done ? .open : .done
     }
 
+    /// Closes an open to-do; with `cascade` every open to-do under it closes too, notes and done
+    /// ones untouched. Returns the ids it changed, the bud first, so they can be reopened exactly.
+    /// Closing never cascades on its own: the caller asks.
+    @discardableResult
+    public mutating func close(_ id: UUID, cascade: Bool) -> [UUID] {
+        guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].state == .open else { return [] }
+        buds[i].state = .done
+        var changed = [id]
+        guard cascade else { return changed }
+        for inside in descendants(of: id) {
+            guard let j = buds.firstIndex(where: { $0.id == inside }), buds[j].state == .open else { continue }
+            buds[j].state = .done
+            changed.append(inside)
+        }
+        return changed
+    }
+
+    /// Sets closed to-dos back to open; anything else is left alone.
+    public mutating func reopen(_ ids: [UUID]) {
+        for id in ids {
+            guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].state == .done else { continue }
+            buds[i].state = .open
+        }
+    }
+
     /// Removes a bud and its whole subtree.
     public mutating func remove(_ id: UUID) {
         let gone = Set(descendants(of: id) + [id])

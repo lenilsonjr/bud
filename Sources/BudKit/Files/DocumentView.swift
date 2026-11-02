@@ -28,6 +28,12 @@ struct DocumentView: View {
                 .padding(28)
                 .frame(maxWidth: 720, alignment: .leading)
             }
+            .background {
+                // ⌘↩ closes or reopens this bud, drawn nowhere.
+                Button("") { store.tick(id) }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .opacity(0)
+            }
             .onAppear { draft = bud.body }
             .onChange(of: bud.body) { _, now in if !dirty { draft = now } }
             .onChange(of: draft) { _, _ in scheduleSave() }
@@ -66,7 +72,7 @@ struct DocumentView: View {
         VStack(alignment: .leading, spacing: 8) {
             PropertyRow(name: "State") {
                 if bud.isTodo {
-                    Segmented(selection: Binding(get: { bud.isDone }, set: { _ in store.toggle(id) }), options: [false, true]) { $0 ? "Done" : "Open" }
+                    Segmented(selection: Binding(get: { bud.isDone }, set: { _ in store.tick(id) }), options: [false, true]) { $0 ? "Done" : "Open" }
                 } else {
                     Button("Make a to-do") { store.update(id, text: bud.text, todo: true) }
                         .buttonStyle(.bordered)
