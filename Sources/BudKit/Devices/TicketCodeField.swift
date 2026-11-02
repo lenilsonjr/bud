@@ -51,3 +51,64 @@ struct TicketCodeField: View {
     }
 }
 #endif
+
+#if canImport(SwiftUI) && !os(tvOS)
+/// The ticket code field in entry mode: a mono text field that groups what is typed in fives,
+/// and a footer with how far along it is ("37 of 134"), "Looks like a ticket" or "Checked", with
+/// Paste at the right where the layout asks for it.
+struct TicketEntryField: View {
+    @Binding var text: String
+    let status: EntryStatus
+    var onPaste: (() -> Void)? = nil
+
+    private static let code = TextStyle(typeface: .mono, size: 13, weight: 400)
+    private static let footer = TextStyle(typeface: .text, size: 12, weight: 400)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField("bud1 …", text: $text, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(Theme.font(Self.code))
+                .lineSpacing(13 * 0.65)
+                .lineLimit(3...8)
+                .foregroundStyle(Theme.text)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.asciiCapable)
+                #endif
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(ink)
+                Text(status.label)
+                    .textStyle(Self.footer)
+                    .foregroundStyle(ink)
+                    .monospacedDigit()
+                Spacer(minLength: 8)
+                if let onPaste {
+                    Button(action: onPaste) { BudButtonLabel(title: "Paste", systemImage: "doc.on.clipboard") }
+                        .buttonStyle(.budGhost)
+                }
+            }
+        }
+        .padding(14)
+        .background(Theme.canvas, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+    }
+
+    private var symbol: String {
+        switch status {
+        case .typing: return "keyboard"
+        case .looksLikeTicket, .checked: return "checkmark.circle"
+        }
+    }
+
+    private var ink: Color {
+        switch status {
+        case .looksLikeTicket: return Theme.leaf
+        case .typing, .checked: return Theme.text3
+        }
+    }
+}
+#endif
