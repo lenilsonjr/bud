@@ -57,20 +57,26 @@ extension ButtonStyle where Self == BudButtonStyle {
     static var budDestructive: BudButtonStyle { BudButtonStyle(kind: .destructive) }
 }
 
-/// A button label with the 14 pt icon before the text.
+/// A button label with the 14 pt icon before the text, or after it when `iconAfter` is set.
 struct BudButtonLabel: View {
     let title: String
     var systemImage: String? = nil
+    var iconAfter = false
 
     var body: some View {
         HStack(spacing: 6) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: ButtonMetrics.iconSize, height: ButtonMetrics.iconSize)
-            }
+            if !iconAfter { icon }
             Text(title)
+            if iconAfter { icon }
+        }
+    }
+
+    @ViewBuilder private var icon: some View {
+        if let systemImage {
+            Image(systemName: systemImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: ButtonMetrics.iconSize, height: ButtonMetrics.iconSize)
         }
     }
 }
