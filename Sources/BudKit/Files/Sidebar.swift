@@ -14,6 +14,7 @@ struct Sidebar: View {
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.inboxOpen) { store.openInbox() }
                     place("Everything", glyph: "leaf.fill", count: nil, selected: !store.inboxOpen && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.inboxOpen = false }
+                        .budDrop { store.move($0, under: rootID) }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
                             TreeRow(
@@ -26,6 +27,7 @@ struct Sidebar: View {
                                 onDisclose: { toggle(bud.id) }
                             )
                             .budMenu(bud.id, store: store)
+                            .budDrop { store.move($0, under: bud.id) }
                             .id(bud.id)
                         }
                     }

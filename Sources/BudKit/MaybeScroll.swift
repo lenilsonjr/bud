@@ -28,3 +28,30 @@ struct MaybeScroll<Content: View>: View {
     }
 }
 #endif
+
+#if canImport(SwiftUI) && !os(tvOS)
+/// A drop target for a bud dragged by its id. The picture renderer cannot draw a drop
+/// destination, so it is left off in a still picture.
+struct BudDrop: ViewModifier {
+    @Environment(\.stillPicture) private var still
+    let onDrop: (UUID) -> Bool
+
+    func body(content: Content) -> some View {
+        if still {
+            content
+        } else {
+            content.dropDestination(for: String.self) { items, _ in
+                guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                return onDrop(id)
+            }
+        }
+    }
+}
+
+extension View {
+    /// Accepts a dragged bud and hands over its id.
+    func budDrop(_ onDrop: @escaping (UUID) -> Bool) -> some View {
+        modifier(BudDrop(onDrop: onDrop))
+    }
+}
+#endif
