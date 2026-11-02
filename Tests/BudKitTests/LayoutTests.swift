@@ -273,18 +273,58 @@ final class PropertiesTests: XCTestCase {
 }
 
 final class NextStepTests: XCTestCase {
-    func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
-        var t = Tree.seed()
-        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
-        let name = try XCTUnwrap(t.children(of: newsletter.id).first { $0.text == "Pick a name" })
-        XCTAssertEqual(t.nextStep(under: rootID)?.id, newsletter.id, "The first open to-do at the top is the next step")
-        XCTAssertEqual(t.nextStep(under: newsletter.id)?.id, name.id, "Inside a bud, its first open child comes first")
-        t.toggle(name.id)
-        XCTAssertNotEqual(t.nextStep(under: newsletter.id)?.id, name.id, "A done to-do is never the next step")
-        XCTAssertEqual(t.nextStep(under: newsletter.id)?.parent, name.id, "Its open children come before the next sibling")
-        let note = t.add("Just a note", todo: false, under: rootID)
-        XCTAssertNil(t.nextStep(under: note.id), "A note with nothing inside has no next step")
-        XCTAssertEqual(t.walk(under: rootID).count, t.descendants(of: rootID).count)
+    private func world() -> (Tree, UUID) {
+        var t = Tree()
+        let thread = t.add("Thread", todo: true, under: rootID)
+        return (t, thread.id)
+    }
+
+    func testTheSoonestDueComesFirst() throws {
+        var (t, thread) = world()
+        let later = t.add("Due later", todo: true, under: thread)
+        let soon = t.add("Due soon", todo: true, under: thread)
+        let none = t.add("No date", todo: true, under: thread)
+        t.setDue(later.id, Date(timeIntervalSince1970: 2_000_000))
+        t.setDue(soon.id, Date(timeIntervalSince1970: 1_000_000))
+        t.setWhen(none.id, Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(t.nextStep(under: thread)?.id, soon.id, "A due date beats a scheduled day and no date")
+    }
+
+    func testThenTheSoonestScheduledDay() throws {
+        var (t, thread) = world()
+        let plain = t.add("Plain", todo: true, under: thread)
+        let tomorrow = t.add("Tomorrow", todo: true, under: thread)
+        let today = t.add("Today", todo: true, under: thread)
+        t.setWhen(tomorrow.id, Date(timeIntervalSince1970: 2_000_000))
+        t.setWhen(today.id, Date(timeIntervalSince1970: 1_000_000))
+        XCTAssertEqual(t.nextStep(under: thread)?.id, today.id)
+        XCTAssertNotEqual(t.nextStep(under: thread)?.id, plain.id, "No date comes after any date")
+    }
+
+    func testThenTheOldest() throws {
+        var (t, thread) = world()
+        let young = t.add("Young", todo: true, under: thread)
+        let old = t.add("Old", todo: true, under: thread)
+        t.buds[t.buds.firstIndex { $0.id == old.id }!].created = Date(timeIntervalSince1970: 100)
+        t.buds[t.buds.firstIndex { $0.id == young.id }!].created = Date(timeIntervalSince1970: 200)
+        XCTAssertEqual(t.nextStep(under: thread)?.id, old.id, "With no dates, the oldest open to-do is next")
+    }
+
+    func testDoneAndNotesNeverCountAndNilWhenNothingIsOpen() throws {
+        var (t, thread) = world()
+        let note = t.add("A note", todo: false, under: thread)
+        let done = t.add("Done already", todo: true, under: thread)
+        t.toggle(done.id)
+        XCTAssertNil(t.nextStep(under: note.id))
+        XCTAssertNil(t.nextStep(under: thread), "A note and a done to-do leave nothing to do")
+        let open = t.add("Open", todo: true, under: note.id)
+        XCTAssertEqual(t.nextStep(under: thread)?.id, open.id, "An open to-do deep inside counts")
+        XCTAssertEqual(t.nextStep(under: rootID)?.id, thread, "At the root the thread itself is older than its child")
+    }
+
+    func testTheSeedPutsTheOverdueOneFirst() throws {
+        let t = Tree.seed()
+        XCTAssertEqual(t.nextStep(under: rootID)?.text, "Verify the address", "Overdue beats every other date")
     }
 }
 
