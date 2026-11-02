@@ -24,6 +24,14 @@ struct TopBar: View {
                 BudButtonLabel(title: "Add here", systemImage: "plus")
             }
             .buttonStyle(.budSecondary)
+            #if os(iOS)
+            Button { store.modal = .settings } label: {
+                Image(systemName: "gearshape")
+                    .foregroundStyle(Theme.text2)
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
+            #endif
         }
         .padding(.leading, leadingInset)
         .padding(.trailing, 14)

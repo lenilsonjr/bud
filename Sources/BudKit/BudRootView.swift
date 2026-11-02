@@ -4,6 +4,7 @@ import SwiftUI
 /// The whole app: the bar across the top, the canvas or the files below it.
 public struct BudRootView: View {
     @StateObject private var store: BudStore
+    @ObservedObject private var flags = Flags.shared
     @State private var searching = false
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
@@ -37,6 +38,8 @@ public struct BudRootView: View {
         .textRole(.body)
         .foregroundStyle(Theme.text)
         .tint(Theme.leaf)
+        .preferredColorScheme(flags.appearance.colorScheme)
+        .environmentObject(flags)
     }
 
     @ViewBuilder private var surface: some View {
