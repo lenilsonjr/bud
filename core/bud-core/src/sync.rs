@@ -23,9 +23,10 @@ use crate::lock;
 use crate::{Error, Place, Properties, Result, State, Vault};
 use loro::{
     ExportMode, LoroDoc, LoroMap, LoroText, LoroTree, LoroValue, TreeID, TreeParentId,
-    ValueOrContainer,
+    ValueOrContainer, VersionVector,
 };
 use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const KEYS: [&str; 6] = ["state", "when", "due", "pinned", "created", "source"];
@@ -50,13 +51,41 @@ pub struct SyncReport {
 }
 
 impl SyncReport {
-    fn add(&mut self, other: SyncReport) {
+    pub(crate) fn add(&mut self, other: SyncReport) {
         self.created += other.created;
         self.updated += other.updated;
         self.written += other.written;
         self.moved += other.moved;
         self.ops += other.ops;
     }
+}
+
+/// How far each document of a replica has come: version vectors, encoded.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Heads {
+    tree: Vec<u8>,
+    docs: Vec<(String, Vec<u8>)>,
+}
+
+/// The changes one replica sends another: new operations, or a whole document when the other
+/// has none.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Updates {
+    tree: Option<Vec<u8>>,
+    docs: Vec<DocUpdate>,
+}
+
+impl Updates {
+    pub fn is_empty(&self) -> bool {
+        self.tree.is_none() && self.docs.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct DocUpdate {
+    id: String,
+    whole: bool,
+    bytes: Vec<u8>,
 }
 
 struct Stored {
@@ -395,6 +424,164 @@ impl Vault {
         self.store(&path, &stored.id, &stored.doc, Some(&file))?;
         let mut report = self.sync_path(&path)?;
         report.ops += ops;
+        Ok(report)
+    }
+
+    /// What this replica has: the version of the tree document and of every bud's document. A peer
+    /// answers with [`Vault::updates_for`].
+    pub fn heads(&self) -> Result<Heads> {
+        let rows: Vec<(String, Vec<u8>)> = {
+            let conn = lock(&self.conn);
+            let mut stmt = conn.prepare("SELECT id, bytes FROM docs ORDER BY id")?;
+            let found = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            found.collect::<std::result::Result<_, _>>()?
+        };
+        let mut docs = Vec::with_capacity(rows.len());
+        for (id, bytes) in rows {
+            docs.push((id, open_doc(&bytes)?.oplog_vv().encode()));
+        }
+        Ok(Heads {
+            tree: self.load_tree()?.doc.oplog_vv().encode(),
+            docs,
+        })
+    }
+
+    /// The changes `theirs` lacks: only the new operations of a document the peer has, the whole
+    /// document of one it has not, and nothing for what it already holds.
+    pub fn updates_for(&self, theirs: &Heads) -> Result<Updates> {
+        let seen = |bytes: &[u8]| {
+            VersionVector::decode(bytes)
+                .map_err(|err| Error::Invalid(format!("document version: {err}")))
+        };
+        let behind = |doc: &LoroDoc, theirs: &VersionVector| {
+            let ours = doc.oplog_vv();
+            !matches!(
+                ours.partial_cmp(theirs),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            )
+        };
+        let export = |doc: &LoroDoc, from: &VersionVector| {
+            doc.export(ExportMode::updates(from))
+                .map_err(|err| Error::Invalid(format!("document export: {err}")))
+        };
+        let tree = self.load_tree()?.doc;
+        let their_tree = seen(&theirs.tree)?;
+        let tree = if behind(&tree, &their_tree) {
+            Some(export(&tree, &their_tree)?)
+        } else {
+            None
+        };
+        let known: HashMap<&str, &Vec<u8>> = theirs
+            .docs
+            .iter()
+            .map(|(id, vv)| (id.as_str(), vv))
+            .collect();
+        let rows: Vec<(String, Vec<u8>)> = {
+            let conn = lock(&self.conn);
+            let mut stmt = conn.prepare("SELECT id, bytes FROM docs ORDER BY id")?;
+            let found = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            found.collect::<std::result::Result<_, _>>()?
+        };
+        let mut docs = Vec::new();
+        for (id, bytes) in rows {
+            match known.get(id.as_str()) {
+                None => docs.push(DocUpdate {
+                    id,
+                    whole: true,
+                    bytes,
+                }),
+                Some(vv) => {
+                    let doc = open_doc(&bytes)?;
+                    let vv = seen(vv)?;
+                    if behind(&doc, &vv) {
+                        docs.push(DocUpdate {
+                            id,
+                            whole: false,
+                            bytes: export(&doc, &vv)?,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Updates { tree, docs })
+    }
+
+    /// Apply what a peer sent: merge the tree document, merge every document this replica has,
+    /// and make a file for each document it has not, where the tree says it belongs. A document
+    /// the tree does not place yet waits for the next exchange. Files are written through the
+    /// same writers every other edit uses.
+    pub fn apply_updates(&mut self, updates: &Updates) -> Result<SyncReport> {
+        let mut report = SyncReport::default();
+        if let Some(bytes) = &updates.tree {
+            report.add(self.merge_tree(bytes)?);
+        }
+        let mut fresh = Vec::new();
+        for update in &updates.docs {
+            if self.path_of(&update.id).is_ok() {
+                report.add(self.merge_doc(&update.id, &update.bytes)?);
+            } else if update.whole {
+                fresh.push(update);
+            }
+        }
+        // Parents first, so a bud's folder is there when its children are made.
+        let tree = self.load_tree()?;
+        let nodes = tree.nodes();
+        fresh.sort_by_key(|u| nodes.get(&u.id).map_or(usize::MAX, |n| tree.depth(*n)));
+        for update in fresh {
+            report.add(self.materialize(&tree, &update.id, &update.bytes)?);
+        }
+        Ok(report)
+    }
+
+    /// Make the file for a document that came from a peer, placed where the tree puts it. A file
+    /// already at that place that has no document of its own takes the identity over, as
+    /// [`Vault::adopt_doc`] does.
+    fn materialize(&mut self, tree: &Tree, id: &str, bytes: &[u8]) -> Result<SyncReport> {
+        let Some(node) = tree.nodes().get(id).copied() else {
+            return Ok(SyncReport::default());
+        };
+        if tree.trashed(node) {
+            return Ok(SyncReport::default());
+        }
+        let parent = match tree.parent(node) {
+            Some(parent) => {
+                let parent_id = tree
+                    .nodes()
+                    .into_iter()
+                    .find_map(|(id, n)| (n == parent).then_some(id));
+                let Some(parent_id) = parent_id else {
+                    return Ok(SyncReport::default());
+                };
+                match self.path_of(&parent_id) {
+                    Ok(path) => Some(path),
+                    Err(_) => return Ok(SyncReport::default()),
+                }
+            }
+            None => place_root(tree.place(node).unwrap_or(Place::Everything)).map(str::to_string),
+        };
+        let title = tree.name(node).unwrap_or_else(|| "Untitled".to_string());
+        let dir = self.parent_dir(parent.as_deref())?;
+        let leaf = crate::sanitize_filename(&title);
+        let path = if dir.is_empty() {
+            format!("{leaf}.md")
+        } else {
+            format!("{dir}/{leaf}.md")
+        };
+        if self.bud(&path)?.is_some() {
+            if self.doc_id(&path)?.is_some() {
+                // Another bud holds the place under its own identity: leave both alone.
+                return Ok(SyncReport::default());
+            }
+            return self.adopt_doc(&path, id, bytes);
+        }
+        let path = self.create(parent.as_deref(), &title, crate::Kind::Note, None)?;
+        let text = std::fs::read_to_string(self.root.join(&path))?;
+        lock(&self.conn).execute(
+            "INSERT INTO docs (path, id, bytes, known_text) VALUES (?1, ?2, ?3, ?4)",
+            params![path, id, bytes, text],
+        )?;
+        let mut report = self.sync_path(&path)?;
+        report.created += 1;
         Ok(report)
     }
 

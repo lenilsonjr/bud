@@ -49,3 +49,20 @@ CREATE TABLE IF NOT EXISTS tree_doc (
     id    INTEGER PRIMARY KEY CHECK (id = 1),
     bytes BLOB NOT NULL
 );
+
+-- Peer transport. Like `docs`, these hold what cannot be derived from the folder, so a schema
+-- change never drops them. The vault folder holds none of it.
+-- The key every document and message is encrypted with, made on first use and replaced once by
+-- the key of the first ticket accepted.
+CREATE TABLE IF NOT EXISTS peer_key (
+    id  INTEGER PRIMARY KEY CHECK (id = 1),
+    key BLOB NOT NULL
+);
+-- The peers this vault remembers: node id in hex, the relay setting of the ticket, and the direct
+-- addresses it carried, one per line.
+CREATE TABLE IF NOT EXISTS peers (
+    node  TEXT PRIMARY KEY NOT NULL,
+    relay TEXT NOT NULL,
+    addrs TEXT NOT NULL DEFAULT '',
+    added INTEGER NOT NULL
+);

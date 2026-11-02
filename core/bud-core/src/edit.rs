@@ -294,7 +294,7 @@ impl Vault {
     }
 
     /// The folder that holds the children of `parent`.
-    fn parent_dir(&self, parent: Option<&str>) -> Result<String> {
+    pub(crate) fn parent_dir(&self, parent: Option<&str>) -> Result<String> {
         match parent {
             None => Ok(String::new()),
             Some(place @ ("Inbox" | "Archive")) => Ok(place.to_string()),

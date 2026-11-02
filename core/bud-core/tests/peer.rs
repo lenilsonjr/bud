@@ -1,0 +1,262 @@
+//! The peer transport: two vaults in one process pair with a ticket and exchange documents over
+//! the loopback interface, with the relay off.
+
+mod common;
+
+use bud_core::{Node, NodeOptions, Relay, Ticket, Vault};
+use common::{copy_dir, fingerprint, fixture};
+use pretty_assertions::assert_eq;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+struct Peer {
+    _vault: Arc<Mutex<Vault>>,
+    dir: tempfile::TempDir,
+    index: tempfile::TempDir,
+    node: Node,
+}
+
+impl Peer {
+    fn new(seed: Option<&Path>, interval: Option<Duration>) -> Peer {
+        let dir = tempfile::tempdir().unwrap();
+        if let Some(seed) = seed {
+            copy_dir(seed, dir.path());
+        }
+        let index = tempfile::tempdir().unwrap();
+        let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+        let vault = Arc::new(Mutex::new(vault));
+        let options = NodeOptions {
+            relay: Relay::Off,
+            interval,
+        };
+        let node = Node::start_with(Arc::clone(&vault), options).unwrap();
+        Peer {
+            _vault: vault,
+            dir,
+            index,
+            node,
+        }
+    }
+
+    fn path(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+
+    fn read(&self, name: &str) -> Option<String> {
+        std::fs::read_to_string(self.path(name)).ok()
+    }
+
+    fn write(&self, name: &str, text: &str) {
+        std::fs::write(self.path(name), text).unwrap();
+    }
+}
+
+/// A file as its properties and body: the sync module writes keys in its own order, so the order
+/// of the keys is not what two copies are compared by.
+fn same(text: Option<String>) -> Option<(Vec<String>, String)> {
+    let text = text?;
+    let (yaml, body) = bud_core::split_frontmatter(&text);
+    let mut lines: Vec<String> = yaml.unwrap_or("").lines().map(str::to_string).collect();
+    lines.sort();
+    Some((lines, body.to_string()))
+}
+
+fn eventually(what: &str, mut check: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(8) {
+        if check() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("not within a few seconds: {what}");
+}
+
+/// `a` holds the fixture vault, `b` an empty folder that accepted a's ticket.
+fn paired(interval: Option<Duration>) -> (Peer, Peer) {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, interval);
+    a.node.sync_now().unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
+    (a, b)
+}
+
+#[test]
+fn a_ticket_is_a_short_string_that_round_trips() {
+    let ticket = Ticket {
+        node: [10; 32],
+        relay: Relay::Custom("https://relay.example.org/".to_string()),
+        key: [7; 32],
+        addrs: vec![],
+    };
+    let text = ticket.encode();
+    assert!(text.starts_with("bud1"), "{text}");
+    assert!(text.len() < 200, "{}", text.len());
+    assert!(text.chars().all(|c| c.is_ascii_alphanumeric()));
+    assert_eq!(Ticket::parse(&text).unwrap(), ticket);
+    assert_eq!(Ticket::parse(&text.to_uppercase()).unwrap(), ticket);
+    for relay in [Relay::Default, Relay::Off] {
+        let ticket = Ticket {
+            relay,
+            ..ticket.clone()
+        };
+        assert_eq!(Ticket::parse(&ticket.encode()).unwrap(), ticket);
+    }
+}
+
+#[test]
+fn a_damaged_ticket_is_refused() {
+    let ticket = Ticket {
+        node: [11; 32],
+        relay: Relay::Off,
+        key: [1; 32],
+        addrs: vec![],
+    };
+    let text = ticket.encode();
+    assert!(Ticket::parse("").is_err());
+    assert!(Ticket::parse("hello").is_err());
+    assert!(Ticket::parse(&text[..text.len() - 6]).is_err());
+    assert!(Ticket::parse(&text.replacen("bud1", "bud2", 1)).is_err());
+}
+
+#[test]
+fn a_ticket_is_the_content_of_a_qr_code() {
+    let ticket = Ticket {
+        node: [12; 32],
+        relay: Relay::Default,
+        key: [9; 32],
+        addrs: vec![],
+    };
+    let code = ticket.qr().unwrap();
+    assert!(code.width >= 21);
+    assert_eq!(code.dark.len(), code.width * code.width);
+    assert!(code.dark.iter().any(|d| *d) && code.dark.iter().any(|d| !*d));
+}
+
+#[test]
+fn a_node_keeps_its_key_next_to_the_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let open = || {
+        let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+        Node::start_with(
+            Arc::new(Mutex::new(vault)),
+            NodeOptions {
+                relay: Relay::Off,
+                interval: None,
+            },
+        )
+        .unwrap()
+    };
+    let first = open();
+    let id = first.id();
+    let key = first.ticket().unwrap().key;
+    first.close();
+    let again = open();
+    assert_eq!(again.id(), id);
+    assert_eq!(again.ticket().unwrap().key, key);
+    assert!(index.path().join("node.key").is_file());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn an_edit_on_one_vault_appears_in_the_other() {
+    let (a, b) = paired(None);
+    let summary = b.node.sync_now().unwrap();
+    assert!(summary.created > 0, "{summary:?}");
+
+    // The whole fixture arrived, in its places, with its text.
+    for name in [
+        "Gift ideas.md",
+        "Launch the newsletter.md",
+        "Launch the newsletter/Pick a name.md",
+        "Launch the newsletter/Pick a name/Shortlist three candidates.md",
+        "Routines/Weekly review.md",
+    ] {
+        assert_eq!(same(b.read(name)), same(a.read(name)), "{name}");
+    }
+
+    let name = "Launch the newsletter/Design notes.md";
+    let edited = format!("{}\nCheck the footer.\n", a.read(name).unwrap().trim_end());
+    a.write(name, &edited);
+    a.node.sync_now().unwrap();
+    b.node.sync_now().unwrap();
+    eventually("the edit reaches b", || {
+        // Only the properties the document model carries travel; the body is what is compared.
+        same(b.read(name)).map(|(_, body)| body) == same(Some(edited.clone())).map(|(_, body)| body)
+    });
+}
+
+#[test]
+fn an_edit_made_on_the_second_vault_reaches_the_first() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let name = "Gift ideas.md";
+    let edited = format!("{}A scarf.\n", b.read(name).unwrap());
+    b.write(name, &edited);
+    b.node.sync_now().unwrap();
+    eventually("the edit reaches a", || {
+        a.read(name) == Some(edited.clone())
+    });
+}
+
+#[test]
+fn a_vault_syncs_on_its_own_while_it_runs() {
+    let (a, b) = paired(Some(Duration::from_millis(300)));
+    eventually("the folder arrives", || b.read("Gift ideas.md").is_some());
+    let name = "Gift ideas.md";
+    let edited = format!("{}Candles.\n", a.read(name).unwrap());
+    a.write(name, &edited);
+    eventually("the edit arrives", || b.read(name) == Some(edited.clone()));
+}
+
+#[test]
+fn a_peer_and_a_ticket_live_in_the_index_folder_only() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    assert!(b.index.path().join("node.key").is_file());
+    assert!(a.index.path().join("node.key").is_file());
+    let before = fingerprint(a.dir.path());
+    let peers = b.node.peers().unwrap();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].id, a.node.id());
+    assert_eq!(a.node.peers().unwrap().len(), 1, "a learns b by its proof");
+    for peer in [&a, &b] {
+        let found = fingerprint(peer.dir.path());
+        assert!(found.keys().all(|k| !k.contains("node.key")), "{found:?}");
+        assert!(found.keys().all(|k| !k.contains("index.db")), "{found:?}");
+    }
+    assert_eq!(fingerprint(a.dir.path()), before);
+}
+
+#[test]
+fn a_ticket_is_accepted_once() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    let peer = b.node.accept_ticket(&ticket).unwrap();
+    assert_eq!(peer.id, a.node.id());
+    assert!(matches!(
+        b.node.accept_ticket(&ticket),
+        Err(bud_core::Error::Exists(_))
+    ));
+    assert_eq!(b.node.peers().unwrap().len(), 1);
+    // The vault key is the one of the ticket now.
+    assert_eq!(b.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
+}
+
+#[test]
+fn a_node_that_is_not_paired_learns_nothing() {
+    let a = Peer::new(Some(&fixture()), None);
+    let stranger = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    // A ticket made from the stranger's own key but pointing at a: it opens the door to nothing.
+    let mut ticket = a.node.ticket_with_addresses().unwrap();
+    ticket.key = [3; 32];
+    stranger.node.accept_ticket(&ticket.encode()).unwrap();
+    assert!(stranger.node.sync_now().is_err());
+    assert_eq!(stranger.read("Gift ideas.md"), None);
+    assert!(a.node.peers().unwrap().is_empty());
+}
