@@ -33,8 +33,8 @@ struct Segmented<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Theme.line, lineWidth: 1))
+        .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.segmented, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.segmented, style: .continuous).stroke(Theme.line, lineWidth: 1))
     }
 }
 #endif

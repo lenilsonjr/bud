@@ -2,7 +2,7 @@ import Foundation
 
 /// The measures every kit button shares: a 13 pt semibold label, an optional 14 pt icon before it.
 enum ButtonMetrics {
-    static let cornerRadius: CGFloat = 8
+    static let cornerRadius: CGFloat = Radius.button
     static let verticalPadding: CGFloat = 7
     static let horizontalPadding: CGFloat = 12
     static let iconSize: CGFloat = 14

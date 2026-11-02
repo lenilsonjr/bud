@@ -63,8 +63,8 @@ struct NeutralTag: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .frame(minWidth: 56)
-            .background(Theme.raised, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Theme.line, lineWidth: 1))
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous).stroke(Theme.line, lineWidth: 1))
     }
 }
 

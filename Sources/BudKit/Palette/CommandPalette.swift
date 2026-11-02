@@ -95,8 +95,8 @@ struct CommandPalette: View {
             }
         }
         .frame(maxWidth: 560)
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).stroke(Theme.line, lineWidth: 1))
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadowStrong, radius: 24, y: 12)
         .onAppear { typing = true; picked = firstPick(in: rows) }
         .onChange(of: query) { _, _ in picked = firstPick(in: self.rows) }
