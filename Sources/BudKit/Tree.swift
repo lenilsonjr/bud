@@ -14,13 +14,43 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
     public var state: BudState?
     public var parent: UUID
     public var order: Double
+    /// The Markdown below the title. Empty for most buds.
+    public var body: String
+    /// The day it is scheduled for, and the day it is due: the frontmatter keys of the same names.
+    public var when: Date?
+    public var due: Date?
+    public var pinned: Bool
+    public var created: Date
 
-    public init(id: UUID = UUID(), text: String, state: BudState? = nil, parent: UUID = rootID, order: Double = 0) {
+    public init(
+        id: UUID = UUID(), text: String, state: BudState? = nil, parent: UUID = rootID, order: Double = 0,
+        body: String = "", when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date = Date()
+    ) {
         self.id = id
         self.text = text
         self.state = state
         self.parent = parent
         self.order = order
+        self.body = body
+        self.when = when
+        self.due = due
+        self.pinned = pinned
+        self.created = created
+    }
+
+    /// Files saved before these properties existed still load: each one has a default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        text = try c.decode(String.self, forKey: .text)
+        state = try c.decodeIfPresent(BudState.self, forKey: .state)
+        parent = try c.decode(UUID.self, forKey: .parent)
+        order = try c.decode(Double.self, forKey: .order)
+        body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
+        when = try c.decodeIfPresent(Date.self, forKey: .when)
+        due = try c.decodeIfPresent(Date.self, forKey: .due)
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date()
     }
 
     public var isTodo: Bool { state != nil }
@@ -159,6 +189,26 @@ public struct Tree: Codable, Equatable, Sendable {
         if !todo { buds[i].state = nil }
     }
 
+    public mutating func setBody(_ id: UUID, _ body: String) {
+        guard let i = buds.firstIndex(where: { $0.id == id }) else { return }
+        buds[i].body = body
+    }
+
+    public mutating func setWhen(_ id: UUID, _ when: Date?) {
+        guard let i = buds.firstIndex(where: { $0.id == id }) else { return }
+        buds[i].when = when
+    }
+
+    public mutating func setDue(_ id: UUID, _ due: Date?) {
+        guard let i = buds.firstIndex(where: { $0.id == id }) else { return }
+        buds[i].due = due
+    }
+
+    public mutating func setPinned(_ id: UUID, _ pinned: Bool) {
+        guard let i = buds.firstIndex(where: { $0.id == id }) else { return }
+        buds[i].pinned = pinned
+    }
+
     public mutating func toggle(_ id: UUID) {
         guard let i = buds.firstIndex(where: { $0.id == id }), let state = buds[i].state else { return }
         buds[i].state = state == .done ? .open : .done
@@ -171,16 +221,24 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     /// A small world to start from.
+    /// A small fictional world: a newsletter being launched, with a few bodies, two due dates,
+    /// one scheduled day and one pinned bud, so every lens and picture has something to show.
     public static func seed() -> Tree {
         var t = Tree()
+        let day: TimeInterval = 86_400
         let newsletter = t.add("Launch the newsletter", todo: true, under: rootID)
+        t.setBody(newsletter.id, "A monthly letter for the garden club: one story, one tip, one date.\n\nFirst issue goes out when the name and the sender are settled.")
+        t.setPinned(newsletter.id, true)
         let name = t.add("Pick a name", todo: true, under: newsletter.id)
+        t.setDue(name.id, Date().addingTimeInterval(2 * day))
         t.add("Shortlist three candidates", todo: true, under: name.id)
         t.add("Ask two readers which one lands", todo: true, under: name.id)
-        t.add("Short names read better in the inbox", todo: false, under: name.id)
+        let short = t.add("Short names read better in the inbox", todo: false, under: name.id)
+        t.setBody(short.id, "Most inboxes cut the sender name at about twenty characters.")
         let sender = t.add("Set up the sender", todo: true, under: newsletter.id)
         t.add("Domain records are in the shared doc", todo: false, under: sender.id)
-        t.add("Verify the address", todo: true, under: sender.id)
+        let verify = t.add("Verify the address", todo: true, under: sender.id)
+        t.setDue(verify.id, Date().addingTimeInterval(-1 * day))
         let design = t.add("Design notes", todo: false, under: newsletter.id)
         t.add("Warm, not corporate", todo: false, under: design.id)
         t.add("First issue outline", todo: false, under: newsletter.id)
@@ -190,7 +248,8 @@ public struct Tree: Codable, Equatable, Sendable {
         let language = t.add("Learn a language", todo: true, under: rootID)
         t.add("Ten minutes a day", todo: true, under: language.id)
         let health = t.add("Health reset", todo: true, under: rootID)
-        t.add("A walk before the first meeting", todo: true, under: health.id)
+        let walk = t.add("A walk before the first meeting", todo: true, under: health.id)
+        t.setWhen(walk.id, Date())
         t.add("Routines", todo: false, under: rootID)
         t.add("Gift ideas", todo: false, under: rootID)
         t.add("Side project", todo: false, under: rootID)

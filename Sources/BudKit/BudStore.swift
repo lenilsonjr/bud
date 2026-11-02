@@ -79,6 +79,22 @@ public final class BudStore: ObservableObject {
         commit { $0.toggle(id) }
     }
 
+    public func setBody(_ id: UUID, _ body: String) {
+        commit { $0.setBody(id, body) }
+    }
+
+    public func setWhen(_ id: UUID, _ when: Date?) {
+        commit { $0.setWhen(id, when) }
+    }
+
+    public func setDue(_ id: UUID, _ due: Date?) {
+        commit { $0.setDue(id, due) }
+    }
+
+    public func setPinned(_ id: UUID, _ pinned: Bool) {
+        commit { $0.setPinned(id, pinned) }
+    }
+
     public func remove(_ id: UUID) {
         commit { $0.remove(id) }
     }

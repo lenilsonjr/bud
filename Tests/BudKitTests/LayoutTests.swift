@@ -218,6 +218,60 @@ final class LightTests: XCTestCase {
     }
 }
 
+final class PropertiesTests: XCTestCase {
+    func testTheSeedCarriesBodiesDatesAndAPin() throws {
+        let t = Tree.seed()
+        let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        XCTAssertTrue(newsletter.pinned)
+        XCTAssertFalse(newsletter.body.isEmpty)
+        let all = t.walk(under: rootID)
+        XCTAssertEqual(all.filter { $0.due != nil }.count, 2, "Two due dates")
+        XCTAssertEqual(all.filter { $0.when != nil }.count, 1, "One scheduled day")
+        XCTAssertEqual(all.filter(\.pinned).count, 1)
+        XCTAssertTrue(all.allSatisfy { $0.created <= Date() })
+    }
+
+    func testSmallMutationsSetEachProperty() throws {
+        var t = Tree.seed()
+        let bud = try XCTUnwrap(t.children(of: rootID).last)
+        let day = Date(timeIntervalSince1970: 1_800_000_000)
+        t.setBody(bud.id, "A line below the title.")
+        t.setWhen(bud.id, day)
+        t.setDue(bud.id, day)
+        t.setPinned(bud.id, true)
+        let now = try XCTUnwrap(t.bud(bud.id))
+        XCTAssertEqual(now.body, "A line below the title.")
+        XCTAssertEqual(now.when, day)
+        XCTAssertEqual(now.due, day)
+        XCTAssertTrue(now.pinned)
+        t.setDue(bud.id, nil)
+        XCTAssertNil(t.bud(bud.id)?.due)
+        let before = t
+        t.setBody(UUID(), "nowhere")
+        XCTAssertEqual(t, before, "An unknown id changes nothing")
+    }
+
+    func testAFileSavedBeforeThePropertiesStillLoads() throws {
+        let old = """
+        {"buds":[{"id":"11111111-1111-1111-1111-111111111111","text":"Old bud","state":"open",
+        "parent":"00000000-0000-0000-0000-000000000000","order":1}]}
+        """
+        let t = try JSONDecoder().decode(Tree.self, from: Data(old.utf8))
+        let bud = try XCTUnwrap(t.buds.first)
+        XCTAssertEqual(bud.text, "Old bud")
+        XCTAssertEqual(bud.state, .open)
+        XCTAssertEqual(bud.body, "")
+        XCTAssertNil(bud.when)
+        XCTAssertNil(bud.due)
+        XCTAssertFalse(bud.pinned)
+        XCTAssertLessThanOrEqual(bud.created.timeIntervalSinceNow, 1)
+
+        let data = try JSONEncoder().encode(t)
+        let again = try JSONDecoder().decode(Tree.self, from: data)
+        XCTAssertEqual(again.buds.first?.id, bud.id, "What we write, we read back")
+    }
+}
+
 final class NextStepTests: XCTestCase {
     func testNextStepIsTheFirstOpenTodoInReadingOrder() throws {
         var t = Tree.seed()
