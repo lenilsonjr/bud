@@ -57,7 +57,7 @@ public enum Palette {
     public static let cardNoteMeta = Tone("#626A3C", "#BBC195")
     public static let glass = Tone("#FFFFFFE0", "#18271EE0")
     public static let glow = Tone("#8CCC8C59", "#8CCC8C33")
-    public static let hub = Tone("#24432B", "#16361F")
+    public static let hub = Tone("#24432B", "#24432B")
     public static let hubAccent = Tone("#8CCC8C", "#8CCC8C")
     public static let hubInk = Tone("#EEF6EA", "#EEF6EA")
     public static let hubLine = Tone("#24432B", "#4E8A55")

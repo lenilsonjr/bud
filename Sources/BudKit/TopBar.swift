@@ -218,8 +218,8 @@ struct TopBar: View {
             #else
             .frame(width: 180)
             #endif
-            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.md))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(Theme.line, lineWidth: 1))
+            .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Theme.line, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
