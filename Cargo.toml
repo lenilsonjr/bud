@@ -1,6 +1,6 @@
 # The Rust side of Bud (ADR-003): the core that owns the vault on disk and its SQLite index.
 [workspace]
-members = ["core/bud-core"]
+members = ["core/bud-core", "core/bud-ffi"]
 resolver = "2"
 
 [workspace.package]
