@@ -76,12 +76,12 @@ private struct FadingTitle<Label: View>: View {
             .fixedSize(horizontal: true, vertical: false)
             .background(GeometryReader { proxy in
                 Color.clear.onAppear { textWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { textWidth = $0 }
+                    .onChange(of: proxy.size.width) { _, width in textWidth = width }
             })
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GeometryReader { proxy in
                 Color.clear.onAppear { availableWidth = proxy.size.width }
-                    .onChange(of: proxy.size.width) { availableWidth = $0 }
+                    .onChange(of: proxy.size.width) { _, width in availableWidth = width }
             })
             .clipped()
             .mask(fade)
