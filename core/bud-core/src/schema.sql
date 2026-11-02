@@ -34,3 +34,18 @@ CREATE TRIGGER IF NOT EXISTS buds_fts_update AFTER UPDATE OF title, body ON buds
     VALUES ('delete', old.rowid, old.title, old.body);
     INSERT INTO buds_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
 END;
+
+-- One CRDT document per bud (sync module). Unlike `buds` this is not derived from the folder:
+-- the document bytes carry history, so a schema change never drops these tables. `known_text` is
+-- the last full file text the document knew; a file that differs from it was edited outside.
+CREATE TABLE IF NOT EXISTS docs (
+    path       TEXT PRIMARY KEY NOT NULL,
+    id         TEXT NOT NULL UNIQUE,
+    bytes      BLOB NOT NULL,
+    known_text TEXT NOT NULL DEFAULT ''
+);
+-- The tree document of all buds: names, parents and trashing, keyed by bud identity.
+CREATE TABLE IF NOT EXISTS tree_doc (
+    id    INTEGER PRIMARY KEY CHECK (id = 1),
+    bytes BLOB NOT NULL
+);
