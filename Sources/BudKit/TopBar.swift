@@ -83,6 +83,7 @@ struct TopBar: View {
         }
         .buttonStyle(.plain)
         .help("Show or hide the sidebar")
+        .accessibilityLabel("Show or hide the sidebar")
     }
     #endif
 

@@ -55,7 +55,8 @@ public final class BudStore: ObservableObject {
     /// Whether Files shows its sidebar; follows the window shape until the bar button decides.
     @Published public var sidebar = SidebarVisibility()
     /// The size of the area below the bar, so the bar button knows what the toggle flips.
-    @Published public var surfaceSize: CGSize = .zero
+    /// Not published: it changes on every frame of a resize and nothing draws from it.
+    public var surfaceSize: CGSize = .zero
     /// What the window shows over everything else; BudRootView draws it as a scrim and a card.
     @Published var modal: Modal? = nil
     /// The bud planted or captured last and when, so the canvas can give it an entry cue.

@@ -16,7 +16,7 @@ struct FilesView: View {
         } else {
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    if store.sidebar.isShown(in: geo.size) {
+                    if sidebarShown(in: geo.size) {
                         Sidebar(store: store)
                             .frame(width: Self.sidebarWidth)
                             .background(Theme.sidebar)
@@ -26,11 +26,20 @@ struct FilesView: View {
                     }
                     FilesPage(store: store)
                 }
-                .animation(.easeOut(duration: 0.2), value: store.sidebar.isShown(in: geo.size))
+                .animation(.easeOut(duration: 0.2), value: sidebarShown(in: geo.size))
                 .onAppear { sync(geo.size) }
                 .onChange(of: geo.size) { _, now in sync(now) }
             }
         }
+    }
+
+    /// The Mac always shows the sidebar; only iOS collapses it, and only iOS has the button.
+    private func sidebarShown(in size: CGSize) -> Bool {
+        #if os(iOS)
+        store.sidebar.isShown(in: size)
+        #else
+        true
+        #endif
     }
 
     private func sync(_ size: CGSize) {
