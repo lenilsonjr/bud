@@ -575,7 +575,17 @@ impl Vault {
             return self.adopt_doc(&path, id, bytes);
         }
         let path = self.create(parent.as_deref(), &title, crate::Kind::Note, None)?;
-        let text = std::fs::read_to_string(self.root.join(&path))?;
+        // The file starts empty: what it holds comes from the document, not from the defaults
+        // `create` writes, which would leave an empty property block behind.
+        let absolute = self.root.join(&path);
+        crate::edit::write_atomic(&absolute, "")?;
+        let mtime = crate::edit::mtime_of(&absolute);
+        lock(&self.written).insert(path.clone(), mtime);
+        lock(&self.conn).execute(
+            "UPDATE buds SET created = NULL, mtime = ?1 WHERE path = ?2",
+            params![mtime, path],
+        )?;
+        let text = String::new();
         lock(&self.conn).execute(
             "INSERT INTO docs (path, id, bytes, known_text) VALUES (?1, ?2, ?3, ?4)",
             params![path, id, bytes, text],

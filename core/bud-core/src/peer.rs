@@ -17,6 +17,11 @@
 //! one stream: the dialer sends its heads, the other answers with the changes the dialer lacks and
 //! its own heads, the dialer sends the changes the other lacks, and the other confirms. Both sides
 //! apply what they got through the sync module, which writes the files.
+//!
+//! What travels is what the document model carries: the body and the keys `state`, `when`, `due`,
+//! `pinned`, `created` and `source`. Other frontmatter keys, such as `tags`, stay on the machine
+//! that wrote them and are missing from a file made on the other side. The ignored test
+//! `every_frontmatter_key_reaches_the_other_vault` states the goal.
 
 use crate::lock;
 use crate::sync::{Heads, Updates};
@@ -45,8 +50,13 @@ const TICKET_PREFIX: &str = "bud1";
 /// Bound to the data a message is sealed with, so a sealed message of another use never opens.
 const SEAL_CONTEXT: &[u8] = b"bud/sync/1";
 const NODE_KEY_FILE: &str = "node.key";
-/// The largest message accepted, sealed.
+/// The largest message accepted once the peer has proved it holds the key, sealed.
 const MAX_FRAME: usize = 256 * 1024 * 1024;
+/// The largest first message accepted from a caller that has proved nothing yet.
+const MAX_HELLO: usize = 16 * 1024 * 1024;
+const CHUNK: usize = 64 * 1024;
+/// How many sessions a node answers at once.
+const MAX_SESSIONS: usize = 16;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -263,7 +273,8 @@ impl Vault {
 }
 
 /// Seal `plain` with the vault key: a fresh nonce, then the ciphertext and its tag.
-fn seal(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>> {
+/// `from` is who speaks, so a message sent one way never opens as one sent the other way.
+fn seal(key: &[u8; 32], from: Side, plain: &[u8]) -> Result<Vec<u8>> {
     let mut nonce = [0u8; 24];
     getrandom::fill(&mut nonce).map_err(peer_error)?;
     let cipher = XChaCha20Poly1305::new(key.into());
@@ -272,7 +283,7 @@ fn seal(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>> {
             XNonce::from_slice(&nonce),
             Payload {
                 msg: plain,
-                aad: SEAL_CONTEXT,
+                aad: &context(from),
             },
         )
         .map_err(|_| peer_error("could not seal a message"))?;
@@ -282,7 +293,7 @@ fn seal(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Open what [`seal`] made. A wrong key or a changed byte is an error.
-fn open(key: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>> {
+fn open(key: &[u8; 32], from: Side, sealed: &[u8]) -> Result<Vec<u8>> {
     if sealed.len() < 24 {
         return Err(peer_error("a message is too short"));
     }
@@ -292,7 +303,7 @@ fn open(key: &[u8; 32], sealed: &[u8]) -> Result<Vec<u8>> {
             XNonce::from_slice(nonce),
             Payload {
                 msg: body,
-                aad: SEAL_CONTEXT,
+                aad: &context(from),
             },
         )
         .map_err(|_| peer_error("a message did not open with the vault key"))
@@ -306,13 +317,27 @@ enum Message {
     Done,
 }
 
+/// The end of a session that speaks: the one that dialed, or the one that answered.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Side {
+    Dialer,
+    Answerer,
+}
+
+fn context(from: Side) -> Vec<u8> {
+    let mut aad = SEAL_CONTEXT.to_vec();
+    aad.push(from as u8);
+    aad
+}
+
 async fn send_message(
     send: &mut iroh::endpoint::SendStream,
     key: &[u8; 32],
+    from: Side,
     message: &Message,
 ) -> Result<()> {
     let plain = postcard::to_stdvec(message).map_err(peer_error)?;
-    let sealed = seal(key, &plain)?;
+    let sealed = seal(key, from, &plain)?;
     let len = u32::try_from(sealed.len()).map_err(peer_error)?;
     send.write_all(&len.to_be_bytes())
         .await
@@ -320,16 +345,30 @@ async fn send_message(
     send.write_all(&sealed).await.map_err(peer_error)
 }
 
-async fn read_message(recv: &mut iroh::endpoint::RecvStream, key: &[u8; 32]) -> Result<Message> {
+/// Read one message sent by `from`, at most `max` bytes sealed. The buffer grows with what
+/// arrives, so a length a peer claims costs nothing until the bytes are there.
+async fn read_message(
+    recv: &mut iroh::endpoint::RecvStream,
+    key: &[u8; 32],
+    from: Side,
+    max: usize,
+) -> Result<Message> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(peer_error)?;
     let len = u32::from_be_bytes(len) as usize;
-    if len > MAX_FRAME {
+    if len > max {
         return Err(peer_error("a message is too large"));
     }
-    let mut sealed = vec![0u8; len];
-    recv.read_exact(&mut sealed).await.map_err(peer_error)?;
-    postcard::from_bytes(&open(key, &sealed)?).map_err(peer_error)
+    let mut sealed = Vec::new();
+    let mut chunk = vec![0u8; CHUNK.min(len)];
+    while sealed.len() < len {
+        let want = CHUNK.min(len - sealed.len());
+        recv.read_exact(&mut chunk[..want])
+            .await
+            .map_err(peer_error)?;
+        sealed.extend_from_slice(&chunk[..want]);
+    }
+    postcard::from_bytes(&open(key, from, &sealed)?).map_err(peer_error)
 }
 
 /// The node key, read from `path`, or made and written there for the first time.
@@ -452,14 +491,16 @@ impl Shared {
             .map_err(peer_error)?;
         let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
         let heads = self.vault().heads()?;
-        send_message(&mut send, &key, &Message::Hello(heads)).await?;
-        let Message::Reply { updates, heads } = read_message(&mut recv, &key).await? else {
+        send_message(&mut send, &key, Side::Dialer, &Message::Hello(heads)).await?;
+        let Message::Reply { updates, heads } =
+            read_message(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
+        else {
             return Err(peer_error("a peer answered out of turn"));
         };
         let report = self.vault().apply_updates(&updates)?;
         let mine = self.vault().updates_for(&heads)?;
-        send_message(&mut send, &key, &Message::Final(mine)).await?;
-        let Message::Done = read_message(&mut recv, &key).await? else {
+        send_message(&mut send, &key, Side::Dialer, &Message::Final(mine)).await?;
+        let Message::Done = read_message(&mut recv, &key, Side::Answerer, MAX_FRAME).await? else {
             return Err(peer_error("a peer did not confirm"));
         };
         send.finish().map_err(peer_error)?;
@@ -474,7 +515,7 @@ impl Shared {
         let remote = connection.remote_id();
         let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.accept_bi().await.map_err(peer_error)?;
-        let theirs = match read_message(&mut recv, &key).await {
+        let theirs = match read_message(&mut recv, &key, Side::Dialer, MAX_HELLO).await {
             Ok(Message::Hello(heads)) => heads,
             other => {
                 connection.close(1u32.into(), b"not paired");
@@ -491,12 +532,20 @@ impl Shared {
             vault.sync()?;
             (vault.updates_for(&theirs)?, vault.heads()?)
         };
-        send_message(&mut send, &key, &Message::Reply { updates, heads }).await?;
-        let Message::Final(updates) = read_message(&mut recv, &key).await? else {
+        send_message(
+            &mut send,
+            &key,
+            Side::Answerer,
+            &Message::Reply { updates, heads },
+        )
+        .await?;
+        let Message::Final(updates) =
+            read_message(&mut recv, &key, Side::Dialer, MAX_FRAME).await?
+        else {
             return Err(peer_error("a peer sent out of turn"));
         };
         self.vault().apply_updates(&updates)?;
-        send_message(&mut send, &key, &Message::Done).await?;
+        send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
         send.finish().map_err(peer_error)?;
         let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
         Ok(())
@@ -538,10 +587,17 @@ impl Node {
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
+            let sessions = Arc::new(tokio::sync::Semaphore::new(MAX_SESSIONS));
             while let Some(incoming) = accepting.endpoint.accept().await {
+                // Over the limit a caller is refused, not queued: a stranger cannot fill it.
+                let Ok(permit) = Arc::clone(&sessions).try_acquire_owned() else {
+                    incoming.refuse();
+                    continue;
+                };
                 let serving = Arc::clone(&accepting);
                 tokio::spawn(async move {
-                    let _ = serving.serve(incoming).await;
+                    let _ = tokio::time::timeout(SESSION_TIMEOUT, serving.serve(incoming)).await;
+                    drop(permit);
                 });
             }
         });
@@ -661,17 +717,21 @@ mod tests {
     fn a_sealed_message_is_ciphertext_and_opens_only_with_its_key() {
         let key = [5u8; 32];
         let plain = b"Warm, not corporate. A scarf for the printer.";
-        let sealed = seal(&key, plain).unwrap();
+        let sealed = seal(&key, Side::Dialer, plain).unwrap();
         assert!(!sealed
             .windows(plain.len().min(8))
             .any(|w| plain.windows(w.len()).any(|p| p == w)));
-        assert_eq!(open(&key, &sealed).unwrap(), plain);
-        assert!(open(&[6u8; 32], &sealed).is_err());
+        assert_eq!(open(&key, Side::Dialer, &sealed).unwrap(), plain);
+        assert!(open(&[6u8; 32], Side::Dialer, &sealed).is_err());
         let mut changed = sealed.clone();
         *changed.last_mut().unwrap() ^= 1;
-        assert!(open(&key, &changed).is_err());
+        assert!(open(&key, Side::Dialer, &changed).is_err());
+        assert!(
+            open(&key, Side::Answerer, &sealed).is_err(),
+            "not the other way"
+        );
         assert_ne!(
-            seal(&key, plain).unwrap(),
+            seal(&key, Side::Dialer, plain).unwrap(),
             sealed,
             "a fresh nonce each time"
         );

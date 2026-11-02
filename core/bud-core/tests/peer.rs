@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 struct Peer {
-    _vault: Arc<Mutex<Vault>>,
+    vault: Arc<Mutex<Vault>>,
     dir: tempfile::TempDir,
     index: tempfile::TempDir,
     node: Node,
@@ -32,7 +32,7 @@ impl Peer {
         };
         let node = Node::start_with(Arc::clone(&vault), options).unwrap();
         Peer {
-            _vault: vault,
+            vault,
             dir,
             index,
             node,
@@ -259,4 +259,100 @@ fn a_node_that_is_not_paired_learns_nothing() {
     assert!(stranger.node.sync_now().is_err());
     assert_eq!(stranger.read("Gift ideas.md"), None);
     assert!(a.node.peers().unwrap().is_empty());
+}
+
+#[test]
+fn a_folder_bud_on_one_vault_comes_back_unchanged() {
+    let a = Peer::new(Some(&fixture()), None);
+    std::fs::create_dir(a.path("Loose folder")).unwrap();
+    a.write("Loose folder/Child note.md", "A note in a folder.\n");
+    let b = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    let before = fingerprint(a.dir.path());
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    for _ in 0..2 {
+        b.node.sync_now().unwrap();
+        a.node.sync_now().unwrap();
+    }
+    assert_eq!(
+        b.read("Loose folder/Child note.md").as_deref(),
+        Some("A note in a folder.\n")
+    );
+    assert_eq!(fingerprint(a.dir.path()), before);
+    // A bud in the trash does not travel to a vault that has none of it.
+    let count = |p: &Peer| {
+        let buds = p.vault.lock().unwrap().all().unwrap();
+        buds.iter()
+            .filter(|b| b.place != bud_core::Place::Trash)
+            .count()
+    };
+    assert_eq!(count(&a), count(&b));
+}
+
+#[test]
+#[ignore = "properties outside the six the document model carries do not travel yet"]
+fn every_frontmatter_key_reaches_the_other_vault() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let name = "Launch the newsletter/Design notes.md";
+    assert_eq!(b.read(name), a.read(name));
+}
+
+/// A stranger that dials the node and says nothing it can open is dropped, and the node goes on.
+#[test]
+fn a_stranger_with_an_oversized_or_silent_frame_is_dropped() {
+    use iroh::endpoint::presets;
+    let (a, b) = paired(None);
+    let ticket = a.node.ticket_with_addresses().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let endpoint = iroh::Endpoint::builder(presets::Minimal)
+            .relay_mode(iroh::RelayMode::Disabled)
+            .bind()
+            .await
+            .unwrap();
+        let mut addr = iroh::EndpointAddr::new(iroh::PublicKey::from_bytes(&ticket.node).unwrap());
+        for ip in &ticket.addrs {
+            addr = addr.with_ip_addr(*ip);
+        }
+        let connection = endpoint.connect(addr, b"bud/sync/1").await.unwrap();
+        let (mut send, mut recv) = connection.open_bi().await.unwrap();
+        send.write_all(&u32::MAX.to_be_bytes()).await.unwrap();
+        let mut byte = [0u8; 1];
+        let answer = tokio::time::timeout(Duration::from_secs(5), recv.read_exact(&mut byte)).await;
+        assert!(
+            matches!(answer, Ok(Err(_))),
+            "the node closes on an oversized frame"
+        );
+        // A frame that is the right size but not sealed with the key is dropped too.
+        let connection = endpoint
+            .connect(
+                iroh::EndpointAddr::new(iroh::PublicKey::from_bytes(&ticket.node).unwrap())
+                    .with_ip_addr(ticket.addrs[0]),
+                b"bud/sync/1",
+            )
+            .await
+            .unwrap();
+        let (mut send, mut recv) = connection.open_bi().await.unwrap();
+        send.write_all(&64u32.to_be_bytes()).await.unwrap();
+        send.write_all(&[7u8; 64]).await.unwrap();
+        let answer = tokio::time::timeout(Duration::from_secs(5), recv.read_exact(&mut byte)).await;
+        assert!(
+            matches!(answer, Ok(Err(_))),
+            "the node closes on a frame it cannot open"
+        );
+        endpoint.close().await;
+    });
+    // b is a real peer and a learns it by its proof; the stranger adds nothing to that.
+    b.node.sync_now().unwrap();
+    assert_eq!(
+        a.node.peers().unwrap().len(),
+        1,
+        "the stranger was not remembered"
+    );
 }
