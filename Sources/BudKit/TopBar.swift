@@ -21,10 +21,9 @@ struct TopBar: View {
             goAnywhere
             zoom
             Button(action: onAdd) {
-                Label("Add here", systemImage: "plus")
+                BudButtonLabel(title: "Add here", systemImage: "plus")
             }
-            .buttonStyle(.bordered)
-            .textRole(.label)
+            .buttonStyle(.budSecondary)
         }
         .padding(.leading, leadingInset)
         .padding(.trailing, 14)

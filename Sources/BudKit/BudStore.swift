@@ -41,6 +41,8 @@ public final class BudStore: ObservableObject {
     }
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
+    /// What the window shows over everything else; BudRootView draws it as a scrim and a card.
+    @Published var modal: Modal? = nil
     /// The undo toast; every undoable change goes through it.
     public let toasts = ToastCenter()
 

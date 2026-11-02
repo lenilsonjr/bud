@@ -4,7 +4,6 @@ import SwiftUI
 /// The whole app: the bar across the top, the canvas or the files below it.
 public struct BudRootView: View {
     @StateObject private var store: BudStore
-    @State private var adding: AddTarget? = nil
     @State private var searching = false
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
@@ -18,7 +17,7 @@ public struct BudRootView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            TopBar(store: store, onAdd: { adding = .capture }, onSearch: { searching = true })
+            TopBar(store: store, onAdd: { store.modal = .capture }, onSearch: { searching = true })
             surface
                 .overlay(alignment: .bottom) {
                     ToastView(center: store.toasts)
@@ -27,6 +26,7 @@ public struct BudRootView: View {
                 }
         }
         .overlay { if searching { palette } }
+        .overlay { ModalHost(store: store) }
         .background(Theme.window.ignoresSafeArea())
         .background {
             // ⌘K from anywhere in the window, drawn nowhere.
@@ -37,7 +37,6 @@ public struct BudRootView: View {
         .textRole(.body)
         .foregroundStyle(Theme.text)
         .tint(Theme.leaf)
-        .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
     }
 
     @ViewBuilder private var surface: some View {

@@ -8,29 +8,12 @@ enum AddMode: Hashable {
     case capture
 }
 
-struct AddTarget: Identifiable {
-    let mode: AddMode
-
-    init(parent: UUID) { mode = .enrich(under: parent) }
-    private init(mode: AddMode) { self.mode = mode }
-
-    static let capture = AddTarget(mode: .capture)
-
-    var id: UUID {
-        switch mode {
-        case .enrich(let parent): return parent
-        case .capture: return inboxID
-        }
-    }
-}
-
 /// The quick add sheet: one line and a kind, Return plants it, Esc cancels. Opened by the + on a
 /// card or the N key for the lit card. In capture mode, opened by Add here in the bar or the
 /// hub's Capture button, it has no kind: a capture is a note until it is enriched.
 struct AddSheet: View {
     @ObservedObject var store: BudStore
     let mode: AddMode
-    @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var todo = false
     @FocusState private var typing: Bool
@@ -76,25 +59,27 @@ struct AddSheet: View {
                     Segmented(selection: $todo, options: [false, true]) { $0 ? "To-do" : "Note" }
                 }
             }
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+            HStack(spacing: 8) {
+                Keycap("Esc")
                 Spacer()
-                Button(capturing ? "Capture" : "Add", action: plant)
+                Button { close() } label: { BudButtonLabel(title: "Cancel") }
+                    .buttonStyle(.budSecondary)
+                    .keyboardShortcut(.cancelAction)
+                Button(action: plant) { BudButtonLabel(title: capturing ? "Capture" : "Add") }
+                    .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)
                     .disabled(line.isEmpty)
             }
         }
-        .padding(20)
-        .frame(minWidth: 360)
         .textRole(.body)
-        .background(Theme.surface)
         .tint(Theme.leaf)
         .onAppear {
             if case .enrich(let parent) = mode { todo = store.tree.suggestsTodo(under: parent) }
             typing = true
         }
     }
+
+    private func close() { store.modal = nil }
 
     private var heading: String {
         switch mode {
@@ -109,7 +94,23 @@ struct AddSheet: View {
         case .enrich(let parent): store.add(line, todo: todo, under: parent)
         case .capture: store.capture(line)
         }
-        dismiss()
+        close()
+    }
+}
+
+/// A key as the kit draws it: a small mono label in a bordered chip.
+struct Keycap: View {
+    let label: String
+
+    init(_ label: String) { self.label = label }
+
+    var body: some View {
+        Text(label)
+            .textRole(.mono)
+            .foregroundStyle(Theme.text3)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
     }
 }
 #endif
