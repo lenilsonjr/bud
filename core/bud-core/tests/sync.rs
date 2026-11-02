@@ -219,6 +219,28 @@ fn two_documents_edited_apart_merge_to_one_text_with_both_edits() {
 }
 
 #[test]
+fn an_outside_edit_not_yet_synced_survives_a_merge_of_remote_edits() {
+    let (mut a, mut b) = pair();
+    let path = "Launch the newsletter/Design notes.md";
+    b.write(
+        path,
+        "---\ndue: 2026-11-09\n---\n## Tone and voice\n\nWarm, not corporate.\n",
+    );
+    b.rescan_and_sync();
+    // A's file is edited outside, and no sync runs before B's document arrives.
+    a.write(path, "## Voice\n\nWarm, not corporate.\nShort sentences.\n");
+    send_doc(&b, &mut a, path);
+
+    let merged =
+        "---\ndue: 2026-11-09\n---\n## Tone and voice\n\nWarm, not corporate.\nShort sentences.\n";
+    assert_eq!(a.read(path), merged);
+    a.rescan_and_sync();
+    send_doc(&a, &mut b, path);
+    assert_eq!(b.read(path), merged);
+    assert_eq!(a.rescan_and_sync().written, 0);
+}
+
+#[test]
 fn a_property_set_on_one_replica_reaches_the_file_of_the_other() {
     let (mut a, mut b) = pair();
     let path = "Launch the newsletter/Set up the sender.md";

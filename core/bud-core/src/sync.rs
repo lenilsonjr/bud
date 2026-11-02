@@ -11,6 +11,12 @@
 //! someone else; the difference becomes text operations and map sets. A document that differs from
 //! its file is written back through [`Vault::set_properties`] and [`Vault::set_body`], the writers
 //! every other edit uses. When the two agree nothing is written.
+//!
+//! Identity contract: a bud's identity is made by the replica that first syncs it. Another
+//! replica of the same vault takes it over with [`Vault::adopt_doc`] and [`Vault::merge_tree`]
+//! before it syncs on its own; two replicas that each sync a vault alone make different
+//! identities. A file renamed or moved by another program is a removed path and a new path, so it
+//! gets a new identity.
 
 use crate::frontmatter;
 use crate::lock;
@@ -371,12 +377,22 @@ impl Vault {
             .ok_or_else(|| Error::NoSuchBud(id.to_string()))?;
         let stored = self.load(&path)?.ok_or(Error::NoSuchBud(path.clone()))?;
         let before = stored.doc.len_ops();
+        // An outside edit the document has not seen goes in first, while the document still
+        // holds what the file was diffed from; imported changes then merge with it.
+        let file = if path.ends_with(".md") {
+            std::fs::read_to_string(self.root.join(&path))?
+        } else {
+            String::new()
+        };
+        if file != stored.known {
+            absorb(&stored.doc, &file)?;
+        }
         stored
             .doc
             .import(bytes)
             .map_err(|err| Error::Invalid(format!("document: {err}")))?;
         let ops = stored.doc.len_ops() - before;
-        self.store(&path, &stored.id, &stored.doc, None)?;
+        self.store(&path, &stored.id, &stored.doc, Some(&file))?;
         let mut report = self.sync_path(&path)?;
         report.ops += ops;
         Ok(report)
