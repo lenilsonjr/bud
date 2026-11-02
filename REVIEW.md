@@ -1,23 +1,13 @@
-REVIEW round 1
-Reviewed: crew/BUD-40 against develop at a26b8db20e770a0a3b83c33306e907ff6f371f45
-What this does: It adds `core/bud-core/src/peer.rs`, an `iroh` node per vault with a persistent node key, mDNS lookup and a relay setting of default, custom or off. A `Ticket` (node id, relay, vault key, optional addresses) is a short `bud1…` string and a QR matrix. Every message is sealed with XChaCha20-Poly1305 under the vault key. Sync swaps version vectors, then sends the missing Loro updates both ways and applies them through the sync module. The vault key and peers go in new index tables, and the node key goes in a file beside the index.
-Ticket check:
-- Endpoint, persistent node key, mDNS, relay setting: met. `Relay::Default` and `Relay::Custom` are never exercised by a test.
-- Pairing ticket (string and QR), accepted once, peer remembered: met.
-- Encryption of every message before it leaves the process: met. The unit test only proves the cipher round trip, not what the wire carries.
-- Heads exchange, missing changes both ways, applied through the sync module with files written: partial. The files that arrive differ from the sender's (findings 2 and 3).
-- Nothing kept in the vault folder: met. Asserted by a test.
-- Verification, integration test with two vaults and a few seconds: met. The relay-off loopback test is met too, since every test runs with the relay off.
-Tests: I did not run the gate. The host's checks on this head passed (5 checks), and I was told to read the diff and report and not run the suite. I read the diff, the whole of `peer.rs` and the 10 tests in `tests/peer.rs`. Gaps:
-- No test for a malformed or oversized frame.
-- No test for a silent stranger.
-- No test for a peer that proves the key but whose files differ.
-- Two comparisons were loosened to get green (see finding 3).
-Findings:
-1. `core/bud-core/src/peer.rs:326-331`, `:472-477` security: `read_message` takes a 4-byte length from the peer and allocates `vec![0u8; len]` before anything is authenticated. `MAX_FRAME` is 256 MiB, so any host that can open a connection to the node can make it allocate up to 256 MiB per connection and keep it. `serve` has no timeout either. `SESSION_TIMEOUT` wraps only `exchange` in `sync_all`. A stranger who connects and sends nothing leaves a task parked forever on `accept_bi` or `read_exact`. The accept loop spawns an unbounded task per incoming connection. Fix: cap the first frame (the Hello) at a small size, then read in chunks or with `take`. Wrap `serve` in a timeout. Bound the number of concurrent sessions.
-2. `core/bud-core/src/sync.rs` (`materialize`, about lines 540-585) bug: a document that arrives for a bud that has no file is created with `create(..., Kind::Note, ...)`. The report says a bud that is only a folder on one side arrives as an empty `.md` file. That changes the vault's structure on the receiving side. I have not traced whether the new `.md` then syncs back as a second bud on the next round, so this is a question: does a folder-only bud on A, once it becomes an empty note on B, come back to A as a duplicate or conflicting bud? Please add a test that syncs A to B and back to A and asserts A's folder is unchanged.
-3. `core/bud-core/tests/peer.rs:55-63`, `:186-189` design: the report admits that frontmatter keys outside the six the document model carries (for example `tags` in `Design notes.md`) are dropped on the receiving side. The report also says two test comparisons were loosened to survive that: frontmatter compared as sorted lines, and the `Design notes.md` edit compared on body only. A sync that silently drops a user's properties on the other machine is a data-loss path, and the test now hides it. Either carry the other keys in the document, or state in the ticket and the code that they do not travel, and make the test fail loudly on the loss with an `#[ignore]` and a reason rather than weaken it. A decision for the operator.
-4. `core/bud-core/src/peer.rs:484-486` question: a serving node adds any caller that can seal a Hello with the key as a peer with an empty address list and its own relay setting. That is by design (the ticket carries the key). Is it intended that anyone who ever saw a ticket, or a QR on screen, stays a permanent peer with no way to revoke it, and that the vault key cannot be rotated after the first pairing (`adopt_key` refuses once peers exist)? Nothing in the ticket says tickets are one-shot on the maker's side. This is not a blocker on its own, but "accepts a ticket once" is only enforced on the acceptor.
-5. `core/bud-core/src/peer.rs:265-299` nit: the AAD is the same constant in both directions and carries no session or direction. Hello, Reply and Final under one key can be replayed or reflected. CRDT merges make replay harmless today, but binding a direction byte into the AAD is cheap.
-6. `core/bud-core/src/peer.rs:358-360` nit: `mode(0o600)` applies to creation only. The key is created `create_new`, so that is fine. A damaged key file is reported but never repaired, which is acceptable.
-verdict: changes requested
+REVIEW round 2
+Earlier findings:
+1. Unauthenticated allocation, no timeout, unbounded tasks: addressed. The first frame from an unproven caller is capped at 16 MiB. The reader grows its buffer in 64 KiB chunks, so a claimed length costs nothing until the bytes arrive. `serve` runs under the 60 second timeout. The accept loop refuses callers beyond 16 sessions.
+2. Whether a folder-only bud comes back as a duplicate: addressed. The new test `a_folder_bud_on_one_vault_comes_back_unchanged` syncs A to B and back and checks A is unchanged. A folder-only bud still arrives as an empty `.md` on the other side, and the report says so.
+3. Dropped frontmatter keys hidden by a loosened test: partial, accepted. The limit is documented in the `peer.rs` module comment. The full-equality test is `#[ignore]`d with its reason. Whether to carry the other keys is left to the operator. I accept this as a reasonable decline.
+4. Revocation, key rotation, one-shot tickets on the maker's side: declined as beyond the ticket. Accepted. It should go to the operator as a follow-up.
+5. AAD without direction: addressed. A dialer or answerer byte is bound into the AAD, and the unit test checks a message does not open as the other side's.
+6. Key file nit: declined. Accepted.
+New:
+- `materialize` in `core/bud-core/src/sync.rs` now writes an empty file, then nulls `buds.created` and sets the stored modification time, so the file holds only what the document says. I read it and found no defect.
+- The test `a_stranger_with_an_oversized_or_silent_frame_is_dropped` does not send a silent stranger, as the report admits. The silent-stranger case is covered only by the `serve` timeout, which has no test. This does not block approval.
+Tests: I did not run the gate. The host's checks on `1c318ffff84a64c98db0863b93dd660fe262f53d` passed (5 checks), and I was told to read the diff and report and not run the suite. I read the full round 2 diff of `core/bud-core/src` (`peer.rs`, `sync.rs`). The report says `tests/peer.rs` has 12 passing and 1 ignored, fmt and clippy were clean, and no Swift file changed since round 1.
+verdict: approved
