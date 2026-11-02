@@ -1,0 +1,22 @@
+{
+  "main": {
+    "id": "5f1c2a",
+    "type": "split",
+    "children": [
+      {
+        "id": "8d3e4b",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a7b9c0",
+            "type": "leaf",
+            "state": { "type": "markdown", "state": { "file": "Daily/2026-11-01.md" } }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "active": "a7b9c0",
+  "lastOpenFiles": ["Daily/2026-11-01.md", "Projects/Projects.md"]
+}
