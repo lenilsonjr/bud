@@ -77,6 +77,7 @@ struct TVCanvas: View {
             let layout = store.layout
             ZStack {
                 Theme.canvas
+                EdgesLayer(layout: layout, scale: scale) { screenPoint($0, in: size) }
                 ForEach(layout.order, id: \.self) { id in
                     if let placed = layout.cards[id] {
                         Button {
