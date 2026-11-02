@@ -6,6 +6,7 @@
 
 mod frontmatter;
 mod scan;
+mod watch;
 
 pub use frontmatter::{
     parse as parse_frontmatter, split as split_frontmatter, write as write_frontmatter, Properties,
@@ -14,6 +15,9 @@ pub use frontmatter::{
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+
+pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
 const SCHEMA_VERSION: i64 = 1;
@@ -28,6 +32,8 @@ pub enum Error {
     NotAFolder(PathBuf),
     #[error("no such bud: {0}")]
     NoSuchBud(String),
+    #[error("watch: {0}")]
+    Watch(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -157,7 +163,16 @@ impl ScanReport {
 /// A folder of Markdown files and the index that follows it.
 pub struct Vault {
     root: PathBuf,
-    conn: Connection,
+    /// Behind a mutex because the watcher thread writes to the index too.
+    conn: Arc<Mutex<Connection>>,
+    /// The modification time of each file this vault wrote, so the watcher can skip its echo.
+    written: Arc<Mutex<HashMap<String, i64>>>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl Vault {
@@ -177,7 +192,23 @@ impl Vault {
         }
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        Ok(Vault { root, conn })
+        Ok(Vault {
+            root,
+            conn: Arc::new(Mutex::new(conn)),
+            written: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    /// Follow the folder: watch it for changes made by other programs, reindex the paths each
+    /// batch touched, and tell `listener` once per batch. Watching stops when the returned
+    /// [`Watch`] is dropped.
+    pub fn watch(&self, listener: Box<dyn VaultListener>) -> Result<Watch> {
+        watch::start(
+            self.root.clone(),
+            Arc::clone(&self.conn),
+            Arc::clone(&self.written),
+            listener,
+        )
     }
 
     pub fn root(&self) -> &Path {
@@ -188,13 +219,14 @@ impl Vault {
     /// change since the last scan are not read again. Rows for files that are gone are removed.
     pub fn rescan(&mut self) -> Result<ScanReport> {
         let found = scan::walk(&self.root)?;
+        let mut conn = lock(&self.conn);
         let known: HashMap<String, (i64, Option<String>)> = {
-            let mut stmt = self.conn.prepare("SELECT path, mtime, parent FROM buds")?;
+            let mut stmt = conn.prepare("SELECT path, mtime, parent FROM buds")?;
             let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
             rows.collect::<std::result::Result<_, _>>()?
         };
         let mut report = ScanReport::default();
-        let tx = self.conn.transaction()?;
+        let tx = conn.transaction()?;
         let mut seen = std::collections::HashSet::with_capacity(found.len());
         for item in &found {
             seen.insert(item.path.clone());
@@ -203,24 +235,7 @@ impl Vault {
                 Some(_) => report.updated += 1,
                 None => report.added += 1,
             }
-            let (props, body) = if item.is_folder {
-                (Properties::default(), String::new())
-            } else {
-                let text = std::fs::read_to_string(&item.absolute)?;
-                let (yaml, body) = frontmatter::split(&text);
-                (
-                    yaml.map(frontmatter::parse).unwrap_or_default(),
-                    body.to_string(),
-                )
-            };
-            let row = Placement {
-                path: &item.path,
-                parent: item.parent.as_deref(),
-                title: &item.title,
-                place: item.place,
-                mtime: item.mtime,
-            };
-            insert_row(&tx, &row, &props, &body)?;
+            index_found(&tx, item)?;
         }
         for path in known.keys() {
             if !seen.contains(path) {
@@ -275,7 +290,9 @@ impl Vault {
             place: bud.place,
             mtime,
         };
-        let tx = self.conn.transaction()?;
+        lock(&self.written).insert(file_path.clone(), mtime);
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
         if is_folder {
             tx.execute("DELETE FROM buds WHERE path = ?1", params![path])?;
             tx.execute(
@@ -290,8 +307,7 @@ impl Vault {
 
     /// One bud by its path.
     pub fn bud(&self, path: &str) -> Result<Option<Bud>> {
-        let bud = self
-            .conn
+        let bud = lock(&self.conn)
             .query_row(
                 &format!("{SELECT} WHERE path = ?1"),
                 params![path],
@@ -323,10 +339,33 @@ impl Vault {
     }
 
     fn query(&self, sql: &str, args: impl rusqlite::Params) -> Result<Vec<Bud>> {
-        let mut stmt = self.conn.prepare(sql)?;
+        let conn = lock(&self.conn);
+        let mut stmt = conn.prepare(sql)?;
         let rows = stmt.query_map(args, read_bud)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
+}
+
+/// Read the file behind `item` (a folder has none) and write its row.
+fn index_found(conn: &Connection, item: &scan::Found) -> Result<()> {
+    let (props, body) = if item.is_folder {
+        (Properties::default(), String::new())
+    } else {
+        let text = std::fs::read_to_string(&item.absolute)?;
+        let (yaml, body) = frontmatter::split(&text);
+        (
+            yaml.map(frontmatter::parse).unwrap_or_default(),
+            body.to_string(),
+        )
+    };
+    let row = Placement {
+        path: &item.path,
+        parent: item.parent.as_deref(),
+        title: &item.title,
+        place: item.place,
+        mtime: item.mtime,
+    };
+    insert_row(conn, &row, &props, &body)
 }
 
 /// The parts of a row that come from the folder rather than from the file's frontmatter.
