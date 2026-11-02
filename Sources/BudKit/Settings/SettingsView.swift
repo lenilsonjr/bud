@@ -60,10 +60,16 @@ public struct SettingsView: View {
         .frame(minWidth: 360, alignment: .leading)
         .padding(onDone == nil ? 24 : 0)
         .sheet(item: $local) { modal in
-            DeviceModalView(modal: modal, devices: devices, go: { local = $0 }, back: nil)
-                .frame(width: ModalMetrics.width - 2 * ModalMetrics.padding)
-                .padding(ModalMetrics.padding)
-                .background(Theme.raised)
+            Group {
+                switch modal {
+                case .showTicket: TicketSheet(devices: devices, close: { local = nil })
+                case .joinVault: JoinSheet(devices: devices, close: { local = nil })
+                default: EmptyView()
+                }
+            }
+            .frame(width: ModalMetrics.width - 2 * ModalMetrics.padding)
+            .padding(ModalMetrics.padding)
+            .background(Theme.raised)
         }
     }
 

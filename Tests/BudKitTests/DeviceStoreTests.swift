@@ -171,17 +171,6 @@ final class DeviceStoreTests: XCTestCase {
         XCTAssertEqual(store.devices.first { $0.id == id }?.missed, false)
     }
 
-    func testRotationKeepsOneReportPerDevice() async throws {
-        let (store, peers, _) = await make()
-        let missing = store.devices[3].id
-        await peers.setMissing([missing])
-        await store.remove(store.devices[1].id, rotate: true)
-        let reports = try XCTUnwrap(store.rotation).reports
-        XCTAssertEqual(reports.count, 3)
-        XCTAssertEqual(reports.first { $0.id == missing }?.reached, false)
-        XCTAssertEqual(reports.filter(\.reached).count, 2)
-    }
-
     func testARotationThatLeftADeviceBehindNotesWhen() async throws {
         let (store, peers, clock) = await make()
         XCTAssertNil(store.rotatedAt)

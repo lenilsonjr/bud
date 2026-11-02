@@ -20,20 +20,6 @@ public struct RotationProgress: Equatable, Sendable {
     public var done: Int
     /// Set once the rotation is over.
     public var result: RotationResult?
-    /// What the core reported for each device so far, in order. Empty when the core only reports
-    /// the result afterwards.
-    public var reports: [DeviceReport] = []
-
-    /// One device the rotation tried, and whether it took the new key.
-    public struct DeviceReport: Hashable, Sendable {
-        public var id: String
-        public var reached: Bool
-
-        public init(id: String, reached: Bool) {
-            self.id = id
-            self.reached = reached
-        }
-    }
 
     public init(total: Int, done: Int = 0, result: RotationResult? = nil) {
         self.total = total
@@ -70,7 +56,7 @@ public final class DeviceStore: ObservableObject {
     /// The store the apps use until a real node plugs in: this device alone, so Settings shows the
     /// invitation.
     public static let shared = DeviceStore(
-        peers: MemoryPeers(devices: [Device(id: "this-device", isThisDevice: true, reach: .local, kind: DevicesText.platform(isPad: false))]))
+        peers: MemoryPeers(devices: [Device(id: "this-device", isThisDevice: true, reach: .local)]))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
@@ -183,20 +169,18 @@ public final class DeviceStore: ObservableObject {
 
     /// Forgets a device, and with `rotate` makes a new key so it cannot read what comes next.
     public func remove(_ id: String, rotate: Bool) async {
-        if rotate { rotation = RotationProgress(total: devices.filter { !$0.isThisDevice && $0.id != id }.count) }
         try? await peers.remove(id)
         await refresh()
         guard rotate else { return }
-        rotation = RotationProgress(total: devices.filter { !$0.isThisDevice }.count)
+        let total = devices.filter { !$0.isThisDevice }.count
+        rotation = RotationProgress(total: total)
         guard let steps = try? await peers.rotateKey() else {
             rotation = nil
             return
         }
         for await step in steps {
             switch step {
-            case let .device(id, reached):
-                rotation?.done += 1
-                rotation?.reports.append(.init(id: id, reached: reached))
+            case .device: rotation?.done += 1
             case let .done(result):
                 rotation?.result = result
                 if !result.missed.isEmpty { rotatedAt = now() }

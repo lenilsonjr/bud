@@ -63,52 +63,6 @@ public enum DevicesText {
         return "\(hour):" + (minute < 10 ? "0" : "") + "\(minute)"
     }
 
-    /// "3 changes arrived": what one sync brought in, or nil when it brought nothing.
-    public static func arrived(_ summary: SyncSummary) -> String? {
-        let count = summary.ops > 0 ? summary.ops : summary.created + summary.updated + summary.moved
-        guard count > 0 else { return nil }
-        return "\(count) \(count == 1 ? "change" : "changes") arrived"
-    }
-
-    /// "2 of 3": the devices a rotation has tried against the devices it has to reach.
-    public static func count(_ progress: RotationProgress) -> String {
-        "\(progress.done) of \(progress.total)"
-    }
-
-    /// One line of the Rotating the key dialog.
-    public struct RotationLine: Hashable, Sendable, Identifiable {
-        public var id: String
-        public var text: String
-    }
-
-    /// One line per device as the core reports it. When it only reports the result afterwards,
-    /// a single progress line.
-    public static func rotationLines(_ progress: RotationProgress, devices: [Device]) -> [RotationLine] {
-        guard !progress.reports.isEmpty else {
-            let others = "\(progress.total) \(progress.total == 1 ? "device" : "devices")"
-            return [RotationLine(id: "single", text: "Giving the new key to \(others)")]
-        }
-        return progress.reports.map { report in
-            let name = devices.first { $0.id == report.id }.map(label) ?? PeerText.shortID(report.id)
-            return RotationLine(id: report.id, text: name + (report.reached ? " has the new key" : " did not answer"))
-        }
-    }
-
-    private static func label(_ device: Device) -> String {
-        device.name ?? PeerText.shortID(device.id)
-    }
-
-    /// The line the dialog closes on.
-    public static func result(_ result: RotationResult) -> String {
-        if result.reached == 0 && result.missed.isEmpty { return "New key made. No other device to give it to." }
-        let reached = result.missed.isEmpty
-            ? "New key on all \(result.reached) devices."
-            : "New key on \(result.reached) \(result.reached == 1 ? "device" : "devices")."
-        guard !result.missed.isEmpty else { return reached }
-        let missed = result.missed.count
-        return reached + " " + (missed == 1 ? "1 device missed it and needs" : "\(missed) devices missed it and need")
-            + " a fresh ticket."
-    }
 }
 
 /// The three choices of the Relay control.

@@ -51,48 +51,6 @@ final class DevicesTextTests: XCTestCase {
         XCTAssertNil(DevicesText.notice(missed: 0, since: now, timeZone: utc))
     }
 
-    func testArrivedCountsFromTheSummary() {
-        XCTAssertEqual(DevicesText.arrived(SyncSummary(ops: 3)), "3 changes arrived")
-        XCTAssertEqual(DevicesText.arrived(SyncSummary(ops: 1)), "1 change arrived")
-        XCTAssertEqual(DevicesText.arrived(SyncSummary(created: 2, updated: 1, written: 3)), "3 changes arrived")
-        XCTAssertNil(DevicesText.arrived(SyncSummary()))
-    }
-
-    func testRotationCount() {
-        XCTAssertEqual(DevicesText.count(RotationProgress(total: 3, done: 2)), "2 of 3")
-        XCTAssertEqual(DevicesText.count(RotationProgress(total: 0)), "0 of 0")
-    }
-
-    func testRotationLinesFollowWhatTheCoreReports() {
-        let devices = [
-            Device(id: "a", isThisDevice: true), Device(id: "k7f3c8z1q5t3y7u0e4i6o2a9l5gdq2m9"),
-            Device(id: "m2pdx3v7n1b5c9z2l6k0j4h8g3fsh81k"),
-        ]
-        var progress = RotationProgress(total: 2)
-        XCTAssertEqual(
-            DevicesText.rotationLines(progress, devices: devices),
-            [DevicesText.RotationLine(id: "single", text: "Giving the new key to 2 devices")])
-        progress.reports = [.init(id: "k7f3c8z1q5t3y7u0e4i6o2a9l5gdq2m9", reached: true)]
-        progress.done = 1
-        XCTAssertEqual(
-            DevicesText.rotationLines(progress, devices: devices).map(\.text),
-            ["k7f3…q2m9 has the new key"])
-        progress.reports.append(.init(id: "m2pdx3v7n1b5c9z2l6k0j4h8g3fsh81k", reached: false))
-        XCTAssertEqual(
-            DevicesText.rotationLines(progress, devices: devices).map(\.text),
-            ["k7f3…q2m9 has the new key", "m2pd…h81k did not answer"])
-    }
-
-    func testRotationResultLine() {
-        XCTAssertEqual(
-            DevicesText.result(RotationResult(reached: 3, missed: [])), "New key on all 3 devices.")
-        XCTAssertEqual(
-            DevicesText.result(RotationResult(reached: 2, missed: ["x"])),
-            "New key on 2 devices. 1 device missed it and needs a fresh ticket.")
-        XCTAssertEqual(
-            DevicesText.result(RotationResult(reached: 0, missed: [])), "New key made. No other device to give it to.")
-    }
-
     func testRelayChoices() {
         XCTAssertEqual(RelayChoice.allCases.map(\.title), ["Public relays", "Custom by URL", "Off"])
         XCTAssertEqual(RelayChoice(.default), .publicRelays)
@@ -111,8 +69,5 @@ final class DevicesTextTests: XCTestCase {
     func testDeviceModalsHaveTheirOwnIdentity() {
         XCTAssertNotEqual(Modal.showTicket.id, Modal.joinVault.id)
         XCTAssertNotEqual(Modal.showTicket.id, Modal.settings.id)
-        XCTAssertNotEqual(Modal.rotateKey.id, Modal.removeDevice(id: "a").id)
-        XCTAssertNotEqual(Modal.removeDevice(id: "a").id, Modal.removeDevice(id: "b").id)
-        XCTAssertEqual(Modal.removeDevice(id: "a").id, Modal.removeDevice(id: "a").id)
     }
 }

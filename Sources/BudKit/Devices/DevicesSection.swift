@@ -7,6 +7,9 @@ import SwiftUI
 struct DevicesSection: View {
     @ObservedObject var devices: DeviceStore
     let present: (Modal) -> Void
+    /// What Remove does. The confirmation dialog comes with BUD-90, which passes it in; until then
+    /// the button does nothing.
+    var onRemove: (Device) -> Void = { _ in }
 
     @State private var showCustom = false
     @State private var customText = ""
@@ -63,7 +66,7 @@ struct DevicesSection: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, device in
                 if index > 0 { Theme.line.frame(height: 1) }
                 DeviceRow(
-                    device: device, now: Date(), onRemove: { present(.removeDevice(id: device.id)) },
+                    device: device, now: Date(), onRemove: { onRemove(device) },
                     onPairAgain: { present(.showTicket) })
             }
         }
@@ -155,26 +158,6 @@ struct DevicesSection: View {
     private func commitCustom() {
         guard let url = RelayChoice.url(from: customText) else { return }
         Task { await devices.setRelay(.custom(url)) }
-    }
-}
-
-/// The sheet or dialog a device modal stands for. `go` moves to another modal or, with nil, closes;
-/// `back` is where a closed one returns to (Settings, when Settings is itself a modal).
-struct DeviceModalView: View {
-    let modal: Modal
-    @ObservedObject var devices: DeviceStore
-    let go: (Modal?) -> Void
-    let back: Modal?
-
-    var body: some View {
-        switch modal {
-        case .showTicket: TicketSheet(devices: devices, close: { go(back) })
-        case .joinVault: JoinSheet(devices: devices, close: { go(back) })
-        case .removeDevice(let id):
-            RemoveDeviceDialog(devices: devices, id: id, close: { go(back) }, rotate: { go(.rotateKey) })
-        case .rotateKey: RotateKeyDialog(devices: devices, close: { go(back) })
-        default: EmptyView()
-        }
     }
 }
 #endif

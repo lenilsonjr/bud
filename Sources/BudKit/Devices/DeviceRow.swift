@@ -21,7 +21,7 @@ struct DeviceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     if device.isThisDevice {
-                        Text(DevicesText.thisDevice(device.kind ?? DevicesText.platform(isPad: DevicesSection.isPad)))
+                        Text(DevicesText.thisDevice(DevicesText.platform(isPad: DevicesSection.isPad)))
                             .textRole(.cardTitle)
                             .foregroundStyle(Theme.text)
                     }
