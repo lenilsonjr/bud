@@ -43,6 +43,22 @@ public final class BudStore: ObservableObject {
     @Published public var zoom: CGFloat = 1
     /// What the window shows over everything else; BudRootView draws it as a scrim and a card.
     @Published var modal: Modal? = nil
+    /// The bud planted or captured last and when, so the canvas can give it an entry cue.
+    @Published public private(set) var lastPlanted: Planted? = nil
+
+    public struct Planted: Equatable, Sendable {
+        public let id: UUID
+        public let at: Date
+    }
+
+    /// How long the entry cue lasts.
+    public static let entryCue: TimeInterval = 1.2
+
+    /// Whether a bud still carries its entry cue.
+    public func isFresh(_ id: UUID, now: Date = Date()) -> Bool {
+        guard let lastPlanted, lastPlanted.id == id else { return false }
+        return now.timeIntervalSince(lastPlanted.at) < Self.entryCue
+    }
     /// The undo toast; every undoable change goes through it.
     public let toasts = ToastCenter()
 
@@ -92,6 +108,7 @@ public final class BudStore: ObservableObject {
         commit { planted = $0.add(line, todo: todo, under: parent) }
         guard let planted else { return nil }
         let id = planted.id
+        lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted under \(tree.title(of: parent))") { [weak self] in
             Task { @MainActor in self?.remove(id) }
         })
@@ -118,6 +135,7 @@ public final class BudStore: ObservableObject {
         commit { captured = $0.capture(line, source: source) }
         guard let captured else { return nil }
         let id = captured.id
+        lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Captured to the Inbox") { [weak self] in
             Task { @MainActor in self?.remove(id) }
         })

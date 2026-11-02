@@ -1,32 +1,27 @@
 #if canImport(SwiftUI)
 import SwiftUI
 
-/// The lines: one straight stroke per edge, parent centre to child centre, drawn under the cards.
-/// The current thread gets the stronger line; ghost and kin clusters the fainter one.
+/// The lines from every card to its parent, drawn once in one canvas. Each line takes the light
+/// of the card at its far end, so a line never runs across a dimmed card at full strength.
 struct EdgesLayer: View {
     let layout: Layout
     let scale: CGFloat
+    var lifted: Set<UUID> = []
     let screenPoint: (CGPoint) -> CGPoint
 
     var body: some View {
         Canvas { context, _ in
-            var strong = Path()
-            var faint = Path()
+            var paths: [Double: Path] = [:]
             for edge in layout.edges {
                 guard let from = layout.cards[edge.from], let to = layout.cards[edge.to] else { continue }
-                let a = screenPoint(from.position)
-                let b = screenPoint(to.position)
-                if to.role == .ghost || to.role == .kin {
-                    faint.move(to: a)
-                    faint.addLine(to: b)
-                } else {
-                    strong.move(to: a)
-                    strong.addLine(to: b)
-                }
+                let level = lightLevel(role: to.role, lifted: lifted.contains(to.id))
+                paths[level, default: Path()].move(to: screenPoint(from.position))
+                paths[level, default: Path()].addLine(to: screenPoint(to.position))
             }
             let width = max(0.75, scale)
-            context.stroke(strong, with: .color(Theme.lineStrong), lineWidth: width)
-            context.stroke(faint, with: .color(Theme.line), lineWidth: width)
+            for (level, path) in paths.sorted(by: { $0.key < $1.key }) {
+                context.stroke(path, with: .color(Theme.lineStrong.opacity(level)), lineWidth: width)
+            }
         }
     }
 }

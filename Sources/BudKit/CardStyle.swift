@@ -30,7 +30,7 @@ struct CardStyle {
         let kids = tree.children(of: bud.id)
         if kids.isEmpty { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
         let open = tree.openCount(under: bud.id)
-        return "\(kids.count) connected" + (open > 0 ? " · \(open) open" : "")
+        return "\(kids.count) inside" + (open > 0 ? " · \(open) open" : "")
     }
 }
 
