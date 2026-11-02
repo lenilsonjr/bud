@@ -18,7 +18,8 @@ public struct OrbitCanvas: View {
     @State private var opened: UUID? = nil
     @State private var viewport: CGSize = .zero
     @FocusState private var focused: Bool
-    @State private var motion = MotionState()
+    @State private var motion: MotionState
+    @GestureState private var gripped = false
     /// Whether the timeline is ticking: it stops once every card is on its spot.
     @State private var animating = true
     @State private var dragging: UUID? = nil
@@ -33,6 +34,7 @@ public struct OrbitCanvas: View {
 
     public init(store: BudStore) {
         self.store = store
+        _motion = State(initialValue: MotionState(layout: store.layout))
     }
 
     public var body: some View {
@@ -41,7 +43,22 @@ public struct OrbitCanvas: View {
             TimelineView(.animation(paused: !Motion.enabled || !animating)) { timeline in
                 canvas(size: size, layout: frame(at: timeline.date))
             }
-            .onChange(of: store.layout) { _, _ in animating = true }
+            .onChange(of: store.layout) { _, now in
+                motion.retarget(to: now)
+                if let id = dragging, now.cards[id] == nil {
+                    dragging = nil
+                    dragStart = nil
+                }
+                animating = true
+            }
+            .onChange(of: gripped) { _, now in
+                // A cancelled drag never reaches onEnded; the grip letting go is the sure signal.
+                guard !now, let id = dragging else { return }
+                motion.sim.release(id)
+                dragging = nil
+                dragStart = nil
+                animating = true
+            }
             .onAppear { viewport = size }
             .onChange(of: size) { _, now in viewport = now }
             .onContinuousHover(coordinateSpace: .local) { phase in
@@ -88,8 +105,8 @@ public struct OrbitCanvas: View {
     /// when motion is off. Lines, light and hit tests all read the same positions.
     private func frame(at date: Date) -> Layout {
         guard Motion.enabled else { return store.layout }
-        motion.advance(to: date, rest: store.layout)
-        if motion.sim.isAtRest, animating, dragging == nil {
+        motion.advance(to: date)
+        if motion.sim.isAtRest, animating {
             DispatchQueue.main.async { animating = false }
         }
         return motion.sim.current
@@ -125,7 +142,7 @@ public struct OrbitCanvas: View {
                     )
                     .scaleEffect(scale)
                     .position(screenPoint(placed.position, in: size))
-                    .gesture(dragGesture(id))
+                    .gesture(dragGesture(id), including: Motion.enabled ? .all : .subviews)
                     .zIndex(dragging == id || lit == id ? 2 : (placed.role == .center ? 1 : 0))
                 }
             }
@@ -145,11 +162,13 @@ public struct OrbitCanvas: View {
     /// Pick a card up and let go: the others make room while it is held, and it settles back after.
     private func dragGesture(_ id: UUID) -> some Gesture {
         DragGesture(minimumDistance: 8, coordinateSpace: .named(Self.space))
+            .updating($gripped) { _, state, _ in state = true }
             .onChanged { value in
                 guard Motion.enabled else { return }
                 if dragging != id {
                     dragging = id
                     dragStart = motion.sim.positions[id]
+                    motion.wake()
                 }
                 guard let start = dragStart else { return }
                 motion.sim.hold(id, at: CGPoint(x: start.x + value.translation.width / scale, y: start.y + value.translation.height / scale))
@@ -274,12 +293,20 @@ final class MotionState {
     var sim: Simulation
     private var last: Date?
 
-    init() {
-        sim = Simulation(layout: Layout(centerID: rootID, cards: [:], order: [], edges: [], orbits: [:], bounds: .zero))
+    init(layout: Layout) {
+        sim = Simulation(layout: layout)
     }
 
-    func advance(to date: Date, rest: Layout) {
-        sim.retarget(to: rest)
+    /// New rest spots from the store. The clock starts over, so the first frame after a pause
+    /// is not charged for the time the timeline stood still.
+    func retarget(to layout: Layout) {
+        sim.retarget(to: layout)
+        last = nil
+    }
+
+    func wake() { last = nil }
+
+    func advance(to date: Date) {
         let dt = last.map { date.timeIntervalSince($0) } ?? 0
         last = sim.isAtRest ? nil : date
         sim.step(dt: dt)

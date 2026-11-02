@@ -1,42 +1,26 @@
-BUILD round 1
+BUILD round 2
 
-Ticket:
-- `Simulation` beside `LayoutEngine`: met. `step(dt:)` moves every card to its rest spot with an exact critically damped spring and pushes overlapping cards apart. At rest, `step` returns at once.
-- Lines and light stay attached: met. The canvas draws edges, light, hit tests and the opened card from `Simulation.current`, the live positions, not the static layout.
-- Settles within 1.5 s of a centre change, never visibly oscillates: met in tests. After a centre change every card is within 1 pt at 90 steps of 1/60 s. A lone displaced card's distance never grows.
-- Switchable off with one constant: met. `Motion.enabled` in `Sources/BudKit/Simulation.swift`. Set to false, the canvas draws `store.layout` unchanged, with no timeline and no drag.
-- Drag and let go: partial. `Simulation.hold` and `release` are tested on Linux. The drag gesture in `OrbitCanvas` is new SwiftUI code that I could not compile or run here. Its first check is the macOS and iOS build checks on the draft pull request.
+Applied:
+- **1 (state written while drawing, whole-layout compare each frame):**
+  - `retarget` no longer runs in `frame(at:)`. It runs from `onChange(of: store.layout)`, and `MotionState` is created from `store.layout` in `OrbitCanvas.init`.
+  - `frame(at:)` now only steps the simulation. The one write left is the single queued `animating = false` when the simulation reaches rest.
+  - At rest, a hover or lamp redraw does no layout comparison.
+- **2 (`dragging` can stick when `onEnded` never runs):**
+  - A `@GestureState` grip now releases the held card and clears `dragging` whenever the gesture stops, including a cancel.
+  - `onChange(of: store.layout)` also clears `dragging` if its card has left the layout.
+  - `Simulation.retarget` already dropped a held id that left the layout. A new test covers that.
+- **3 (first frame after a resume charged a stale `dt`):** `MotionState.retarget(to:)` and `wake()` reset the clock. The first frame after a centre change or a drag start gets `dt` 0.
+- **4 (drag gesture still attached with `Motion.enabled` false):** the gesture is attached with `including: Motion.enabled ? .all : .subviews`, so with motion off the card takes no drags.
+- **Test gaps the review named:** two cases added to `Tests/BudKitTests/SimulationTests.swift`:
+  - A card dragged onto a neighbour nudges it while the spring runs. Both then settle with no overlap.
+  - A `retarget` mid-motion with a held card removed drops that card and leaves nothing held, and the rest settle.
 
-Changed:
-- `Sources/BudKit/Simulation.swift` (new): `Motion`, `Simulation` and a small `Vector` type, since `CGVector` is missing on Linux.
-- `Sources/BudKit/OrbitCanvas.swift`:
-  - A `TimelineView` steps the simulation, and pauses once every card is at rest.
-  - A card drag holds the card, the others make room, and release lets it settle back.
-  - The drag is a 8 pt minimum-distance gesture on each card.
-  - `MotionState` is the reference-type holder for the simulation.
-- `Tests/BudKitTests/SimulationTests.swift` (new).
+Declined: none.
 
-Tests: `SimulationTests` has 7 cases:
-- A card at rest costs nothing.
-- A card displaced by 300 pt is back within 1 pt after 200 steps, with no overlaps.
-- A lone card's distance only shrinks on the way back.
-- After a centre change, every card is within 1 pt at 1.5 s.
-- A new bud starts at its parent and settles.
-- A held card stays put until released, then settles.
-- `current` follows the live positions and keeps the same edges.
-
-Gate, run from the repo root:
+Tests:
 - `swift build`: passed.
-- `swift test`: passed, 81 tests, 0 failures.
+- `swift test`: 83 tests, 0 failures. That includes the 9 `SimulationTests`.
 - `cargo fmt --all --check`: clean.
 - `cargo clippy --all-targets -- -D warnings`: clean.
 - `cargo test --workspace`: passed.
-
-I weakened no expectation.
-
-Verify:
-- Run `swift test --filter SimulationTests`.
-- On the Mac build, tap a thread to change the centre and watch the cards drift and come to rest in under 1.5 s.
-- Plant a bud and watch it grow out from its parent.
-- Drag a card across the canvas: neighbours make room, and it springs back when released.
-- Set `Motion.enabled` to false: the layout is static and the card drag is off.
+- The `OrbitCanvas` changes (items 1 to 4) are SwiftUI and compile only on the pull request's macOS and iOS checks, so no Linux test covers them.

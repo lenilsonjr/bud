@@ -101,6 +101,40 @@ final class SimulationTests: XCTestCase {
         XCTAssertFalse(overlapping(sim.current))
     }
 
+    func testACardDraggedOntoANeighbourPushesItAndBothSettle() throws {
+        let tree = Tree.seed()
+        var sim = Simulation(layout: LayoutEngine.layout(of: tree, center: rootID))
+        let kids = tree.children(of: rootID)
+        let a = try XCTUnwrap(kids.first).id, b = try XCTUnwrap(kids.dropFirst().first).id
+        let target = try XCTUnwrap(sim.positions[b])
+        let before = try XCTUnwrap(sim.positions[b])
+        sim.displace(a, by: Vector(dx: Double(target.x - sim.positions[a]!.x), dy: Double(target.y - sim.positions[a]!.y)))
+        sim.step(dt: dt)
+        let pushed = try XCTUnwrap(sim.positions[b])
+        XCTAssertNotEqual(pushed, before, "The neighbour is nudged while the spring runs")
+        for _ in 0..<300 { sim.step(dt: dt) }
+        XCTAssertLessThan(farthest(sim), 1)
+        XCTAssertFalse(overlapping(sim.current))
+        XCTAssertTrue(sim.isAtRest)
+    }
+
+    func testARetargetMidMotionDropsGoneCardsAndLetsGoOfAHeldOne() throws {
+        var tree = Tree.seed()
+        var sim = Simulation(layout: LayoutEngine.layout(of: tree, center: rootID))
+        let kids = tree.children(of: rootID)
+        let held = try XCTUnwrap(kids.first).id, other = try XCTUnwrap(kids.last).id
+        sim.hold(held, at: CGPoint(x: 500, y: 400))
+        sim.displace(other, by: Vector(dx: 80, dy: 0))
+        sim.step(dt: dt)
+        tree.remove(held)
+        sim.retarget(to: LayoutEngine.layout(of: tree, center: rootID))
+        XCTAssertNil(sim.positions[held])
+        for _ in 0..<300 { sim.step(dt: dt) }
+        XCTAssertLessThan(farthest(sim), 1, "Nothing is left held, so every card settles")
+        XCTAssertTrue(sim.isAtRest)
+        XCTAssertFalse(overlapping(sim.current))
+    }
+
     func testTheLinesFollowTheMovingCards() throws {
         let tree = Tree.seed()
         var sim = Simulation(layout: LayoutEngine.layout(of: tree, center: rootID))
