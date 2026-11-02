@@ -40,19 +40,7 @@ struct BudMenu: ViewModifier {
     private func attach(_ content: Content) -> some View {
         content
             .contextMenu {
-                Button("Add inside…", systemImage: "plus") {
-                    if let onAdd { onAdd() } else { store.modal = .add(parent: id) }
-                }
-                Button("Open", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    if let onOpen { onOpen() } else { store.openAsFile(id) }
-                }
-                if store.surface != .files {
-                    Button("Open as file", systemImage: "doc.text") { store.openAsFile(id) }
-                }
-                stateItem
-                Button("Move to…", systemImage: "arrow.turn.down.right") { moving = store.tree.bud(id) }
-                Divider()
-                trashItem
+                BudMenuItems(id: id, store: store, onAdd: onAdd, onOpen: onOpen, onMove: { moving = store.tree.bud(id) })
             }
             .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }
@@ -60,6 +48,20 @@ struct BudMenu: ViewModifier {
 
     /// Close or Reopen for a to-do; Make a to-do for a note.
     @ViewBuilder private var stateItem: some View {
+        BudStateItem(id: id, store: store)
+    }
+
+    private var trashItem: some View {
+        Button("Trash", systemImage: "trash", role: .destructive) { store.trash(id) }
+    }
+}
+
+/// Close or Reopen for a to-do; Make a to-do for a note.
+struct BudStateItem: View {
+    let id: UUID
+    @ObservedObject var store: BudStore
+
+    var body: some View {
         if let bud = store.tree.bud(id) {
             if bud.isTodo {
                 Button(bud.isDone ? "Reopen" : "Close", systemImage: bud.isDone ? "circle" : "checkmark.circle") {
@@ -70,11 +72,34 @@ struct BudMenu: ViewModifier {
             }
         }
     }
+}
 
-    private var trashItem: some View {
+#if !os(tvOS)
+/// The items of the bud menu, the same from a long press, a right click or a row's ⋯ button.
+struct BudMenuItems: View {
+    let id: UUID
+    @ObservedObject var store: BudStore
+    var onAdd: (() -> Void)? = nil
+    var onOpen: (() -> Void)? = nil
+    let onMove: () -> Void
+
+    var body: some View {
+        Button("Add inside…", systemImage: "plus") {
+            if let onAdd { onAdd() } else { store.modal = .add(parent: id) }
+        }
+        Button("Open", systemImage: "arrow.up.left.and.arrow.down.right") {
+            if let onOpen { onOpen() } else { store.openAsFile(id) }
+        }
+        if store.surface != .files {
+            Button("Open as file", systemImage: "doc.text") { store.openAsFile(id) }
+        }
+        BudStateItem(id: id, store: store)
+        Button("Move to…", systemImage: "arrow.turn.down.right", action: onMove)
+        Divider()
         Button("Trash", systemImage: "trash", role: .destructive) { store.trash(id) }
     }
 }
+#endif
 
 extension View {
     /// Attaches the bud menu for `id`. See `BudMenu`.

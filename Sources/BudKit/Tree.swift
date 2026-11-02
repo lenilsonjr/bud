@@ -173,9 +173,9 @@ public struct Tree: Codable, Equatable, Sendable {
         public let depth: Int
     }
 
-    /// The rows the tree shows: every bud under the root whose ancestors are all expanded,
-    /// in reading order, with its depth. The root itself is not a row.
-    public func outline(expanded: Set<UUID>) -> [OutlineRow] {
+    /// The rows an outline shows: every bud under `root` whose ancestors are all expanded, in
+    /// reading order, with its depth. The root itself is not a row.
+    public func outline(under root: UUID = rootID, expanded: Set<UUID>) -> [OutlineRow] {
         var rows: [OutlineRow] = []
         func visit(_ id: UUID, depth: Int) {
             for child in children(of: id) {
@@ -183,8 +183,16 @@ public struct Tree: Codable, Equatable, Sendable {
                 if expanded.contains(child.id) { visit(child.id, depth: depth + 1) }
             }
         }
-        visit(rootID, depth: 0)
+        visit(root, depth: 0)
         return rows
+    }
+
+    /// The first paragraph of a bud's body, the lede its page shows; empty when there is none.
+    public func lede(of id: UUID) -> String {
+        guard let body = bud(id)?.body else { return "" }
+        return body.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
     }
 
     /// Today: open to-dos due on or before the day (overdue first), and buds scheduled for the

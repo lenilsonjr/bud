@@ -22,7 +22,7 @@ struct FilesView: View {
                     LensPage(store: store, lens: lens)
                 } else if store.inboxOpen {
                     InboxPage(store: store)
-                } else if store.center == rootID {
+                } else if store.center == rootID || store.tree.hasChildren(store.center) {
                     OutlinePage(store: store)
                 } else {
                     DocumentView(id: store.center, store: store)
@@ -31,73 +31,6 @@ struct FilesView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.canvas)
         }
-    }
-}
-
-/// A folder's page for now: the title, what it is, and its children as rows. A leaf shows the
-/// place its document will take. The editor and the outline proper are the next tickets.
-struct OutlinePage: View {
-    @ObservedObject var store: BudStore
-
-    var body: some View {
-        let id = store.center
-        let kids = store.tree.children(of: id)
-        MaybeScroll {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(store.tree.title(of: id))
-                        .textRole(.title)
-                        .foregroundStyle(Theme.text)
-                    if let bud = store.tree.bud(id) {
-                        Text(CardStyle.caption(for: bud, in: store.tree))
-                            .textRole(.caption)
-                            .foregroundStyle(Theme.text3)
-                    } else {
-                        Text("\(kids.count) threads")
-                            .textRole(.caption)
-                            .foregroundStyle(Theme.text3)
-                    }
-                }
-                if kids.isEmpty {
-                    Text("Nothing written yet.")
-                        .textRole(.body)
-                        .foregroundStyle(Theme.text3)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(kids) { bud in
-                            Button { store.center = bud.id } label: {
-                                PageRow(bud: bud, tree: store.tree)
-                            }
-                            .buttonStyle(.plain)
-                            .budMenu(bud.id, store: store)
-                        }
-                    }
-                }
-            }
-            .padding(28)
-            .frame(maxWidth: 720, alignment: .leading)
-        }
-    }
-}
-
-struct PageRow: View {
-    let bud: Bud
-    let tree: Tree
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            KindMark(bud: bud, style: CardStyle.chip(for: bud, lit: false))
-            Text(bud.text)
-                .strikethrough(bud.isDone)
-                .foregroundStyle(bud.isDone ? Theme.text3 : Theme.text)
-            Spacer()
-            Text(CardStyle.caption(for: bud, in: tree))
-                .textRole(.caption)
-                .foregroundStyle(Theme.text3)
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
     }
 }
 #endif
