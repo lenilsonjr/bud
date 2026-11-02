@@ -25,21 +25,22 @@ struct CardView: View {
     private var hub: some View {
         VStack(spacing: 6) {
             Image(systemName: "circle.hexagongrid")
-                .font(.title2)
-                .foregroundStyle(Theme.accent)
+                .textRole(.heading)
+                .foregroundStyle(Theme.hubMark)
             Text("Everything")
-                .font(.title3.weight(.semibold))
+                .textRole(.title)
+                .foregroundStyle(Theme.hubInk)
             Text("\(store.tree.children(of: rootID).count) threads")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .textRole(.caption)
+                .foregroundStyle(Theme.hubMeta)
             Button("+ Enrich", action: onAdd)
                 .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(Theme.accent)
+                .textRole(.label)
+                .foregroundStyle(Theme.hubAccent)
         }
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
-        .background(cardBackground(radius: 16))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .background(hubBackground)
+        .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
     }
 
@@ -50,35 +51,35 @@ struct CardView: View {
                     Image(systemName: bud.isDone ? "checkmark.square.fill" : "square")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(bud.isDone ? Theme.accent : .secondary)
+                .foregroundStyle(bud.isDone ? Theme.leaf : meta(bud))
             } else {
                 Circle()
-                    .fill(Theme.accent.opacity(0.6))
+                    .fill(Theme.leaf)
                     .frame(width: 6, height: 6)
                     .padding(.top, 6)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(bud.text)
                     .strikethrough(bud.isDone)
-                    .font(.callout.weight(.medium))
+                    .textRole(.cardTitle)
                     .lineLimit(2)
-                    .foregroundStyle(bud.isDone ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                    .foregroundStyle(bud.isDone ? meta(bud) : ink(bud))
                 Text(subtitle(bud))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .textRole(.caption)
+                    .foregroundStyle(meta(bud))
             }
             Spacer(minLength: 0)
             Button(action: onAdd) {
                 Image(systemName: "plus")
             }
             .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .textRole(.label)
+            .foregroundStyle(meta(bud))
         }
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
-        .background(cardBackground(radius: 12))
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .background(chipBackground(bud))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.md))
         .onTapGesture(perform: onTap)
     }
 
@@ -89,14 +90,34 @@ struct CardView: View {
         return "\(kids.count) connected" + (open > 0 ? " · \(open) open" : "")
     }
 
-    private func cardBackground(radius: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: radius)
-            .fill(Theme.card)
-            .overlay(
-                RoundedRectangle(cornerRadius: radius)
-                    .stroke(lit ? Theme.accent.opacity(0.9) : Theme.stroke, lineWidth: lit ? 1.5 : 1)
-            )
-            .shadow(color: Theme.accent.opacity(lit ? 0.45 : 0), radius: lit ? 18 : 0)
+    // MARK: colours by kind and light
+
+    private func ink(_ bud: Bud) -> Color { lit ? Theme.cardLitInk : Theme.cardInk }
+
+    private func meta(_ bud: Bud) -> Color {
+        lit ? Theme.cardLitMeta : (bud.isTodo ? Theme.cardMeta : Theme.cardNoteMeta)
+    }
+
+    private func fill(_ bud: Bud) -> Color {
+        lit ? Theme.cardLit : (bud.isTodo ? Theme.card : Theme.cardNote)
+    }
+
+    private func line(_ bud: Bud) -> Color {
+        lit ? Theme.cardLitLine : (bud.isTodo ? Theme.cardLine : Theme.cardNoteLine)
+    }
+
+    private func chipBackground(_ bud: Bud) -> some View {
+        RoundedRectangle(cornerRadius: Radius.md)
+            .fill(fill(bud))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).stroke(line(bud), lineWidth: lit ? 1.5 : 1))
+            .shadow(color: lit ? Theme.glow : Theme.shadow, radius: lit ? 18 : 6, y: lit ? 0 : 2)
+    }
+
+    private var hubBackground: some View {
+        RoundedRectangle(cornerRadius: Radius.xl)
+            .fill(Theme.hub)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl).stroke(lit ? Theme.hubAccent : Theme.hubLine, lineWidth: lit ? 1.5 : 1))
+            .shadow(color: lit ? Theme.glow : Theme.shadowStrong, radius: lit ? 18 : 10, y: lit ? 0 : 4)
     }
 }
 #endif

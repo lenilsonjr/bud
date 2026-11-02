@@ -9,7 +9,7 @@ let package = Package(
         .executable(name: "BudMac", targets: ["BudMac"]),
     ],
     targets: [
-        .target(name: "BudKit"),
+        .target(name: "BudKit", resources: [.copy("Resources/Fonts")]),
         .executableTarget(name: "BudMac", dependencies: ["BudKit"]),
         .testTarget(name: "BudKitTests", dependencies: ["BudKit"]),
     ]

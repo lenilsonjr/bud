@@ -15,21 +15,24 @@ public struct BudRootView: View {
             .overlay(alignment: .top) { trail }
             .overlay(alignment: .bottom) { hint }
             .sheet(item: $adding) { target in AddSheet(store: store, parent: target.parent) }
-            .preferredColorScheme(.dark)
+            .background(Theme.window)
+            .textRole(.body)
+            .foregroundStyle(Theme.text)
+            .tint(Theme.leaf)
     }
 
     private var trail: some View {
         HStack(spacing: 6) {
             ForEach(Array(store.centerTrail.enumerated()), id: \.offset) { index, id in
                 if index > 0 {
-                    Text("›").foregroundStyle(.secondary)
+                    Text("›").foregroundStyle(Theme.text3)
                 }
                 Button(store.tree.title(of: id)) {
                     withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
                 }
                 .buttonStyle(.plain)
-                .font(index == store.centerTrail.count - 1 ? .headline : .subheadline)
-                .foregroundStyle(index == store.centerTrail.count - 1 ? Theme.accent : .secondary)
+                .textRole(index == store.centerTrail.count - 1 ? .heading : .label)
+                .foregroundStyle(index == store.centerTrail.count - 1 ? Theme.leaf : Theme.text2)
             }
             Spacer(minLength: 12)
             Button {
@@ -38,21 +41,24 @@ public struct BudRootView: View {
                 Label("Add here", systemImage: "plus")
             }
             .buttonStyle(.bordered)
-            .tint(Theme.accent)
+            .textRole(.label)
+            .tint(Theme.leaf)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.lg))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.line, lineWidth: 1))
         .padding(12)
     }
 
     private var hint: some View {
         Text("Drag or scroll to move · pinch to zoom · tap a card with children to center it · tap a leaf to edit · Esc or the trail steps out")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .textRole(.caption)
+            .foregroundStyle(Theme.text3)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(Theme.glass, in: Capsule())
+            .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
             .padding(12)
     }
 }
