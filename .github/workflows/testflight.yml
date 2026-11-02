@@ -8,8 +8,16 @@
 # only the compile-only build-check (see build-check.yml), not a TestFlight build.
 #
 # Required repo (or org) secrets — identical for every app except BUNDLE_ID_PREFIX:
-#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT (base64 of the ADMIN .p8), APPLE_TEAM_ID, BUNDLE_ID_PREFIX
-# (scripts/setup-secrets.sh sets all five on a repo.)
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT (base64 of the .p8 — upload rights suffice here; only the
+#   one-time bootstrap needs ADMIN to create certificates), APPLE_TEAM_ID, BUNDLE_ID_PREFIX
+#   B2_SIGNING_KEY_ID, B2_SIGNING_APP_KEY (a READ-ONLY key scoped to one bucket), B2_SIGNING_ENDPOINT,
+#   B2_SIGNING_BUCKET, SIGNING_PASSPHRASE (decrypts the signing bundle and its .p12 files)
+# (scripts/setup-secrets.sh sets all of them; scripts/bootstrap-signing.py creates and uploads the
+# signing bundle once per team/app.)
+#
+# Signing: the bundle holds one shared Apple Distribution certificate, the Mac installer certificate and
+# an App Store profile per platform; fastlane imports it into a throwaway keychain and signs manually,
+# so a fresh runner never mints a certificate (see fastlane/Fastfile).
 name: TestFlight
 
 on:
@@ -47,6 +55,7 @@ jobs:
         run: |
           SLUG=$(grep -E '^[[:space:]]*APP_SLUG[[:space:]]*=' Config/BundleId.xcconfig | tail -1 | sed -E 's/.*=[[:space:]]*//' | tr -d '[:space:]')
           echo "app_bundle_id=${{ secrets.BUNDLE_ID_PREFIX }}.${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "app_slug=${SLUG}" >> "$GITHUB_OUTPUT"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "lane=release" >> "$GITHUB_OUTPUT"
             echo "marketing=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
@@ -61,11 +70,35 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Write ASC API key for xcodebuild auth
+      # Pull the encrypted signing bundle with a READ-ONLY, single-bucket key and decrypt it into a
+      # temp dir. Two objects: team/certs.tar.enc (shared certificates) and <slug>/profiles.tar.enc
+      # (this app's App Store profiles). The listing prints file names only.
+      - name: Fetch signing bundle (read-only object-storage key)
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.B2_SIGNING_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_SIGNING_APP_KEY }}
+          ENDPOINT:              ${{ secrets.B2_SIGNING_ENDPOINT }}
+          BUCKET:                ${{ secrets.B2_SIGNING_BUCKET }}
+          SIGNING_PASSPHRASE:    ${{ secrets.SIGNING_PASSPHRASE }}
+          SLUG:                  ${{ steps.plan.outputs.app_slug }}
+          # S3-compatible stores have rejected the CLI's newer default checksum headers; send them
+          # only when an operation requires them.
+          AWS_REQUEST_CHECKSUM_CALCULATION:   when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION:   when_required
         run: |
-          KEY="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "${{ secrets.ASC_KEY_CONTENT }}" | openssl base64 -d -A > "$KEY"
-          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+          set -euo pipefail
+          command -v aws >/dev/null || brew install awscli
+          REGION="${ENDPOINT#s3.}"; REGION="${REGION%%.*}"        # s3.<region>.<host> → <region>
+          DIR="$RUNNER_TEMP/signing"; mkdir -p "$DIR"
+          for key in "team/certs.tar.enc" "${SLUG}/profiles.tar.enc"; do
+            aws s3 cp "s3://${BUCKET}/${key}" "$DIR/blob.enc" \
+              --endpoint-url "https://${ENDPOINT}" --region "$REGION" --only-show-errors
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$DIR/blob.enc" \
+              -pass env:SIGNING_PASSPHRASE | tar -x -C "$DIR"
+            rm -f "$DIR/blob.enc"
+          done
+          find "$DIR" -type f | sed "s|$DIR/|  |"
+          echo "SIGNING_DIR=$DIR" >> "$GITHUB_ENV"
 
       - name: Set up Ruby + fastlane
         uses: ruby/setup-ruby@v1
@@ -82,4 +115,5 @@ jobs:
           APP_BUNDLE_ID:         ${{ steps.plan.outputs.app_bundle_id }}
           APP_MARKETING_VERSION: ${{ steps.plan.outputs.marketing }}
           APP_CHANGELOG:         "Build from ${{ github.ref_name }} @ ${{ github.sha }}"
+          SIGNING_PASSPHRASE:    ${{ secrets.SIGNING_PASSPHRASE }}   # SIGNING_DIR comes from the fetch step
         run: bundle exec fastlane ${{ matrix.platform }} ${{ steps.plan.outputs.lane }}

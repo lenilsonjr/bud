@@ -1,23 +1,37 @@
-# TestFlight delivery for Bud — iOS (iPhone+iPad) and macOS, both from the one XcodeGen project,
-# both via an App Store Connect API key (cloud-managed automatic signing; no match repo, no cert
-# files). The key MUST have the ADMIN role, or the distribution export fails "Cloud signing permission
-# error" in CI.
+# TestFlight delivery for Bud — iOS (iPhone+iPad), macOS and tvOS, all from the one XcodeGen project.
+#
+# Signing is MANUAL with one shared Apple Distribution certificate (plus the Mac installer certificate
+# for the .pkg) and one App Store profile per platform. CI fetches them as an encrypted bundle into
+# SIGNING_DIR (see .github/workflows/testflight.yml) and prepare_signing imports them into a throwaway
+# keychain. A fresh runner therefore never asks Apple for a certificate. The previous setup — automatic
+# signing with -allowProvisioningUpdates — minted a new development certificate on every runner until
+# the account hit Apple's limit ("Choose a certificate to revoke").
+#
+# The App Store Connect API key is still used for the upload and the build-number lookup. It no longer
+# needs to authenticate xcodebuild, so the archive runs without portal access at all.
 #
 # Delivery relies on an internal beta group created with hasAccessToAllBuilds=true, so every processed
 # build is auto-available to internal testers and the lane never submits for external review.
 #
-#   fastlane ios beta     push to develop → iOS TestFlight,   auto build number
-#   fastlane ios release  push a v* tag   → iOS TestFlight,   marketing version from the tag
-#   fastlane mac beta     push to develop → macOS TestFlight, auto build number
-#   fastlane mac release  push a v* tag   → macOS TestFlight, marketing version from the tag
-#   fastlane tvos beta    push to develop → tvOS TestFlight,  auto build number
-#   fastlane tvos release push a v* tag   → tvOS TestFlight,  marketing version from the tag
+#   fastlane ios beta      manual run → iOS TestFlight,   auto build number
+#   fastlane ios release   tag v*     → iOS TestFlight,   marketing version from the tag
+#   (the same two lanes exist under `mac` and `tvos`)
 
 default_platform(:ios)
 
 APP_IDENTIFIER = ENV.fetch("APP_BUNDLE_ID")
 TEAM_ID        = ENV.fetch("APPLE_TEAM_ID")
 PROJECT        = "Bud.xcodeproj"
+
+# Profile names exactly as scripts/bootstrap-signing.py creates them. PROVISIONING_PROFILE_SPECIFIER and
+# the export options both key off this hash, so it is the single place they are spelled.
+PROFILE_NAMES = { ios: "Bud iOS App Store", mac: "Bud macOS App Store", tvos: "Bud tvOS App Store" }.freeze
+
+# The Mac installer certificate's name is read back from the keychain by prepare_signing (Apple has
+# renamed certificate types before); MAC_INSTALLER_SIGNING_CERT only overrides that if ever needed.
+def mac_installer_cert
+  ENV.fetch("MAC_INSTALLER_SIGNING_CERT")
+end
 
 def asc_login
   app_store_connect_api_key(
@@ -29,22 +43,82 @@ def asc_login
   )
 end
 
-# Authenticate the ARCHIVE phase to the portal with the ASC key: gym does NOT auto-inject auth into
-# the archive (only the export), so a clean CI runner fails "No Accounts" without this. Do NOT also add
-# it to export_xcargs — gym injects it on export and a second copy errors "may only be provided once".
-def xcode_auth
-  "-allowProvisioningUpdates " \
-  "-authenticationKeyPath #{ENV.fetch('ASC_KEY_PATH')} " \
-  "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
-  "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+# Import the shared signing bundle into a throwaway keychain and point the APP targets at their profiles.
+# Fails loudly outside CI: these lanes must not sign with whatever happens to be in a developer's login
+# keychain.
+def prepare_signing(platform)
+  dir = ENV["SIGNING_DIR"].to_s
+  UI.user_error!("SIGNING_DIR is not set — run from CI, which fetches the signing bundle first") if dir.empty?
+  pw = ENV.fetch("SIGNING_PASSPHRASE")
+
+  setup_ci(force: true)                       # throwaway keychain, made the default for this job
+  kc  = ENV.fetch("MATCH_KEYCHAIN_NAME")
+  kpw = ENV.fetch("MATCH_KEYCHAIN_PASSWORD")
+
+  # Apple's WWDR intermediate(s) first, so the leaf certificates chain and codesign trusts them.
+  Dir["#{dir}/certs/*.cer"].sort.each do |cer|
+    import_certificate(certificate_path: cer, keychain_name: kc, keychain_password: kpw)
+  end
+  p12s = Dir["#{dir}/certs/*.p12"].sort
+  UI.user_error!("no .p12 in #{dir}/certs") if p12s.empty?
+  p12s.each do |p12|
+    import_certificate(certificate_path: p12, certificate_password: pw, keychain_name: kc, keychain_password: kpw)
+  end
+
+  profiles = Dir["#{dir}/profiles/*.{mobileprovision,provisionprofile}"].sort
+  UI.user_error!("no profiles in #{dir}/profiles") if profiles.empty?
+  profiles.each { |p| install_provisioning_profile(path: p) }
+
+  # The installer identity's exact name, read back from the keychain rather than guessed. Only the
+  # macOS leg signs a .pkg, so only it looks — the other legs must not fail on something they never use.
+  if platform == :mac && !ENV["MAC_INSTALLER_SIGNING_CERT"]
+    kc_path = FastlaneCore::Helper.keychain_path(kc)   # the -db file, not the bare name
+    list = sh("security find-identity -v -p basic #{kc_path.shellescape}", log: false)
+    name = list[/"([^"]*Installer[^"]*)"/, 1]
+    UI.user_error!("no installer identity in the keychain — the bundle must carry installer.p12") unless name
+    ENV["MAC_INSTALLER_SIGNING_CERT"] = name
+    UI.message("installer identity: #{name}")
+  end
+
+  # Profile names go through the gitignored xcconfig because it reaches the APP targets only: the
+  # package's resource bundle "does not support provisioning profiles" and must never see these.
+  # Style and identity are NOT set here — they go on the command line (version_xcargs), which is the
+  # only place that outranks XcodeGen's target-level iOS preset (CODE_SIGN_IDENTITY = iPhone Developer)
+  # AND reaches the resource bundle, so every target signs uniformly with the distribution identity.
+  # Lanes run with the fastlane/ folder as cwd, so the project root is one level up.
+  xcconfig = File.expand_path("../Config/BundleIdSecrets.xcconfig", FastlaneCore::FastlaneFolder.path)
+  File.open(xcconfig, "a") do |f|
+    f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = #{PROFILE_NAMES[:ios]}"
+    f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*] = #{PROFILE_NAMES[:mac]}"
+    f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=appletvos*] = #{PROFILE_NAMES[:tvos]}"
+  end
 end
 
-# DEVELOPMENT_TEAM on the command line reaches every target, the package's resource bundle included;
-# the xcconfig only reaches the app targets.
+def export_options_for(platform)
+  o = {
+    signingStyle:         "manual",
+    teamID:               TEAM_ID,
+    signingCertificate:   "Apple Distribution",
+    provisioningProfiles: { APP_IDENTIFIER => PROFILE_NAMES.fetch(platform) }
+  }
+  o[:installerSigningCertificate] = mac_installer_cert if platform == :mac   # signs the .pkg
+  o
+end
+
+# Command-line settings reach EVERY target — the app targets and the package's resource bundle alike —
+# and outrank target-level settings. That is what the two earlier hotfixes got wrong, one way each:
+#   - a global identity on top of Automatic app targets → "conflicting provisioning settings… switch
+#     to manual signing": mixed styles. Uniform Manual + identity everywhere is not that error.
+#   - dropping DEVELOPMENT_TEAM from the command line → the resource bundle (which the xcconfig cannot
+#     reach) lost its team. It also must not be left Automatic: an Automatic archive resolves a
+#     *development* identity, which is the minting this whole setup exists to stop.
+# XcodeGen's iOS preset also writes a target-level CODE_SIGN_IDENTITY = "iPhone Developer", which only
+# the command line can override. Profiles are NOT set here — bundles reject them (see prepare_signing).
+# Deliberately no -allowProvisioningUpdates and no portal auth: nothing may be minted or fetched.
 def version_xcargs(next_build)
-  a = ["CURRENT_PROJECT_VERSION=#{next_build}", "DEVELOPMENT_TEAM=#{TEAM_ID}"]
+  a = ["CURRENT_PROJECT_VERSION=#{next_build}", "DEVELOPMENT_TEAM=#{TEAM_ID}",
+       "CODE_SIGN_STYLE=Manual", %(CODE_SIGN_IDENTITY="Apple Distribution")]
   a << "MARKETING_VERSION=#{ENV['APP_MARKETING_VERSION']}" unless ENV["APP_MARKETING_VERSION"].to_s.empty?
-  a << xcode_auth
   a.join(" ")
 end
 
@@ -55,10 +129,10 @@ def next_build_for(asc_platform)
 end
 
 platform :ios do
-  before_all { asc_login }
+  before_all { asc_login; prepare_signing(:ios) }
 
-  desc "develop → iOS TestFlight (auto build number)"
-  lane(:beta)    { deliver_ios(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "manual run → iOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_ios(ENV["APP_CHANGELOG"] || "Automated build.") }
   desc "tag v* → iOS TestFlight (marketing version from the tag)"
   lane(:release) { deliver_ios(ENV["APP_CHANGELOG"] || "Tagged release build.") }
 
@@ -68,7 +142,7 @@ platform :ios do
       scheme:           "Bud iOS",
       configuration:    "Release",
       export_method:    "app-store",
-      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
+      export_options:   export_options_for(:ios),
       xcargs:           version_xcargs(next_build_for("ios")),
       output_directory: "build",
       output_name:      "Bud-iOS.ipa",
@@ -85,10 +159,10 @@ platform :ios do
 end
 
 platform :tvos do
-  before_all { asc_login }
+  before_all { asc_login; prepare_signing(:tvos) }
 
-  desc "develop → tvOS TestFlight (auto build number)"
-  lane(:beta)    { deliver_tvos(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "manual run → tvOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_tvos(ENV["APP_CHANGELOG"] || "Automated build.") }
   desc "tag v* → tvOS TestFlight (marketing version from the tag)"
   lane(:release) { deliver_tvos(ENV["APP_CHANGELOG"] || "Tagged release build.") }
 
@@ -99,8 +173,8 @@ platform :tvos do
       configuration:    "Release",
       destination:      "generic/platform=tvOS",
       export_method:    "app-store",
-      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
-      xcargs:           version_xcargs(next_build_for("TV_OS")),
+      export_options:   export_options_for(:tvos),
+      xcargs:           version_xcargs(next_build_for("appletvos")),
       output_directory: "build",
       output_name:      "Bud-tvOS.ipa",
       clean:            true
@@ -117,21 +191,21 @@ platform :tvos do
 end
 
 platform :mac do
-  before_all { asc_login }
+  before_all { asc_login; prepare_signing(:mac) }
 
-  desc "develop → macOS TestFlight (auto build number)"
-  lane(:beta)    { deliver_mac(ENV["APP_CHANGELOG"] || "Automated build from develop.") }
+  desc "manual run → macOS TestFlight (auto build number)"
+  lane(:beta)    { deliver_mac(ENV["APP_CHANGELOG"] || "Automated build.") }
   desc "tag v* → macOS TestFlight (marketing version from the tag)"
   lane(:release) { deliver_mac(ENV["APP_CHANGELOG"] || "Tagged release build.") }
 
   def deliver_mac(changelog)
-    # macOS app-store export produces a signed .pkg (not an .ipa).
+    # macOS app-store export produces a signed .pkg (not an .ipa), signed with the installer certificate.
     gym(
       project:          PROJECT,
       scheme:           "Bud macOS",
       configuration:    "Release",
       export_method:    "app-store",
-      export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
+      export_options:   export_options_for(:mac),
       xcargs:           version_xcargs(next_build_for("osx")),
       output_directory: "build",
       clean:            true

@@ -30,3 +30,10 @@ vendor/bundle/
 
 # Rust
 target/
+
+# Signing material must never be committed; CI pulls it from the encrypted bundle at run time.
+*.p12
+*.mobileprovision
+*.provisionprofile
+signing/
+__pycache__/

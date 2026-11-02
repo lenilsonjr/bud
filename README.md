@@ -44,13 +44,19 @@ trail at the top steps back out. On iPad and Mac the light follows the pointer.
 
 ## TestFlight
 
-Push a `v*` tag → GitHub Actions builds, signs, and ships **iOS and macOS** to TestFlight internal
-testers (marketing version = the tag), so every TestFlight build is a deliberate release you can write
-a changelog for. Merges to `develop` run only a compile-only check (`build-check.yml`) — they don't
-ship on their own; you can also trigger a build by hand from the Actions tab. Signing is cloud-managed
-via an App Store Connect API key — no certificate files — driven by the repo/org secrets `ASC_KEY_ID`,
-`ASC_ISSUER_ID`, `ASC_KEY_CONTENT`, `APPLE_TEAM_ID`, `BUNDLE_ID_PREFIX`. See `.github/workflows/` and
-`fastlane/`.
+Push a `v*` tag → GitHub Actions builds, signs, and ships **iOS, macOS and tvOS** to TestFlight
+internal testers (marketing version = the tag), so every TestFlight build is a deliberate release you
+can write a changelog for. Merges to `develop` run only a compile-only check (`build-check.yml`) — they
+don't ship on their own; you can also trigger a build by hand from the Actions tab.
+
+Signing is manual, with one shared Apple Distribution certificate (plus the Mac installer certificate
+for the `.pkg`) and an App Store profile per platform. They live as an encrypted bundle in object
+storage that CI fetches with a read-only key and imports into a throwaway keychain, so a fresh runner
+never asks Apple for a certificate. `scripts/bootstrap-signing.py` creates and uploads that bundle once;
+`scripts/setup-secrets.sh` sets the secrets (`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_CONTENT`,
+`APPLE_TEAM_ID`, `BUNDLE_ID_PREFIX`, `B2_SIGNING_KEY_ID`, `B2_SIGNING_APP_KEY`, `B2_SIGNING_ENDPOINT`,
+`B2_SIGNING_BUCKET`, `SIGNING_PASSPHRASE`). The App Store Connect API key is still what uploads the
+build. See `.github/workflows/` and `fastlane/`.
 
 ## App icon
 

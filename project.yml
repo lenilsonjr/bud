@@ -20,7 +20,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
-    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_STYLE: Automatic         # local Xcode work; CI overrides to Manual on the command line
     GENERATE_INFOPLIST_FILE: NO
     # Same bundle id across platforms → one unified App Store Connect record (iOS + macOS enabled).
     PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).$(APP_SLUG)
