@@ -170,4 +170,41 @@ final class DeviceStoreTests: XCTestCase {
         await store.allow(id)
         XCTAssertEqual(store.devices.first { $0.id == id }?.missed, false)
     }
+
+    func testRotationKeepsOneReportPerDevice() async throws {
+        let (store, peers, _) = await make()
+        let missing = store.devices[3].id
+        await peers.setMissing([missing])
+        await store.remove(store.devices[1].id, rotate: true)
+        let reports = try XCTUnwrap(store.rotation).reports
+        XCTAssertEqual(reports.count, 3)
+        XCTAssertEqual(reports.first { $0.id == missing }?.reached, false)
+        XCTAssertEqual(reports.filter(\.reached).count, 2)
+    }
+
+    func testARotationThatLeftADeviceBehindNotesWhen() async throws {
+        let (store, peers, clock) = await make()
+        XCTAssertNil(store.rotatedAt)
+        await peers.setMissing([store.devices[3].id])
+        await store.remove(store.devices[1].id, rotate: true)
+        XCTAssertEqual(store.rotatedAt, clock.now)
+    }
+
+    func testRemovingWithoutRotationNotesNoTime() async throws {
+        let (store, _, _) = await make()
+        await store.remove(store.devices[1].id, rotate: false)
+        XCTAssertNil(store.rotatedAt)
+    }
+
+    func testTheRelayIsReadAndChanged() async throws {
+        let (store, peers, _) = await make()
+        XCTAssertEqual(store.relay, .default)
+        await store.setRelay(.off)
+        XCTAssertEqual(store.relay, .off)
+        let stored = try await peers.relay()
+        XCTAssertEqual(stored, .off)
+        let url = URL(string: "https://relay.example.com")!
+        await store.setRelay(.custom(url))
+        XCTAssertEqual(store.relay, .custom(url))
+    }
 }

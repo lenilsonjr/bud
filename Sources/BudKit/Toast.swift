@@ -59,11 +59,13 @@ struct ToastView: View {
                 Text(toast.action.message)
                     .textRole(.body)
                     .foregroundStyle(Theme.hubInk)
-                Button("Undo") { center.undo() }
-                    .buttonStyle(.plain)
-                    .textRole(.label)
-                    .foregroundStyle(Theme.hubAccent)
-                    .keyboardShortcut("z", modifiers: .command)
+                if toast.action.offersUndo {
+                    Button("Undo") { center.undo() }
+                        .buttonStyle(.plain)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.hubAccent)
+                        .keyboardShortcut("z", modifiers: .command)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

@@ -8,9 +8,33 @@ enum Modal: Hashable, Identifiable {
     case settings
     /// Delete one branch from the Trash for good; with nil, empty the whole Trash.
     case deleteForever(id: UUID?)
+    /// Settings › Devices: the ticket sheet, the join sheet, and the two dialogs.
+    case showTicket
+    case joinVault
+    case removeDevice(id: String)
+    case rotateKey
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
+    static let showTicketID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!
+    static let joinVaultID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
+    static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
+
+    /// A stable identity for a device id, which is text and not a UUID.
+    private static func identity(of text: String) -> UUID {
+        var first: UInt64 = 0xcbf2_9ce4_8422_2325
+        var second: UInt64 = 0x8422_2325_cbf2_9ce4
+        for byte in text.utf8 {
+            first = (first ^ UInt64(byte)) &* 0x100_0000_01b3
+            second = (second &+ UInt64(byte)) &* 0x9E37_79B9_7F4A_7C15
+        }
+        var bytes = (0..<8).map { UInt8(truncatingIfNeeded: first >> UInt64($0 * 8)) }
+        bytes += (0..<8).map { UInt8(truncatingIfNeeded: second >> UInt64($0 * 8)) }
+        bytes[0] = 0xD4
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
 
     var id: UUID {
         switch self {
@@ -19,6 +43,10 @@ enum Modal: Hashable, Identifiable {
         case .closeBranch(let id): return id
         case .settings: return Self.settingsID
         case .deleteForever(let id): return id ?? Self.emptyTrashID
+        case .showTicket: return Self.showTicketID
+        case .joinVault: return Self.joinVaultID
+        case .removeDevice(let id): return Self.identity(of: id)
+        case .rotateKey: return Self.rotateKeyID
         }
     }
 
@@ -86,8 +114,11 @@ struct ModalHost: View {
             case .add(let parent): AddSheet(store: store, mode: .enrich(under: parent))
             case .capture: AddSheet(store: store, mode: .capture)
             case .closeBranch(let id): CloseBranchDialog(store: store, id: id)
-            case .settings: SettingsView(flags: .shared, onDone: { store.modal = nil })
+            case .settings:
+                SettingsView(flags: .shared, devices: store.devices, onDone: { store.modal = nil }, present: { store.modal = $0 })
             case .deleteForever(let id): DeleteForeverDialog(store: store, id: id)
+            case .showTicket, .joinVault, .removeDevice, .rotateKey:
+                DeviceModalView(modal: modal, devices: store.devices, go: { store.modal = $0 }, back: .settings)
             }
         }
         .modalCard()

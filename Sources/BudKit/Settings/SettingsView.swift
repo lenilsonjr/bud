@@ -1,22 +1,29 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// Settings: Appearance and the vault folder. A Try section returns whenever two layouts need
+/// Settings: Appearance, the vault folder and Devices. A Try section returns whenever two layouts need
 /// comparing on a device before one is kept. On the Mac it is the Settings window (⌘,); on iPhone and
 /// iPad it is a modal from the gear in the top bar, with Done to close it.
 public struct SettingsView: View {
     @ObservedObject private var flags: Flags
+    @ObservedObject private var devices: DeviceStore
     private let onDone: (() -> Void)?
+    /// Opens a sheet or dialog over the window; nil in the Mac Settings window, which has no modal
+    /// of its own and shows them as sheets.
+    private let present: ((Modal) -> Void)?
+    @State private var local: Modal?
 
     private static let title = TextStyle(typeface: .display, size: 24, weight: 500)
 
-    public init() {
-        self.init(flags: .shared, onDone: nil)
+    @MainActor public init() {
+        self.init(flags: .shared, devices: .shared, onDone: nil, present: nil)
     }
 
-    init(flags: Flags, onDone: (() -> Void)?) {
+    init(flags: Flags, devices: DeviceStore, onDone: (() -> Void)?, present: ((Modal) -> Void)?) {
         self.flags = flags
+        self.devices = devices
         self.onDone = onDone
+        self.present = present
     }
 
     public var body: some View {
@@ -35,6 +42,9 @@ public struct SettingsView: View {
                     .foregroundStyle(Theme.text3)
                     .textSelection(.enabled)
             }
+            DevicesSection(devices: devices, present: { modal in
+                if let present { present(modal) } else { local = modal }
+            })
             if let onDone {
                 HStack {
                     Spacer()
@@ -49,6 +59,12 @@ public struct SettingsView: View {
         .tint(Theme.leaf)
         .frame(minWidth: 360, alignment: .leading)
         .padding(onDone == nil ? 24 : 0)
+        .sheet(item: $local) { modal in
+            DeviceModalView(modal: modal, devices: devices, go: { local = $0 }, back: nil)
+                .frame(width: ModalMetrics.width - 2 * ModalMetrics.padding)
+                .padding(ModalMetrics.padding)
+                .background(Theme.raised)
+        }
     }
 
     private var vaultPath: String {

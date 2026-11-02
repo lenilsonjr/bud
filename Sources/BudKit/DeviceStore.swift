@@ -20,6 +20,20 @@ public struct RotationProgress: Equatable, Sendable {
     public var done: Int
     /// Set once the rotation is over.
     public var result: RotationResult?
+    /// What the core reported for each device so far, in order. Empty when the core only reports
+    /// the result afterwards.
+    public var reports: [DeviceReport] = []
+
+    /// One device the rotation tried, and whether it took the new key.
+    public struct DeviceReport: Hashable, Sendable {
+        public var id: String
+        public var reached: Bool
+
+        public init(id: String, reached: Bool) {
+            self.id = id
+            self.reached = reached
+        }
+    }
 
     public init(total: Int, done: Int = 0, result: RotationResult? = nil) {
         self.total = total
@@ -39,6 +53,9 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var currentTicket: Ticket?
     @Published public private(set) var joinPhase: JoinPhase = .idle
     @Published public private(set) var rotation: RotationProgress?
+    /// When the last rotation that left a device behind was over, for the notice above the list.
+    @Published public private(set) var rotatedAt: Date?
+    @Published public private(set) var relay: RelaySetting = .default
     /// The device that used the ticket on show, until the sheet is closed or asks again.
     @Published public private(set) var redeemedBy: String?
 
@@ -49,6 +66,11 @@ public final class DeviceStore: ObservableObject {
     private var sheetOpen = false
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
+
+    /// The store the apps use until a real node plugs in: this device alone, so Settings shows the
+    /// invitation.
+    public static let shared = DeviceStore(
+        peers: MemoryPeers(devices: [Device(id: "this-device", isThisDevice: true, reach: .local, kind: DevicesText.platform(isPad: false))]))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
@@ -87,6 +109,12 @@ public final class DeviceStore: ObservableObject {
     public func refresh() async {
         if let list = try? await peers.devices() { devices = list }
         if let state = try? await peers.state() { syncState = state }
+        if let setting = try? await peers.relay() { relay = setting }
+    }
+
+    public func setRelay(_ setting: RelaySetting) async {
+        try? await peers.setRelay(setting)
+        if let stored = try? await peers.relay() { relay = stored }
     }
 
     public func syncNow() async {
@@ -155,19 +183,23 @@ public final class DeviceStore: ObservableObject {
 
     /// Forgets a device, and with `rotate` makes a new key so it cannot read what comes next.
     public func remove(_ id: String, rotate: Bool) async {
+        if rotate { rotation = RotationProgress(total: devices.filter { !$0.isThisDevice && $0.id != id }.count) }
         try? await peers.remove(id)
         await refresh()
         guard rotate else { return }
-        let total = devices.filter { !$0.isThisDevice }.count
-        rotation = RotationProgress(total: total)
+        rotation = RotationProgress(total: devices.filter { !$0.isThisDevice }.count)
         guard let steps = try? await peers.rotateKey() else {
             rotation = nil
             return
         }
         for await step in steps {
             switch step {
-            case .device: rotation?.done += 1
-            case let .done(result): rotation?.result = result
+            case let .device(id, reached):
+                rotation?.done += 1
+                rotation?.reports.append(.init(id: id, reached: reached))
+            case let .done(result):
+                rotation?.result = result
+                if !result.missed.isEmpty { rotatedAt = now() }
             }
         }
         await refresh()

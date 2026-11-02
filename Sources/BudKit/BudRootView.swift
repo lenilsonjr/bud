@@ -47,6 +47,10 @@ public struct BudRootView: View {
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
         .environment(\.compact, compact)
+        .task { await store.devices.start() }
+        .onReceive(store.devices.$lastSummary.compactMap { $0 }) { summary in
+            if let message = DevicesText.arrived(summary) { store.toasts.show(.notice(message)) }
+        }
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }
     }
