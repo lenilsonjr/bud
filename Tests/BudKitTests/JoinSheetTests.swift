@@ -12,7 +12,7 @@ final class JoinSheetTests: XCTestCase {
     }
 
     func testTheEntryStatusFollowsTheText() {
-        XCTAssertEqual(EntryStatus(text: "bud1 29326 ml64l g2tjf 8cz2k a7edc mpb3u 2m", failed: false), .typing(count: "37 of 134"))
+        XCTAssertEqual(EntryStatus(text: "bud1 29326 ml64l g2tjf 8cz2k a7edc mpb3u 2m7", failed: false), .typing(count: "37 of 134"))
         let full = "bud1" + String(repeating: "x", count: 130)
         XCTAssertEqual(EntryStatus(text: PeerText.grouped(full), failed: false), .looksLikeTicket)
         XCTAssertTrue(EntryStatus(text: full, failed: false).canJoin)
