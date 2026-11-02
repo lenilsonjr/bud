@@ -3,13 +3,17 @@ import BudKit
 
 // Thin cross-platform host for the BudKit prototype. BudRootView (the orbit canvas, trail, and
 // add-bud flow) lives in the BudKit package and is shared verbatim by every platform target; this
-// app only provides the @main entry point and the window. tvOS / watchOS targets will add their own
-// entry points here beside this one when BudKit grows those platforms.
+// app only provides the @main entry point and the window. On tvOS the package offers BudTVView
+// instead: a remote-driven tree with capture and completion, no canvas.
 @main
 struct BudApp: App {
     var body: some Scene {
         WindowGroup {
+            #if os(tvOS)
+            BudTVView()
+            #else
             BudRootView()
+            #endif
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)

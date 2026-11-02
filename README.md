@@ -9,8 +9,9 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
   and JetBrains Mono with their OFL licences; `Theme` registers them at runtime.
 - `Sources/BudMac` — a macOS runner so the canvas works without an Xcode project.
 - `Tests/BudKitTests` — model and layout tests; they run on Linux too.
-- `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS) that hosts `BudRootView`
-  from `BudKit`. The Xcode project is generated, never committed.
+- `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS, tvOS) that hosts
+  `BudRootView` from `BudKit`, or `BudTVView` on Apple TV: a row of cards for the remote, one
+  line of capture, Play/Pause to tick a to-do. The Xcode project is generated, never committed.
 - `core/bud-core` — the Rust core. A vault is a folder of Markdown files; the crate walks it into a
   SQLite index kept outside the vault and answers the queries the views need. The files are the
   only truth; the index is disposable.

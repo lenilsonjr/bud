@@ -1,4 +1,4 @@
-#if canImport(SwiftUI)
+#if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
 /// The canvas: cards positioned by the layout, one camera over all of them, a thin line from
