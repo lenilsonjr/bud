@@ -152,6 +152,16 @@ public final class BudStore: ObservableObject {
         return captured
     }
 
+    /// A line from the ⌥Space panel: captured with its device word, the app it came from in the
+    /// body, made a to-do when asked.
+    @discardableResult
+    public func capture(_ line: CaptureRelay.Line) -> Bud? {
+        guard let bud = capture(line.text, source: line.source) else { return nil }
+        if !line.body.isEmpty { setBody(bud.id, line.body) }
+        if line.todo { makeTodo(bud.id) }
+        return tree.bud(bud.id)
+    }
+
     /// Gives a bud and its branch a new parent and offers to move it back. A move the tree
     /// refuses (under itself or its own descendant) does nothing and says nothing.
     @discardableResult
