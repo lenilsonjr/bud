@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The left pane of Files: Places, Lenses, and Everything opened into the tree. Only Everything
-/// has rows today; the Inbox, Archive, Trash and the lenses wait for the vault.
+/// has rows today; the Inbox lists its captures; Archive and Trash wait for the vault.
 struct Sidebar: View {
     @ObservedObject var store: BudStore
     @State private var expanded: Set<UUID> = []
@@ -12,17 +12,17 @@ struct Sidebar: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 2) {
                     eyebrow("Places")
-                    place("Inbox", glyph: "tray", count: 0, selected: false, action: nil)
-                    place("Everything", glyph: "leaf.fill", count: nil, selected: store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil }
+                    place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.inboxOpen) { store.openInbox() }
+                    place("Everything", glyph: "leaf.fill", count: nil, selected: !store.inboxOpen && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.inboxOpen = false }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
                             TreeRow(
                                 bud: bud,
                                 tree: store.tree,
                                 depth: row.depth,
-                                selected: store.lens == nil && store.center == bud.id,
+                                selected: !store.inboxOpen && store.lens == nil && store.center == bud.id,
                                 expanded: expanded.contains(bud.id),
-                                onSelect: { store.center = bud.id },
+                                onSelect: { store.center = bud.id; store.inboxOpen = false },
                                 onDisclose: { toggle(bud.id) }
                             )
                             .id(bud.id)

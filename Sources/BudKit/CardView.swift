@@ -37,7 +37,7 @@ struct CardView: View {
             Text("\(store.tree.children(of: rootID).count) threads")
                 .textRole(.caption)
                 .foregroundStyle(Theme.hubMeta)
-            Button("+ Enrich", action: onAdd)
+            Button("Capture", action: onAdd)
                 .buttonStyle(.plain)
                 .textRole(.label)
                 .foregroundStyle(Theme.hubAccent)

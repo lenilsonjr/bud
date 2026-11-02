@@ -153,14 +153,9 @@ struct CommandPalette: View {
         guard rows.indices.contains(picked) else { return }
         switch rows[picked] {
         case .bud(let hit):
-            if inFiles {
-                store.openAsFile(hit.id)
-            } else {
-                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = hit.id }
-                store.surface = .canvas
-            }
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: hit.id, inFiles: inFiles) }
         case .destination(let d):
-            // Inbox and Archive wait for the vault.
+            // Archive waits for the vault.
             switch d {
             case .everything:
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = rootID }
@@ -168,7 +163,8 @@ struct CommandPalette: View {
             case .today: store.open(.today)
             case .todos: store.open(.todos)
             case .pinned: store.open(.pinned)
-            case .inbox, .archive: break
+            case .inbox: store.openInbox()
+            case .archive: break
             }
         }
         onClose()

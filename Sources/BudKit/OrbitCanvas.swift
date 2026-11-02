@@ -58,7 +58,7 @@ public struct OrbitCanvas: View {
                             light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
                             onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                             onOpen: { open(id) },
-                            onAdd: { adding = AddTarget(parent: id) },
+                            onAdd: { adding = addTarget(for: id) },
                             onToggle: { store.toggle(id) }
                         )
                         .scaleEffect(scale)
@@ -113,7 +113,7 @@ public struct OrbitCanvas: View {
             opened = nil
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
         }
-        .sheet(item: $adding) { target in AddSheet(store: store, parent: target.parent) }
+        .sheet(item: $adding) { target in AddSheet(store: store, mode: target.mode) }
     }
 
     /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.
@@ -209,9 +209,15 @@ public struct OrbitCanvas: View {
         withAnimation(.easeOut(duration: 0.2)) { opened = nil }
     }
 
-    /// N: a new bud under the lit card, or under the center when nothing is lit.
+    /// N: a new bud under the lit card, or under the center when nothing is lit. The hub is not
+    /// a place to plant under: there N captures.
     private func addUnderTheLitCard() {
-        adding = AddTarget(parent: litCard(in: store.layout, viewport: viewport) ?? store.center)
+        adding = addTarget(for: litCard(in: store.layout, viewport: viewport) ?? store.center)
+    }
+
+    /// Enrich under an ordinary card; the hub captures into the Inbox instead.
+    private func addTarget(for id: UUID) -> AddTarget {
+        id == rootID ? .capture : AddTarget(parent: id)
     }
 
     private func stepOut() {

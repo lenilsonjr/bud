@@ -4,6 +4,10 @@ import Foundation
 /// no state → a note, a state → a to-do. Depth is unlimited and costs the same everywhere.
 public let rootID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 
+/// The Inbox place: where a capture lands until it is given a home. Not a bud and not under the
+/// root, so the canvas, the lenses and the tree never see what is in it.
+public let inboxID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
 public enum BudState: String, Codable, Sendable {
     case open, done
 }
@@ -21,11 +25,15 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
     public var due: Date?
     public var pinned: Bool
     public var created: Date
+    /// Where a capture came from: "mac", "ipad", "iphone" or "tv". Nil for ordinary buds.
+    public var source: String?
 
     public init(
         id: UUID = UUID(), text: String, state: BudState? = nil, parent: UUID = rootID, order: Double = 0,
-        body: String = "", when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date = Date()
+        body: String = "", when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date = Date(),
+        source: String? = nil
     ) {
+        self.source = source
         self.id = id
         self.text = text
         self.state = state
@@ -51,6 +59,7 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
         due = try c.decodeIfPresent(Date.self, forKey: .due)
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date()
+        source = try c.decodeIfPresent(String.self, forKey: .source)
     }
 
     public var isTodo: Bool { state != nil }
@@ -88,7 +97,7 @@ public struct Tree: Codable, Equatable, Sendable {
 
     /// nil for the root; the root for first-layer buds.
     public func parent(of id: UUID) -> UUID? {
-        id == rootID ? nil : (bud(id)?.parent ?? rootID)
+        id == rootID || id == inboxID ? nil : (bud(id)?.parent ?? rootID)
     }
 
     /// Nearest first, root last.
@@ -105,7 +114,9 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     public func title(of id: UUID) -> String {
-        id == rootID ? "Everything" : (bud(id)?.text ?? "")
+        if id == rootID { return "Everything" }
+        if id == inboxID { return "Inbox" }
+        return bud(id)?.text ?? ""
     }
 
     public func descendants(of id: UUID) -> [UUID] {
@@ -247,6 +258,33 @@ public struct Tree: Codable, Equatable, Sendable {
         return bud
     }
 
+    /// Capture: one line, no place in mind. It lands in the Inbox as a note, after the last.
+    @discardableResult
+    public mutating func capture(_ line: String, source: String) -> Bud {
+        let last = children(of: inboxID).last?.order ?? 0
+        let bud = Bud(text: line, parent: inboxID, order: last + 1, source: source)
+        buds.append(bud)
+        return bud
+    }
+
+    /// What waits in the Inbox, in reading order.
+    public func inbox() -> [Bud] {
+        children(of: inboxID)
+    }
+
+    /// Gives a bud and its whole branch a new parent, after the parent's last child. Refuses a
+    /// move under itself or its own descendant, and an unknown bud or parent; true when it moved.
+    @discardableResult
+    public mutating func move(_ id: UUID, under parent: UUID) -> Bool {
+        guard let i = buds.firstIndex(where: { $0.id == id }) else { return false }
+        guard parent == rootID || parent == inboxID || bud(parent) != nil else { return false }
+        guard parent != id, !descendants(of: id).contains(parent) else { return false }
+        let last = children(of: parent).last?.order ?? 0
+        buds[i].parent = parent
+        buds[i].order = last + 1
+        return true
+    }
+
     public mutating func update(_ id: UUID, text: String, todo: Bool) {
         guard let i = buds.firstIndex(where: { $0.id == id }) else { return }
         buds[i].text = text
@@ -318,6 +356,8 @@ public struct Tree: Codable, Equatable, Sendable {
         t.add("Routines", todo: false, under: rootID)
         t.add("Gift ideas", todo: false, under: rootID)
         t.add("Side project", todo: false, under: rootID)
+        t.capture("Ask the printer about paper samples", source: "mac")
+        t.capture("A recipe to try for the first issue", source: "mac")
         return t
     }
 }

@@ -32,12 +32,31 @@ public struct TreeSearcher: Searcher {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return [] }
         var hits: [SearchHit] = []
-        for bud in tree.walk(under: rootID) where bud.text.lowercased().contains(needle) {
+        for bud in tree.walk(under: rootID) + tree.walk(under: inboxID) where bud.text.lowercased().contains(needle) {
             let trail = tree.ancestors(of: bud.id).reversed().map { tree.title(of: $0) }
             hits.append(SearchHit(id: bud.id, title: bud.text, trail: trail))
             if hits.count == limit { break }
         }
         return hits
+    }
+}
+
+/// The homes a bud can be moved to: Everything and every bud under it, except the bud itself and
+/// its own branch. An empty query lists them all; otherwise a case-insensitive substring of the
+/// title. The inbox is not a home.
+public struct MoveTargets {
+    public let tree: Tree
+
+    public init(tree: Tree) { self.tree = tree }
+
+    public func matching(_ query: String, for id: UUID) -> [SearchHit] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let excluded = Set(tree.descendants(of: id) + [id])
+        let everything = SearchHit(id: rootID, title: tree.title(of: rootID), trail: [])
+        let buds = tree.walk(under: rootID).filter { !excluded.contains($0.id) }.map { bud in
+            SearchHit(id: bud.id, title: bud.text, trail: tree.ancestors(of: bud.id).reversed().map { tree.title(of: $0) })
+        }
+        return ([everything] + buds).filter { needle.isEmpty || $0.title.lowercased().contains(needle) }
     }
 }
 

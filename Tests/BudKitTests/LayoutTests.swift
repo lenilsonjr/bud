@@ -412,7 +412,8 @@ final class LayoutTests: XCTestCase {
     func testEverythingIsOnTheCanvasAtFullSizeWithoutOverlaps() {
         let tree = Tree.seed()
         let layout = LayoutEngine.layout(of: tree, center: rootID)
-        XCTAssertEqual(layout.cards.count, tree.buds.count + 1, "Nothing is hidden")
+        XCTAssertEqual(layout.cards.count, tree.walk(under: rootID).count + 1, "Nothing under the root is hidden")
+        XCTAssertTrue(tree.inbox().allSatisfy { layout.cards[$0.id] == nil }, "The inbox is not on the canvas")
         XCTAssertEqual(layout.position(of: rootID), .zero)
         XCTAssertTrue(overlaps(layout).isEmpty, "No two cards overlap")
         let ring = layout.orbits[rootID]!
@@ -425,7 +426,7 @@ final class LayoutTests: XCTestCase {
         let first = tree.children(of: rootID).first!
         XCTAssertLessThan(layout.position(of: first.id)!.y, -ring.ry * 0.99, "The first thread sits at the top")
         XCTAssertLessThan(ring.ry, 320, "The first layer stays close enough to be in view")
-        for bud in tree.buds where bud.parent != rootID {
+        for bud in tree.walk(under: rootID) where bud.parent != rootID {
             let p = layout.position(of: bud.id)!
             XCTAssertGreaterThan(hypot(p.x, p.y), ring.ry * 0.9, "Deeper layers sprawl outward past the first ring")
             XCTAssertEqual(layout.cards[bud.id]?.role, .deep)
@@ -447,7 +448,7 @@ final class LayoutTests: XCTestCase {
             XCTAssertEqual(layout.cards[sibling.id]?.role, .kin, "The rest of the world stays around the ghost")
         }
         XCTAssertTrue(overlaps(layout).isEmpty)
-        XCTAssertEqual(layout.cards.count, tree.buds.count + 1)
+        XCTAssertEqual(layout.cards.count, tree.walk(under: rootID).count + 1)
         XCTAssertTrue(layout.edges.contains(Edge(from: newsletter.id, to: apartment.id)))
     }
 
@@ -458,7 +459,7 @@ final class LayoutTests: XCTestCase {
         for i in 0..<40 { tree.add("Detail \(i)", todo: false, under: review.id) }
         for i in 0..<20 { tree.add("Thread \(i)", todo: false, under: rootID) }
         let layout = LayoutEngine.layout(of: tree, center: rootID)
-        XCTAssertEqual(layout.cards.count, tree.buds.count + 1)
+        XCTAssertEqual(layout.cards.count, tree.walk(under: rootID).count + 1)
         XCTAssertTrue(overlaps(layout).isEmpty, "Still no overlaps with a crowded web")
         XCTAssertGreaterThan(layout.orbits[review.id]!.rx, layout.orbits[rootID]!.rx, "A crowded bud grows its own orbit outward instead of shrinking its children")
     }

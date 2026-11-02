@@ -20,6 +20,8 @@ struct FilesView: View {
             Group {
                 if let lens = store.lens {
                     LensPage(store: store, lens: lens)
+                } else if store.inboxOpen {
+                    InboxPage(store: store)
                 } else if store.center == rootID {
                     OutlinePage(store: store)
                 } else {
