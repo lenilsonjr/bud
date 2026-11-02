@@ -8,6 +8,7 @@
 
 mod edit;
 mod frontmatter;
+mod query;
 mod scan;
 mod watch;
 
@@ -16,15 +17,16 @@ pub use frontmatter::{
     parse as parse_frontmatter, split as split_frontmatter, write as write_frontmatter, Properties,
 };
 
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row as SqlRow};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub use query::{Counts, Hit, Lens, Row};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -196,7 +198,7 @@ impl Vault {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version != SCHEMA_VERSION {
-            conn.execute_batch("DROP TABLE IF EXISTS buds;")?;
+            conn.execute_batch("DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts;")?;
         }
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -384,10 +386,16 @@ fn insert_row(
     } else {
         Kind::Note
     };
+    // An upsert and not a replace: the row keeps its rowid, which the search index follows.
     conn.execute(
-        "INSERT OR REPLACE INTO buds
+        "INSERT INTO buds
          (path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(path) DO UPDATE SET
+            parent = excluded.parent, title = excluded.title, kind = excluded.kind,
+            state = excluded.state, when_date = excluded.when_date, due = excluded.due,
+            pinned = excluded.pinned, created = excluded.created, source = excluded.source,
+            body = excluded.body, mtime = excluded.mtime, place = excluded.place",
         params![
             row.path,
             row.parent,
@@ -407,10 +415,10 @@ fn insert_row(
     Ok(())
 }
 
-const SELECT: &str = "SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";
+pub(crate) const SELECT: &str ="SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";
 const ORDER: &str = "ORDER BY created IS NULL, created, title COLLATE NOCASE";
 
-fn read_bud(row: &Row<'_>) -> rusqlite::Result<Bud> {
+pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
     let kind: String = row.get(3)?;
     let state: Option<String> = row.get(4)?;
     let place: String = row.get(12)?;
