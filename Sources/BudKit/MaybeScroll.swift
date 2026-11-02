@@ -21,7 +21,7 @@ struct MaybeScroll<Content: View>: View {
 
     var body: some View {
         if still {
-            content()
+            content().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             ScrollView { content() }
         }
