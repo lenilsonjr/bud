@@ -29,9 +29,16 @@ struct CardView: View {
         .animation(.easeOut(duration: 0.35), value: light)
     }
 
-    /// The fill takes the full dim; the words floor at 55% so a dimmed card still reads.
+    /// The fill takes the full dim as a wash toward the canvas, so the card stays opaque and no
+    /// line shows through it; the words floor at 55% so a dimmed card still reads.
     private var fillLight: Double { lit ? 1 : light }
     private var inkLight: Double { lit ? 1 : max(light, 0.55) }
+
+    private func wash(_ radius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: radius)
+            .fill(Theme.canvas.opacity(1 - fillLight))
+            .allowsHitTesting(false)
+    }
 
     private var hub: some View {
         VStack(spacing: 6) {
@@ -51,7 +58,7 @@ struct CardView: View {
         }
         .opacity(inkLight)
         .frame(width: Metrics.hub.width, height: Metrics.hub.height)
-        .background(hubBackground.opacity(fillLight))
+        .background(hubBackground.overlay(wash(Radius.xl)))
         .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
     }
@@ -86,7 +93,7 @@ struct CardView: View {
             }
         }
         .opacity(inkLight)
-        .background(hubBackground.opacity(fillLight))
+        .background(hubBackground.overlay(wash(Radius.xl)))
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.xl))
         .contentShape(RoundedRectangle(cornerRadius: Radius.xl))
         .onTapGesture(perform: onTap)
@@ -124,7 +131,7 @@ struct CardView: View {
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
         .opacity(inkLight)
-        .background(chipBackground(bud).opacity(fillLight))
+        .background(chipBackground(bud).overlay(wash(Radius.md)))
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.md))
         .contentShape(RoundedRectangle(cornerRadius: Radius.md))
         .onTapGesture(perform: onTap)
