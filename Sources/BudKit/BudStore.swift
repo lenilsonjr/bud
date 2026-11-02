@@ -24,7 +24,7 @@ public enum Place: String, CaseIterable, Sendable {
 }
 
 /// The tree, the current center of the web, and the layout derived from both.
-/// Every mutation saves to disk; the layout is recomputed once per change, not per frame.
+/// Every mutation goes to the vault and reloads from it; the layout is recomputed once per change, not per frame.
 @MainActor
 public final class BudStore: ObservableObject {
     @Published public private(set) var tree: Tree
@@ -73,18 +73,86 @@ public final class BudStore: ObservableObject {
     /// The undo toast; every undoable change goes through it.
     public let toasts = ToastCenter()
 
-    private let fileURL: URL?
+    private let vault: Vault
+    /// The last vault write queued; the next one waits for it, so writes land in order.
+    private var pending: Task<Void, Never>?
+    /// Writes queued and not yet done; the tree reloads only when none is.
+    private var inFlight = 0
+    /// Counts local changes, so a snapshot taken before one is never applied after it.
+    private var generation = 0
+    private var watch: VaultWatch?
 
-    public init(fileURL: URL? = BudStore.defaultFile) {
-        self.fileURL = fileURL
+    /// A store over a vault. It shows `tree` at once and loads the vault's snapshot over it; the
+    /// vault's `watch` reloads it again whenever the vault changes under it.
+    public init(vault: Vault, tree: Tree = Tree()) {
+        self.vault = vault
+        let tree = Self.normalized(tree)
+        self.tree = tree
+        self.center = rootID
+        self.layout = LayoutEngine.layout(of: tree, center: rootID)
+        Task { @MainActor [weak self] in
+            await self?.reload()
+            await self?.startWatching()
+        }
+    }
+
+    /// The store the apps use for now: a memory vault that reads and writes the JSON file, and
+    /// starts from the seed world when there is none.
+    public convenience init(fileURL: URL? = BudStore.defaultFile) {
         var loaded: Tree? = nil
         if let url = fileURL, let data = try? Data(contentsOf: url) {
             loaded = try? JSONDecoder().decode(Tree.self, from: data)
         }
         let tree = loaded ?? Tree.seed()
-        self.tree = tree
-        self.center = rootID
-        self.layout = LayoutEngine.layout(of: tree, center: rootID)
+        self.init(vault: MemoryVault(tree: tree, fileURL: fileURL), tree: tree)
+    }
+
+    /// The tree as a vault would hand it back, so a first picture and a reload agree.
+    private static func normalized(_ tree: Tree) -> Tree {
+        let seen = Dictionary(tree.trashed.map { ($0.id, $0.at) }, uniquingKeysWith: { first, _ in first })
+        return Tree(records: tree.records(), trashedAt: { seen[$0] })
+    }
+
+    /// Loads the vault's snapshot into the tree. The center stays where it is while its bud
+    /// exists; a snapshot that went stale while it was being taken is dropped.
+    public func reload() async {
+        let started = generation
+        guard let records = try? await vault.snapshot(), started == generation, inFlight == 0 else { return }
+        let seen = Dictionary(tree.trashed.map { ($0.id, $0.at) }, uniquingKeysWith: { first, _ in first })
+        let loaded = Tree(records: records, trashedAt: { seen[$0] })
+        guard loaded != tree else { return }
+        tree = loaded
+        if center != rootID, tree.bud(center) == nil { center = rootID }
+        relayout()
+    }
+
+    /// Waits until every queued vault write is done and the tree has reloaded after it.
+    public func settle() async {
+        await pending?.value
+    }
+
+    private func startWatching() async {
+        watch = try? await vault.watch { [weak self] in
+            Task { @MainActor in await self?.reload() }
+        }
+    }
+
+    /// Runs a vault write after the ones before it, then reloads. A write the vault refuses is
+    /// undone by that reload, which shows what the vault holds.
+    private func write(_ operation: @escaping (Vault) async throws -> Void) {
+        inFlight += 1
+        let previous = pending
+        pending = Task { @MainActor [self] in
+            await previous?.value
+            try? await operation(vault)
+            inFlight -= 1
+            await reload()
+        }
+    }
+
+    /// The path a vault knows a parent by: Everything is the top level, nil.
+    private func parentPath(_ id: UUID) -> String? {
+        id == rootID ? nil : id.uuidString
     }
 
     nonisolated public static var defaultFile: URL? {
@@ -119,6 +187,8 @@ public final class BudStore: ObservableObject {
         commit { planted = $0.add(line, todo: todo, under: parent) }
         guard let planted else { return nil }
         let id = planted.id
+        let up = parentPath(parent)
+        write { _ = try await $0.create(parent: up, title: line, kind: todo ? .todo : .note, source: nil, preferredPath: id.uuidString) }
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted under \(tree.title(of: parent))") { [weak self] in
             Task { @MainActor in self?.remove(id) }
@@ -156,6 +226,7 @@ public final class BudStore: ObservableObject {
         commit { captured = $0.capture(line, source: source) }
         guard let captured else { return nil }
         let id = captured.id
+        write { _ = try await $0.create(parent: inboxID.uuidString, title: line, kind: .note, source: source, preferredPath: id.uuidString) }
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Captured to the Inbox") { [weak self] in
             Task { @MainActor in self?.remove(id) }
@@ -178,17 +249,46 @@ public final class BudStore: ObservableObject {
     @discardableResult
     public func move(_ id: UUID, under parent: UUID) -> Bool {
         guard let from = tree.bud(id)?.parent else { return false }
-        var moved = false
-        commit { moved = $0.move(id, under: parent) }
-        guard moved else { return false }
+        guard put(id, under: parent) else { return false }
         toasts.show(Undoable(message: "Moved to \(tree.title(of: parent))") { [weak self] in
-            Task { @MainActor in self?.commit { $0.move(id, under: from) } }
+            Task { @MainActor in self?.put(id, under: from) }
         })
         return true
     }
 
+    /// The move itself, without a toast.
+    @discardableResult
+    private func put(_ id: UUID, under parent: UUID) -> Bool {
+        var moved = false
+        commit { moved = $0.move(id, under: parent) }
+        guard moved else { return false }
+        let up = parentPath(parent)
+        write { _ = try await $0.move(id.uuidString, to: up) }
+        return true
+    }
+
     public func update(_ id: UUID, text: String, todo: Bool) {
+        guard let before = tree.bud(id) else { return }
         commit { $0.update(id, text: text, todo: todo) }
+        let path = id.uuidString
+        write { vault in
+            if text != before.text { _ = try await vault.rename(path, to: text) }
+            if todo, before.state == nil { try await vault.setState(path, .open) }
+            if !todo, before.state != nil { try await vault.setState(path, nil) }
+        }
+    }
+
+    /// Sets the state of each bud, here and in the vault.
+    private func set(_ state: BudState, on ids: [UUID]) {
+        commit { tree in
+            for id in ids {
+                guard let i = tree.buds.firstIndex(where: { $0.id == id }), tree.buds[i].state != nil else { continue }
+                tree.buds[i].state = state
+            }
+        }
+        write { vault in
+            for id in ids { try await vault.setState(id.uuidString, state) }
+        }
     }
 
     /// What every checkbox calls. A done to-do reopens at once; an open to-do with nothing open
@@ -197,7 +297,7 @@ public final class BudStore: ObservableObject {
     public func tick(_ id: UUID) {
         guard let bud = tree.bud(id), bud.isTodo else { return }
         if bud.isDone {
-            commit { $0.toggle(id) }
+            set(.open, on: [id])
         } else if tree.openCount(under: id) > 0 {
             modal = .closeBranch(id: id)
         } else {
@@ -210,72 +310,95 @@ public final class BudStore: ObservableObject {
     public func close(_ id: UUID, cascade: Bool) {
         let title = tree.title(of: id)
         var changed: [UUID] = []
-        commit { changed = $0.close(id, cascade: cascade) }
+        var closed = tree
+        changed = closed.close(id, cascade: cascade)
         guard !changed.isEmpty else { return }
+        set(.done, on: changed)
         let inside = changed.count - 1
         let message = inside == 0 ? "Closed \(title)" : "Closed \(title) and \(inside) inside"
         toasts.show(Undoable(message: message) { [weak self] in
-            Task { @MainActor in self?.commit { $0.reopen(changed) } }
+            Task { @MainActor in self?.set(.open, on: changed) }
         })
     }
 
     public func toggle(_ id: UUID) {
-        commit { $0.toggle(id) }
+        guard let state = tree.bud(id)?.state else { return }
+        set(state == .done ? .open : .done, on: [id])
     }
 
     public func setBody(_ id: UUID, _ body: String) {
         commit { $0.setBody(id, body) }
+        write { try await $0.setBody(id.uuidString, body) }
     }
 
     public func setWhen(_ id: UUID, _ when: Date?) {
         commit { $0.setWhen(id, when) }
+        write { try await $0.setWhen(id.uuidString, when) }
     }
 
     public func setDue(_ id: UUID, _ due: Date?) {
         commit { $0.setDue(id, due) }
+        write { try await $0.setDue(id.uuidString, due) }
     }
 
     public func setPinned(_ id: UUID, _ pinned: Bool) {
         commit { $0.setPinned(id, pinned) }
+        write { try await $0.setPinned(id.uuidString, pinned) }
     }
 
+    /// Takes a bud and its branch away without a trace: no Trash, no toast.
     public func remove(_ id: UUID) {
         commit { $0.remove(id) }
+        write { vault in
+            try await vault.trash(id.uuidString)
+            try await vault.deleteForever(id.uuidString)
+        }
     }
 
     /// Trashes a bud and its branch and offers to take it back; Undo restores the branch as it was.
     public func trash(_ id: UUID) {
         guard tree.bud(id) != nil else { return }
         let title = tree.title(of: id)
-        var branch: [Bud] = []
-        commit { branch = $0.trash(id) }
+        sendToTrash(id)
         toasts.show(Undoable(message: "Trashed \(title)") { [weak self] in
-            Task { @MainActor in self?.commit { $0.restore(branch) } }
+            Task { @MainActor in self?.putBack(id) }
         })
+    }
+
+    private func sendToTrash(_ id: UUID) {
+        commit { $0.trash(id) }
+        write { try await $0.trash(id.uuidString) }
+    }
+
+    private func putBack(_ id: UUID) {
+        commit { $0.restore(id) }
+        write { _ = try await $0.restore(id.uuidString) }
     }
 
     /// Puts a branch back from the Trash and offers to trash it again.
     public func restore(_ id: UUID) {
         guard let branch = tree.trashed.first(where: { $0.id == id }) else { return }
-        commit { $0.restore(id) }
+        putBack(id)
         toasts.show(Undoable(message: "Restored \(branch.head.text)") { [weak self] in
-            Task { @MainActor in self?.commit { $0.trash(id) } }
+            Task { @MainActor in self?.sendToTrash(id) }
         })
     }
 
     /// Drops a branch from the Trash for good. Not undoable: the dialog asks first.
     public func deleteForever(_ id: UUID) {
         commit { $0.deleteForever(id) }
+        write { try await $0.deleteForever(id.uuidString) }
     }
 
     public func emptyTrash() {
         commit { $0.emptyTrash() }
+        write { try await $0.emptyTrash() }
     }
 
     /// Makes a note a to-do, open. A to-do stays what it is.
     public func makeTodo(_ id: UUID) {
         guard let bud = tree.bud(id), !bud.isTodo else { return }
-        commit { $0.update(id, text: bud.text, todo: true) }
+        update(id, text: bud.text, todo: true)
     }
 
     /// Open as file: the Files view with this bud as the page. The center is the selection there.
@@ -323,19 +446,14 @@ public final class BudStore: ObservableObject {
     }
 
     private func commit(_ change: (inout Tree) -> Void) {
+        generation += 1
         change(&tree)
         if center != rootID, tree.bud(center) == nil { center = rootID }
         relayout()
-        save()
     }
 
     private func relayout() {
         layout = LayoutEngine.layout(of: tree, center: center)
-    }
-
-    private func save() {
-        guard let url = fileURL, let data = try? JSONEncoder().encode(tree) else { return }
-        try? data.write(to: url, options: .atomic)
     }
 }
 #endif
