@@ -16,10 +16,11 @@ struct TopBar: View {
                 .foregroundStyle(Theme.leaf)
             Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
             breadcrumb
+                .layoutPriority(1)
             Spacer(minLength: 8)
             if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
             goAnywhere
-            zoom
+            if store.surface == .canvas { zoom }
             Button(action: onAdd) {
                 BudButtonLabel(title: "Add here", systemImage: "plus")
             }
@@ -103,21 +104,26 @@ struct TopBar: View {
                     .textRole(.eyebrow)
                     .foregroundStyle(Theme.text3)
             }
-            Button(bud.text) {
+            Button(Self.shortTitle(bud.text)) {
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = bud.id }
             }
             .buttonStyle(.plain)
             .foregroundStyle(Theme.text)
             .lineLimit(1)
             Button("Done") { store.tick(bud.id) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.leaf)
+                .buttonStyle(.budGhost)
+                .padding(.leading, 0)
         }
         .textRole(.label)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
+        .padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: Radius.lg).stroke(Theme.leafLine, lineWidth: 1))
-        .frame(maxWidth: 320)
+    }
+
+    /// The next step's title, cut at 28 characters with an ellipsis so the pill keeps its shape.
+    static func shortTitle(_ text: String, limit: Int = 28) -> String {
+        text.count > limit ? String(text.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…" : text
     }
 
     private var goAnywhere: some View {
@@ -163,11 +169,11 @@ struct Keycap: View {
 
     var body: some View {
         Text(text)
-            .textRole(.label)
-            .foregroundStyle(Theme.text2)
-            .padding(.horizontal, 7)
-            .frame(height: 22)
-            .background(Theme.line, in: RoundedRectangle(cornerRadius: Radius.sm))
+            .font(Theme.font(TextStyle(typeface: .mono, size: 10, weight: 500)))
+            .foregroundStyle(Theme.text3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
     }
 }
 

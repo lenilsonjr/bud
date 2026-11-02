@@ -117,7 +117,7 @@ final class SearcherTests: XCTestCase {
     func testSubstringHitsCarryTheirTrailAndComeInReadingOrder() throws {
         let t = Tree.seed()
         let s = TreeSearcher(tree: t)
-        XCTAssertEqual(s.search("   ").count, 0, "An empty query lists nothing; places stand in")
+        XCTAssertEqual(s.search("   ").count, TreeSearcher.recentCount, "An empty query lists the recent buds")
 
         let hits = s.search("news")
         XCTAssertFalse(hits.isEmpty)
@@ -519,5 +519,28 @@ final class LayoutTests: XCTestCase {
         tree.setBody(roadmap.id, "\n\nOnly one paragraph here.\n")
         XCTAssertEqual(tree.lede(of: roadmap.id), "Only one paragraph here.")
         XCTAssertEqual(tree.lede(of: UUID()), "")
+    }
+}
+
+final class RecentSearchTests: XCTestCase {
+    func testAnEmptyQueryListsTheEightNewestBudsNewestFirst() {
+        var t = Tree()
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        var ids: [UUID] = []
+        for i in 0..<10 {
+            let bud = Bud(text: "Bud \(i)", parent: rootID, order: Double(i), created: base.addingTimeInterval(TimeInterval(i * 60)))
+            t.buds.append(bud)
+            ids.append(bud.id)
+        }
+        let hits = TreeSearcher(tree: t).search("")
+        XCTAssertEqual(hits.count, TreeSearcher.recentCount)
+        XCTAssertEqual(hits.map(\.id), Array(ids.reversed().prefix(8)))
+        XCTAssertEqual(hits.first?.trail, ["Everything"])
+        XCTAssertEqual(TreeSearcher(tree: t).search("   ").count, 8, "Blank is empty")
+    }
+
+    func testTheSeedsRecentBudsIncludeTodaysCapture() {
+        let hits = TreeSearcher(tree: Tree.seed()).search("")
+        XCTAssertEqual(hits.first?.trail, ["Inbox"], "The capture made today is the newest bud")
     }
 }
