@@ -75,7 +75,8 @@ struct CommandPalette: View {
                     .padding(.horizontal, 6)
                     .padding(.bottom, 8)
                 }
-                .frame(maxHeight: 360)
+                .frame(maxHeight: 360, alignment: .top)
+                .clipped()
                 .onChange(of: picked) { _, now in proxy.scrollTo(now) }
             }
             Theme.line.frame(height: 1)
