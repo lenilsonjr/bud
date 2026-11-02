@@ -1,37 +1,19 @@
-The code and tests are written and the gate passes. I could not commit: `git add` was denied because the box has no decision channel for version-control calls. I did not try another route. The changes sit uncommitted in `work` on `crew/BUD-14`: two modified files and one new test file.
+I applied finding 1 and the gate passes, but the change is not committed. `git add` was denied again because the box has no decision channel for version-control calls. The change sits uncommitted in `core/bud-core/src/frontmatter.rs`. The suggested commit subject is "🐛 Keep known keys that already read right".
 
 ```
-BUILD round 1
-Ticket:
-- Properties parse and `frontmatter::write(text, &Properties) -> String`: met. An existing key is replaced in place, a new key is appended at the end of the block, and a `None` removes the key. A file with no block gets one only when something is set. Unit tests cover each case. A fixture with `tags`, `aliases` and a comment line survives byte for byte.
-- `Vault::set_properties(path, &Properties)`: met. It writes `<name>.md.tmp` beside the file, renames it into place, and updates the index row. A folder-only bud gets `Name.md` created beside the folder first. The old folder row is dropped and the children's `parent` moves to the new file. The body is identical before and after, in the file and in the index. The index agrees with a rescan.
-- Written formats: met. `state` is written as `open` or `done`, `when` and `due` as given (`YYYY-MM-DD`), `created` as given (RFC 3339), and `pinned` as `true` (absent when false). A snapshot test covers the written text. `Properties` still holds dates as strings, so the writer does not validate them. It writes what it is given.
-- No reformatting outside the touched keys: met. Comments, quotes, indentation, unknown keys and CRLF line endings are kept. Values under a touched key that are indented lines go with it when it is replaced or removed. Free-text values such as `source` are quoted only when plain YAML would not read back the same.
-- Not done: the commit. `git add` was denied by the box, so the branch has no new commit from this round.
-Changed: core/bud-core/src/frontmatter.rs, core/bud-core/src/lib.rs, core/bud-core/tests/set_properties.rs (new). In `lib.rs` I added `Error::NoSuchBud`, exported `write_frontmatter`, and moved the row insert into a shared helper used by `rescan` and `set_properties`.
+BUILD round 2
+Applied:
+- Finding 1 (known keys rewritten when already right): `edit_block` in core/bud-core/src/frontmatter.rs now gathers each known key's line and its indented continuation. It parses that text with the same `parse` as reading. If the result already equals the wanted value, the original text is kept untouched, so quotes, trailing comments, `pinned: yes` and quoted dates survive a change to a different key. Only a differing key is rewritten, and a `None` still removes it. The new test `known_keys_that_already_read_right_keep_their_own_text` covers it:
+  - It sets `state` on a block with `source: "phone"`, `state: open # check`, `pinned: yes`, `when: '2026-11-02'` and a `due` with an indented comment under it. Only the state line changes.
+  - It then sets the state back to `open`, and the text comes out byte for byte the same as the input.
+Declined:
+- Finding 1, keeping a trailing comment when a key is rewritten: a rewritten key now loses its trailing comment (`state: open # check` becomes `state: done`). That is the only text of the user's that a changed key drops. Splitting a value from its comment safely needs a YAML-aware scan for quoted `#`, which is more machinery than this ticket asks for, and the reviewer said "consider".
+- Finding 2 (no sync before the rename): the ticket asks for write then rename, which is what is done. A sync is hardening beyond the ticket.
+- Finding 3 (invalid UTF-8): a file that is not valid UTF-8 is refused with an `Io` error and nothing is written. The reviewer asked only whether that is intended, and it is, so there is no change.
 Tests:
-- Unit tests in frontmatter.rs:
-  - replace in place with unknown keys and a comment kept
-  - append at the end of the block
-  - remove a key with its indented lines
-  - no block: create one only when something is set
-  - fill an empty block
-  - written-format snapshot
-  - pinned false is absent
-  - CRLF kept
-  - awkward values quoted and read back
-  - writing what was read changes nothing
-- Integration tests in tests/set_properties.rs:
-  - one key changes and the body is identical
-  - the row follows every property
-  - a folder-only bud gets a file, keeps its children, and matches a rescan
-  - an unknown path is an error
-- Gate, each run from the repository root:
-  - `swift build`: passed.
-  - `swift test`: passed, 9 tests.
-  - `cargo fmt --all --check`: clean.
-  - `cargo clippy --all-targets -- -D warnings`: clean.
-  - `cargo test --workspace`: passed, 29 tests (15 unit, 10 scan, 4 set_properties).
-- I weakened no expectation.
-Verify: from the repository root, run `cargo test --workspace`, then read `core/bud-core/tests/set_properties.rs` and the snapshot test `written_formats_snapshot` in `core/bud-core/src/frontmatter.rs`. The commit still has to be made. Subject suggestion: "✨ Write bud frontmatter without touching the rest of the file".
+- `cargo fmt --all --check`: clean.
+- `cargo clippy --all-targets -- -D warnings`: clean.
+- `cargo test --workspace`: 30 passed (16 unit, 10 scan, 4 set_properties).
+- `swift build`: passed.
+- `swift test`: 9 passed.
 ```

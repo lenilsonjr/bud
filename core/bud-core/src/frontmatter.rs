@@ -147,41 +147,64 @@ pub fn write(text: &str, props: &Properties) -> String {
         } else {
             "\n"
         };
-        let block = edit_block("", &wanted, eol);
+        let block = edit_block("", props, &wanted, eol);
         return format!("---{eol}{block}---{eol}{text}");
     };
     let open_len = if text.starts_with("---\r\n") { 5 } else { 4 };
     let open = &text[..open_len];
     let close = &text[open_len + yaml.len()..text.len() - body.len()];
     let eol = if open.ends_with("\r\n") { "\r\n" } else { "\n" };
-    format!("{open}{}{close}{body}", edit_block(yaml, &wanted, eol))
+    format!(
+        "{open}{}{close}{body}",
+        edit_block(yaml, props, &wanted, eol)
+    )
 }
 
-fn edit_block(yaml: &str, wanted: &[Option<String>; 6], eol: &str) -> String {
+/// Whether the key's existing text (its line and continuation) already reads as the wanted value.
+fn unchanged(key: usize, chunk: &str, current: &Properties) -> bool {
+    let existing = parse(chunk);
+    match key {
+        0 => existing.state == current.state,
+        1 => existing.when == current.when,
+        2 => existing.due == current.due,
+        3 => existing.pinned == current.pinned,
+        4 => existing.created == current.created,
+        _ => existing.source == current.source,
+    }
+}
+
+fn edit_block(yaml: &str, current: &Properties, wanted: &[Option<String>; 6], eol: &str) -> String {
     let mut out = String::with_capacity(yaml.len() + 64);
     let mut seen = [false; 6];
-    let mut in_value = false;
-    for line in yaml.split_inclusive('\n') {
-        // Indented lines under a key belong to its value.
-        if in_value && line.starts_with([' ', '\t']) && !line.trim().is_empty() {
-            continue;
-        }
-        in_value = false;
+    let mut lines = yaml.split_inclusive('\n').peekable();
+    while let Some(line) = lines.next() {
         let hit = KEYS.iter().position(|key| {
             line.strip_prefix(key)
                 .is_some_and(|rest| rest.starts_with(':'))
         });
-        match hit {
-            Some(i) => {
-                in_value = true;
-                if !seen[i] {
-                    seen[i] = true;
-                    if let Some(value) = &wanted[i] {
-                        out.push_str(&format!("{}: {value}{}", KEYS[i], line_ending(line)));
-                    }
-                }
+        let Some(i) = hit else {
+            out.push_str(line);
+            continue;
+        };
+        // Indented lines under a key belong to its value.
+        let mut chunk = line.to_string();
+        while let Some(next) = lines.peek() {
+            if next.starts_with([' ', '\t']) && !next.trim().is_empty() {
+                chunk.push_str(next);
+                lines.next();
+            } else {
+                break;
             }
-            None => out.push_str(line),
+        }
+        if seen[i] {
+            continue;
+        }
+        seen[i] = true;
+        if unchanged(i, &chunk, current) {
+            // The value already reads as wanted: keep the user's own text for it.
+            out.push_str(&chunk);
+        } else if let Some(value) = &wanted[i] {
+            out.push_str(&format!("{}: {value}{}", KEYS[i], line_ending(line)));
         }
     }
     for (i, value) in wanted.iter().enumerate() {
@@ -328,6 +351,20 @@ mod tests {
                 Some(source)
             );
         }
+    }
+
+    #[test]
+    fn known_keys_that_already_read_right_keep_their_own_text() {
+        let text = "---\nsource: \"phone\"\nstate: open # check\npinned: yes\nwhen: '2026-11-02'\ndue: 2026-11-04\n  # note\n---\nB\n";
+        let (yaml, _) = split(text);
+        let mut props = parse(yaml.unwrap());
+        props.state = Some(State::Done);
+        assert_eq!(
+            write(text, &props),
+            "---\nsource: \"phone\"\nstate: done\npinned: yes\nwhen: '2026-11-02'\ndue: 2026-11-04\n  # note\n---\nB\n"
+        );
+        props.state = Some(State::Open);
+        assert_eq!(write(text, &props), text);
     }
 
     #[test]
