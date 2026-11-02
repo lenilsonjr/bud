@@ -37,16 +37,19 @@ def xcode_auth
   "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
 end
 
+# Archive with the cloud-managed distribution identity. Automatic signing would otherwise mint a new
+# development certificate on every fresh runner until the account hits Apple's limit.
 def version_xcargs(next_build)
-  a = ["CURRENT_PROJECT_VERSION=#{next_build}"]
+  a = ["CURRENT_PROJECT_VERSION=#{next_build}", %(CODE_SIGN_IDENTITY="Apple Distribution")]
   a << "MARKETING_VERSION=#{ENV['APP_MARKETING_VERSION']}" unless ENV["APP_MARKETING_VERSION"].to_s.empty?
   a << xcode_auth
   a.join(" ")
 end
 
-# TestFlight build numbers are per-platform; floor 0 (→ build 1) for the very first build on a platform.
+# TestFlight build numbers are per-platform ("ios", "osx", "appletvos"); floor 0 (→ build 1) for the
+# very first build on a platform. A failed lookup is loud, not silent: a reused number is rejected later.
 def next_build_for(asc_platform)
-  (latest_testflight_build_number(app_identifier: APP_IDENTIFIER, platform: asc_platform) rescue 0).to_i + 1
+  (latest_testflight_build_number(app_identifier: APP_IDENTIFIER, platform: asc_platform) || 0).to_i + 1
 end
 
 platform :ios do
@@ -64,7 +67,7 @@ platform :ios do
       configuration:    "Release",
       export_method:    "app-store",
       export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
-      xcargs:           version_xcargs(next_build_for("IOS")),
+      xcargs:           version_xcargs(next_build_for("ios")),
       output_directory: "build",
       output_name:      "Bud-iOS.ipa",
       clean:            true
@@ -95,7 +98,7 @@ platform :mac do
       configuration:    "Release",
       export_method:    "app-store",
       export_options:   { signingStyle: "automatic", teamID: TEAM_ID },
-      xcargs:           version_xcargs(next_build_for("MAC_OS")),
+      xcargs:           version_xcargs(next_build_for("osx")),
       output_directory: "build",
       clean:            true
     )
