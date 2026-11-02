@@ -201,16 +201,20 @@ struct TopBar: View {
                     .foregroundStyle(Theme.text3)
                 Text("Go anywhere")
                     .foregroundStyle(Theme.text3)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
+                #if os(macOS)
                 Keycap("⌘K")
+                #endif
             }
             .textRole(.label)
             .padding(.leading, 10)
             .padding(.trailing, 5)
             .padding(.vertical, 5)
             #if os(iOS)
-            // On an iPad the field gives way before the pill's label does.
-            .frame(minWidth: 110, maxWidth: 180)
+            // On an iPad the field gives way before the pill's label does, down to the width that
+            // keeps its placeholder on one line; the keycap is the Mac's, where ⌘K is the way in.
+            .frame(minWidth: 124, maxWidth: 180)
             #else
             .frame(width: 180)
             #endif
