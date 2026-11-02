@@ -77,6 +77,7 @@ fn paired(interval: Option<Duration>) -> (Peer, Peer) {
 fn a_ticket_is_a_short_string_that_round_trips() {
     let ticket = Ticket {
         node: [10; 32],
+        id: [4; 16],
         relay: Relay::Custom("https://relay.example.org/".to_string()),
         key: [7; 32],
         addrs: vec![],
@@ -100,6 +101,7 @@ fn a_ticket_is_a_short_string_that_round_trips() {
 fn a_damaged_ticket_is_refused() {
     let ticket = Ticket {
         node: [11; 32],
+        id: [5; 16],
         relay: Relay::Off,
         key: [1; 32],
         addrs: vec![],
@@ -115,6 +117,7 @@ fn a_damaged_ticket_is_refused() {
 fn a_ticket_is_the_content_of_a_qr_code() {
     let ticket = Ticket {
         node: [12; 32],
+        id: [6; 16],
         relay: Relay::Default,
         key: [9; 32],
         addrs: vec![],
@@ -310,6 +313,110 @@ fn unknown_keys_arrive_in_the_senders_order() {
     eventually("the key edit reaches a", || {
         a.read(name) == Some(edited.clone())
     });
+}
+
+#[test]
+fn a_removed_peer_cannot_sync_even_with_the_key() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 1);
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(a.node.peers().unwrap().is_empty());
+    // b still holds the vault key and still lists a, but a turns it away.
+    let edited = format!("{}A scarf.\n", a.read("Gift ideas.md").unwrap());
+    a.write("Gift ideas.md", &edited);
+    a.node.sync_now().unwrap();
+    assert!(b.node.sync_now().is_err());
+    assert_ne!(b.read("Gift ideas.md"), Some(edited));
+    assert!(a.node.peers().unwrap().is_empty(), "not learned again");
+}
+
+#[test]
+fn a_removed_peer_is_paired_again_with_a_fresh_ticket() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.forget_peer(&a.node.id()).unwrap();
+    b.node.accept_ticket(&ticket).unwrap();
+    // The maker still refuses a node it removed; only the maker can lift that.
+    assert!(b.node.sync_now().is_err());
+    a.node.allow_peer(&b.node.id()).unwrap();
+    b.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 1);
+}
+
+#[test]
+fn rotating_the_key_moves_the_remaining_peers_and_turns_the_old_key_away() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    let old = a.node.ticket().unwrap().key;
+    // A ticket made before the rotation.
+    let stale = a.node.ticket_with_addresses().unwrap().encode();
+    a.node.forget_peer(&c.node.id()).unwrap();
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 1);
+    let new = a.node.ticket().unwrap().key;
+    assert_ne!(new, old);
+    assert_eq!(b.node.ticket().unwrap().key, new, "b got the new key");
+    assert_eq!(c.node.ticket().unwrap().key, old, "c did not");
+    // b keeps syncing.
+    let edited = format!("{}Candles.\n", a.read("Gift ideas.md").unwrap());
+    a.write("Gift ideas.md", &edited);
+    a.node.sync_now().unwrap();
+    b.node.sync_now().unwrap();
+    eventually("the edit reaches b", || {
+        b.read("Gift ideas.md") == Some(edited.clone())
+    });
+    assert!(c.node.sync_now().is_err(), "the old key is turned away");
+    // A ticket of before the rotation does not pair a new vault.
+    let d = Peer::new(None, None);
+    d.node.accept_ticket(&stale).unwrap();
+    assert!(d.node.sync_now().is_err());
+    assert_eq!(d.read("Gift ideas.md"), None);
+}
+
+#[test]
+fn a_ticket_redeemed_twice_is_refused_the_second_time() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
+    c.node.accept_ticket(&ticket).unwrap();
+    b.node.sync_now().unwrap();
+    assert!(c.node.sync_now().is_err());
+    assert_eq!(c.read("Gift ideas.md"), None);
+    let ids: Vec<String> = a.node.peers().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![b.node.id()]);
+    // Each ticket the maker issues is its own.
+    let other = a.node.ticket_with_addresses().unwrap().encode();
+    assert_ne!(other, ticket);
+    c.node.forget_peer(&a.node.id()).unwrap();
+    c.node.accept_ticket(&other).unwrap();
+    c.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 2);
+}
+
+#[test]
+fn a_ticket_that_was_never_issued_pairs_nothing() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let mut ticket = a.node.ticket_with_addresses().unwrap();
+    ticket.id = [9; 16];
+    b.node.accept_ticket(&ticket.encode()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    assert!(a.node.peers().unwrap().is_empty());
 }
 
 /// A stranger that dials the node and says nothing it can open is dropped, and the node goes on.
