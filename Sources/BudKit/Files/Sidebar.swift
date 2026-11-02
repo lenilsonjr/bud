@@ -43,9 +43,11 @@ struct Sidebar: View {
         }
     }
 
-    /// Opens every ancestor of the selection so its row is on screen, then scrolls to it.
+    /// Opens every ancestor of the selection so its row is on screen, opens the selection one
+    /// level when it has children, then scrolls to it.
     private func reveal(_ id: UUID, proxy: ScrollViewProxy) {
         expanded.formUnion(store.tree.ancestors(of: id))
+        if store.tree.hasChildren(id) { expanded.insert(id) }
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
     }
 
