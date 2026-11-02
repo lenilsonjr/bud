@@ -58,6 +58,9 @@ public struct OrbitCanvas: View {
             })
             #endif
         }
+        // The canvas colour runs under the side and bottom safe areas, so a phone held sideways
+        // shows no window-coloured strips around it.
+        .background(Theme.canvas.ignoresSafeArea(edges: [.horizontal, .bottom]))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
