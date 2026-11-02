@@ -85,7 +85,9 @@ def prepare_signing(platform)
   # Style and identity are NOT set here — they go on the command line (version_xcargs), which is the
   # only place that outranks XcodeGen's target-level iOS preset (CODE_SIGN_IDENTITY = iPhone Developer)
   # AND reaches the resource bundle, so every target signs uniformly with the distribution identity.
-  File.open("Config/BundleIdSecrets.xcconfig", "a") do |f|
+  # Lanes run with the fastlane/ folder as cwd, so the project root is one level up.
+  xcconfig = File.expand_path("../Config/BundleIdSecrets.xcconfig", FastlaneCore::FastlaneFolder.path)
+  File.open(xcconfig, "a") do |f|
     f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = #{PROFILE_NAMES[:ios]}"
     f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*] = #{PROFILE_NAMES[:mac]}"
     f.puts "PROVISIONING_PROFILE_SPECIFIER[sdk=appletvos*] = #{PROFILE_NAMES[:tvos]}"
