@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build bud-ffi for Apple platforms and assemble what the Swift side links (ADR-003 §5):
+# Build bud-ffi for Apple platforms (macOS, iOS, tvOS) and assemble what the Swift side links (ADR-003 §5):
 #   build/BudCoreFFI.xcframework   the static library, headers and modulemap
 #   build/BudCore/BudCore.swift    the generated Swift bindings
 # Needs macOS with Xcode's command line tools and rustup. Safe to run again: it rebuilds
@@ -17,6 +17,12 @@ targets=(
   aarch64-apple-ios
   aarch64-apple-ios-sim
 )
+# tvOS is a tier 3 target: rustup ships no standard library for it, so these slices are built
+# with the nightly toolchain and -Zbuild-std from its rust-src component.
+tv_targets=(
+  aarch64-apple-tvos
+  aarch64-apple-tvos-sim
+)
 
 installed="$(rustup target list --installed)"
 for target in "${targets[@]}"; do
@@ -24,9 +30,16 @@ for target in "${targets[@]}"; do
     rustup target add "$target"
   fi
 done
+if ! rustup toolchain list | grep -q '^nightly'; then
+  rustup toolchain install nightly --profile minimal
+fi
+rustup component add rust-src --toolchain nightly
 
 for target in "${targets[@]}"; do
   cargo build -p bud-ffi --"$profile" --target "$target"
+done
+for target in "${tv_targets[@]}"; do
+  cargo +nightly build -p bud-ffi --"$profile" --target "$target" -Zbuild-std=std,panic_abort
 done
 
 out="$root/build"
@@ -53,6 +66,8 @@ xcodebuild -create-xcframework \
   -library "$out/stage/macos/$lib.a" -headers "$out/stage/headers" \
   -library "target/aarch64-apple-ios/$profile/$lib.a" -headers "$out/stage/headers" \
   -library "target/aarch64-apple-ios-sim/$profile/$lib.a" -headers "$out/stage/headers" \
+  -library "target/aarch64-apple-tvos/$profile/$lib.a" -headers "$out/stage/headers" \
+  -library "target/aarch64-apple-tvos-sim/$profile/$lib.a" -headers "$out/stage/headers" \
   -output "$out/BudCoreFFI.xcframework"
 
 rm -rf "$out/stage"
