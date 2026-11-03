@@ -21,7 +21,7 @@ struct TVDevicesTab: View {
                         .textStyle(Self.title)
                         .foregroundStyle(Theme.text)
                     HStack(spacing: 12) {
-                        Circle().fill(Theme.leaf).frame(width: 12, height: 12)
+                        Circle().fill(connected ? Theme.leaf : Theme.text3).frame(width: 12, height: 12)
                         Text(TVDevicesText.status(devices.syncState))
                             .textStyle(Self.status)
                             .foregroundStyle(Theme.text2)
@@ -51,14 +51,19 @@ struct TVDevicesTab: View {
                     .foregroundStyle(Theme.text3)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .focusSection()
             TVPairColumn(devices: devices, lit: focused == "join", onJoin: onJoin)
                 .focused($focused, equals: "join")
+                .focusSection()
         }
         .padding(.top, 30)
         .padding(.horizontal, 160)
         .padding(.bottom, 90)
         .task { await devices.refresh() }
     }
+
+    /// The dot is leaf green only while some other device is on the line.
+    private var connected: Bool { (devices.syncState?.connectedPeers ?? 0) > 0 }
 }
 
 /// One device as the TV draws it: a 112 pt raised row with the reach mark in a lit square, the
@@ -109,8 +114,7 @@ struct TVDeviceRow: View {
             .overlay(shape.stroke(lit ? Theme.amethyst : Theme.line, lineWidth: lit ? 2 : 1))
             .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .buttonStyle(.tvBare)
         .animation(.easeOut(duration: 0.2), value: lit)
     }
 
@@ -201,8 +205,7 @@ struct TVPairColumn: View {
             .overlay(shape.stroke(lit ? Theme.amethyst : Theme.line, lineWidth: lit ? 2 : 1))
             .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .buttonStyle(.tvBare)
         .animation(.easeOut(duration: 0.2), value: lit)
     }
 }

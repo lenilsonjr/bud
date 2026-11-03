@@ -143,8 +143,7 @@ struct TVJoinModal: View {
             .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
             .opacity(enabled ? 1 : 0.4)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .buttonStyle(.tvBare)
         .disabled(!enabled)
         .animation(.easeOut(duration: 0.2), value: lit)
     }

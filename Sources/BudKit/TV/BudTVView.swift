@@ -99,8 +99,7 @@ struct TVShell: View {
                         .background(lit || tab == item ? Theme.amethystSoft : .clear, in: shape)
                         .overlay(shape.stroke(lit ? Theme.amethyst : .clear, lineWidth: 2))
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+                .buttonStyle(.tvBare)
                 .focused($focusedTab, equals: item)
             }
         }
@@ -164,8 +163,7 @@ struct TVCanvas: View {
                         } label: {
                             TVCardFace(id: id, store: store, lit: focused == id)
                         }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
+                        .buttonStyle(.tvBare)
                         .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { open(id) })
                         .focused($focused, equals: id)
                         .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
