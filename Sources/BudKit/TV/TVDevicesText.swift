@@ -30,9 +30,27 @@ public enum TVDevicesText {
         "On your iPhone: Settings › Devices › Add a device, scan this code, and check that the words match."
     public static let typeInstead = "Type a ticket instead"
 
-    /// "amber · cedar · harbor · lantern": the four words as one line.
+    /// "amber · cedar · harbor · lantern · otter · quartz": the six words as one line.
     public static func wordsLine(_ words: [String]) -> String {
         words.joined(separator: " · ")
+    }
+
+    /// The confirm state of the request column: a device brought the key; the person checks the
+    /// words against it and presses Select to keep the key, or Menu to refuse it.
+    public static let offerTitle = "Let this device in?"
+    public static let offerNote = "Check that the words match the ones on it. Select keeps the key; Menu refuses it."
+    public static let keepKey = "Keep the key"
+
+    /// "iPhone · Ada’s iPhone", or the kind alone, or "A device" when it said nothing.
+    public static func offerLine(_ offer: JoinOffer) -> String {
+        let kind = offer.kind.map(DevicesText.deviceWord)
+        let name = offer.name?.trimmingCharacters(in: .whitespaces) ?? ""
+        switch (kind, name.isEmpty) {
+        case let (kind?, false): return "\(kind) · \(name)"
+        case let (kind?, true): return kind
+        case (nil, false): return name
+        case (nil, true): return "A device"
+        }
     }
 
     /// "Works once · new code in 9:58"; the store makes a new request when this one runs out.

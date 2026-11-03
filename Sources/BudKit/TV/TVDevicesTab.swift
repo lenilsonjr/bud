@@ -77,21 +77,64 @@ struct TVDeviceRow: View {
 }
 
 /// ADD THIS APPLE TV TO A VAULT (G19), shown while the TV has no other device: the 280 pt QR
-/// tile with the join request on show, the four words under it for the person to check on the
+/// tile with the join request on show, the six words under it for the person to check on the
 /// iPhone, the instruction, the expiry that counts down, and the typed ticket as the way in
-/// without a phone.
+/// without a phone. Once a phone brings the key the column asks: who brought it, the same six
+/// words, and Select to keep the key; Menu refuses it and the code stays up.
 struct TVRequestColumn: View {
     @ObservedObject var devices: DeviceStore
     let lit: Bool
     let onType: () -> Void
 
     private static let eyebrow = TextStyle(typeface: .text, size: 20, weight: 700, tracking: 1.6, uppercase: true)
-    private static let word = TextStyle(typeface: .text, size: 30, weight: 600)
+    private static let word = TextStyle(typeface: .text, size: 28, weight: 600)
+    private static let name = TextStyle(typeface: .text, size: 30, weight: 600)
     private static let note = TextStyle(typeface: .text, size: 24, weight: 400)
     private static let expiry = TextStyle(typeface: .text, size: 20, weight: 400)
     private static let button = TextStyle(typeface: .text, size: 29, weight: 600)
 
     var body: some View {
+        if let offer = devices.offer {
+            offerState(offer)
+        } else {
+            requestState
+        }
+    }
+
+    /// The second state: a key is on offer.
+    private func offerState(_ offer: JoinOffer) -> some View {
+        VStack(spacing: 28) {
+            Text(TVDevicesText.offerTitle)
+                .textStyle(Self.eyebrow)
+                .foregroundStyle(Theme.leaf)
+            Image(systemName: offer.kind == .mac ? "desktopcomputer" : "iphone")
+                .font(.system(size: 96, weight: .regular))
+                .foregroundStyle(Theme.hub)
+                .frame(height: 140)
+            Text(TVDevicesText.offerLine(offer))
+                .textStyle(Self.name)
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+            words(offer.words)
+            Text(TVDevicesText.offerNote)
+                .textStyle(Self.note)
+                .foregroundStyle(Theme.text2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            TVKitButton(title: TVDevicesText.keepKey, systemImage: "checkmark", kind: .primary, lit: lit, width: 532) {
+                Task { await devices.answerJoin(keep: true) }
+            }
+        }
+        .padding(44)
+        .frame(width: 620)
+        .frame(maxHeight: .infinity)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .onExitCommand { Task { await devices.answerJoin(keep: false) } }
+        .onDisappear { devices.closeRequest() }
+    }
+
+    private var requestState: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(spacing: 28) {
                 Text(TVDevicesText.requestTitle)
@@ -127,16 +170,23 @@ struct TVRequestColumn: View {
         .onDisappear { devices.closeRequest() }
     }
 
-    /// The four words as pills in a row, read aloud across the room or checked on the phone.
+    /// The six words as pills, three to a row so none is ever cut: read aloud across the room or
+    /// checked on the phone.
     private func words(_ words: [String]) -> some View {
-        HStack(spacing: 12) {
-            ForEach(Array(words.enumerated()), id: \.offset) { _, word in
-                Text(word)
-                    .textStyle(Self.word)
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        VStack(spacing: 12) {
+            ForEach(Array(stride(from: 0, to: words.count, by: 3)), id: \.self) { start in
+                HStack(spacing: 12) {
+                    ForEach(Array(words[start..<min(start + 3, words.count)].enumerated()), id: \.offset) { _, word in
+                        Text(word)
+                            .textStyle(Self.word)
+                            .foregroundStyle(Theme.text)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
             }
         }
         .accessibilityElement(children: .ignore)

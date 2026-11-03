@@ -247,7 +247,7 @@ extension DeviceStoreTests {
         let (store, _, clock) = await make()
         await store.openRequest()
         let first = try XCTUnwrap(store.currentRequest)
-        XCTAssertEqual(first.words.count, 4)
+        XCTAssertEqual(first.words.count, 6)
         await store.refreshRequestIfExpired()
         XCTAssertEqual(store.currentRequest, first, "fresh, so kept")
         clock.advance(JoinRequest.lifetime + 1)
@@ -269,6 +269,35 @@ extension DeviceStoreTests {
         XCTAssertNil(store.currentRequest, "the request is done with")
         await peers.emitFetchProgress(received: 3, total: 7)
         await eventually { store.joinPhase == .joined(phone, received: 3, total: 7) }
+    }
+
+    func testTheOfferIsShownAndARefusalKeepsTheRequestUp() async throws {
+        let (store, peers, _) = await make()
+        await store.openRequest()
+        let request = try XCTUnwrap(store.currentRequest)
+        await peers.offerJoin(kind: .iphone, name: "Ada’s iPhone")
+        await eventually { store.offer != nil }
+        XCTAssertEqual(store.offer?.words, request.words)
+        await store.answerJoin(keep: false)
+        XCTAssertNil(store.offer)
+        XCTAssertEqual(store.currentRequest, request, "the code stays up")
+        XCTAssertEqual(store.joinPhase, .idle)
+        await peers.offerJoin()
+        await eventually { store.offer != nil }
+        await store.answerJoin(keep: true)
+        await eventually {
+            if case .joined = store.joinPhase { return true }
+            return false
+        }
+        XCTAssertNil(store.currentRequest)
+        XCTAssertNil(store.offer)
+    }
+
+    func testAnOfferWithNoRequestOpenIsNotShown() async throws {
+        let (store, peers, _) = await make()
+        await peers.offerJoin()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertNil(store.offer)
     }
 
     func testAJoinedDeviceWithNoRequestOpenOnlyRefreshes() async throws {
@@ -314,6 +343,7 @@ extension DeviceStoreTests {
         XCTAssertEqual(RequestError(message: "peer: that request is this vault's"), .expired)
         XCTAssertEqual(RequestError(message: "peer: the device did not answer"), .unreachable)
         XCTAssertEqual(RequestError(message: "peer: the device did not confirm the key"), .refused)
+        XCTAssertEqual(RequestError(message: "peer: the device refused the key"), .refused)
         XCTAssertEqual(RequestError(message: "peer: this vault is paired with another vault already"), .refused)
         XCTAssertNil(RequestError(message: "something else"))
     }
