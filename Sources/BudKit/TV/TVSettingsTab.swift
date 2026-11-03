@@ -10,6 +10,8 @@ struct TVSettingsTab: View {
     @ObservedObject var devices: DeviceStore
     @ObservedObject var flags: Flags
     let onJoin: () -> Void
+    /// The vault was erased: the shell shows the canvas, where the change is in view.
+    let onStartOver: () -> Void
     @State private var startingOver = false
     @FocusState private var focused: String?
 
@@ -87,6 +89,7 @@ struct TVSettingsTab: View {
             TVFreshStartScreen(close: { startingOver = false }, perform: { sample in
                 store.freshStart(sample: sample)
                 startingOver = false
+                onStartOver()
             })
         }
     }
