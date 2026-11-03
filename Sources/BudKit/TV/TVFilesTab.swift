@@ -2,9 +2,9 @@
 import SwiftUI
 
 /// Files on Apple TV (G16's third tab): the pages on the left, the rows of the chosen one on the
-/// right, drawn for a viewer at three metres. A click goes inside a bud with children or ticks
-/// a to-do; press and hold opens the bud menu; Menu steps out, page by page, then to the pages
-/// column, then back to Canvas.
+/// right, drawn for a viewer at three metres. A click goes inside a bud with children or reads
+/// a leaf; Play/Pause ticks the to-do in focus; press and hold opens the bud menu; Menu steps
+/// out, page by page, then to the pages column, then back to Canvas.
 struct TVFilesTab: View {
     @ObservedObject var store: BudStore
     let onLeave: () -> Void
@@ -96,8 +96,8 @@ struct TVFilesTab: View {
     private func click(_ row: TVFilesRow) {
         if row.opens {
             inside.append(row.id)
-        } else if row.isTodo {
-            store.toggle(row.id)
+        } else {
+            onOpen(row.id)
         }
     }
 
