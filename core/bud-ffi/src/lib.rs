@@ -235,8 +235,8 @@ impl From<bud_core::SyncReport> for SyncSummary {
 }
 
 /// What a device without the vault shows to be let in: the code for the device with the vault to
-/// scan, and the four words both sides show for the person to confirm.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+/// scan, and the six words both sides show for the person to confirm.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct JoinCode {
     pub code: String,
     pub words: Vec<String>,
@@ -249,6 +249,15 @@ pub enum PeerEvent {
     TicketRedeemed { by: String },
     /// A node this vault did not know is now a peer.
     PeerJoined { id: String },
+    /// A node that holds a vault brought its key to the join request this node shows: the words
+    /// of that request and what the node says it is. The key is kept only once `answer_join`
+    /// says so.
+    JoinOffered {
+        id: String,
+        kind: Option<String>,
+        name: Option<String>,
+        words: Vec<String>,
+    },
     /// One peer's part of a key rotation: `confirmed` when it took the new key in the hand over,
     /// else `holds_key` says what a probe found.
     KeyRotation {
@@ -269,6 +278,17 @@ impl From<bud_core::NodeEvent> for PeerEvent {
         match event {
             NodeEvent::TicketRedeemed { by } => PeerEvent::TicketRedeemed { by },
             NodeEvent::PeerJoined { id } => PeerEvent::PeerJoined { id },
+            NodeEvent::JoinOffered {
+                id,
+                kind,
+                name,
+                words,
+            } => PeerEvent::JoinOffered {
+                id,
+                kind,
+                name,
+                words,
+            },
             NodeEvent::KeyRotation { id, outcome } => {
                 let (confirmed, holds_key) = match outcome {
                     RotationOutcome::Confirmed => (true, true),
@@ -359,7 +379,7 @@ impl PeerNode {
 
     /// Show a join request, for a device that holds the vault to scan: it replaces the one shown
     /// before, lasts as long as a ticket, and is good once. The words are the request's
-    /// fingerprint; the device that scans it shows the same four.
+    /// fingerprint; the device that scans it shows the same six.
     pub fn join_request(&self) -> Result<JoinCode> {
         self.with(|node| {
             let request = node.join_request()?;
@@ -375,7 +395,7 @@ impl PeerNode {
         self.with(|_| Ok(Self::rows(bud_core::JoinRequest::parse(&code)?.qr()?)))
     }
 
-    /// Read a request another device shows: its four words, for the person to confirm against
+    /// Read a request another device shows: its six words, for the person to confirm against
     /// the device's. Nothing moves until `confirm_request`. A request of this vault's own, or one
     /// past its lifetime, is refused.
     pub fn read_request(&self, code: String) -> Result<Vec<String>> {
@@ -389,6 +409,13 @@ impl PeerNode {
             let request = node.read_request(&code)?;
             Ok(node.confirm_request(&request)?.into())
         })
+    }
+
+    /// The person answered the key on offer, told by `JoinOffered`: `keep` takes it and makes
+    /// the device that brought it a peer; otherwise it is turned away and the request stays on
+    /// show.
+    pub fn answer_join(&self, keep: bool) -> Result<()> {
+        self.with(|node| node.answer_join(keep))
     }
 
     pub fn peers(&self) -> Result<Vec<PeerRecord>> {

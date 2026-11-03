@@ -56,7 +56,7 @@ const MDNS_SERVICE: &str = "bud";
 const TICKET_PREFIX: &str = "bud1";
 /// A join request as text starts with this.
 const REQUEST_PREFIX: &str = "budr1";
-/// What the four words of a request are derived under.
+/// What the six words of a request are derived under.
 const WORDS_CONTEXT: &[u8] = b"bud/join/1";
 /// Bound to the data a message is sealed with, so a sealed message of another use never opens.
 const SEAL_CONTEXT: &[u8] = b"bud/sync/1";
@@ -69,6 +69,9 @@ const CHUNK: usize = 64 * 1024;
 /// How many sessions a node answers at once.
 const MAX_SESSIONS: usize = 16;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long the person at a device that showed a join request has to keep or refuse the key a
+/// phone brought; the phone waits a session for the answer.
+const CONFIRM_TIMEOUT: Duration = Duration::from_secs(45);
 const DEFAULT_INTERVAL: Duration = Duration::from_secs(5);
 
 /// How long an issued ticket can be redeemed.
@@ -139,7 +142,7 @@ pub struct Ticket {
 /// with no camera: its node id, where it listens, and a secret the session that brings the key is
 /// sealed with. Four words derived from it are shown on both sides, so the person confirms the
 /// phone scanned this device's code before any key moves.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinRequest {
     pub node: [u8; 32],
     pub secret: [u8; 32],
@@ -147,6 +150,18 @@ pub struct JoinRequest {
     pub issued: i64,
     pub relay: Relay,
     pub addrs: Vec<SocketAddr>,
+}
+
+impl std::fmt::Debug for JoinRequest {
+    /// Everything but the secret, which is not for a log.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JoinRequest")
+            .field("node", &self.id())
+            .field("issued", &self.issued)
+            .field("relay", &self.relay)
+            .field("addrs", &self.addrs)
+            .finish_non_exhaustive()
+    }
 }
 
 impl JoinRequest {
@@ -187,21 +202,39 @@ impl JoinRequest {
         HEXLOWER.encode(&self.node)
     }
 
-    /// The four words both sides show: a fingerprint of the node and the secret, so they match
-    /// only when the phone scanned this device's code.
-    pub fn words(&self) -> [String; 4] {
+    /// The six words both sides show: a fingerprint of the whole request, so they match only
+    /// when the phone scanned this device's code as this device made it. No word repeats in a
+    /// set, since a repeat reads like a mistake to the person comparing.
+    pub fn words(&self) -> [String; 6] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(WORDS_CONTEXT);
         hasher.update(&self.node);
         hasher.update(&self.secret);
-        let hash = hasher.finalize();
-        let bytes = hash.as_bytes();
-        std::array::from_fn(|i| WORDS[bytes[i] as usize].to_string())
+        hasher.update(&self.issued.to_le_bytes());
+        hasher.update(self.relay.to_text().as_bytes());
+        for addr in &self.addrs {
+            hasher.update(addr.to_string().as_bytes());
+        }
+        let mut reader = hasher.finalize_xof();
+        let mut chosen: Vec<usize> = Vec::with_capacity(6);
+        while chosen.len() < 6 {
+            let mut bytes = [0u8; 32];
+            reader.fill(&mut bytes);
+            for byte in bytes {
+                let index = byte as usize;
+                if chosen.len() < 6 && !chosen.contains(&index) {
+                    chosen.push(index);
+                }
+            }
+        }
+        std::array::from_fn(|i| WORDS[chosen[i]].to_string())
     }
 
-    /// Whether the request is past its lifetime at `now` milliseconds.
+    /// Whether the request is past its lifetime at `now` milliseconds. One that claims to be made
+    /// more than a lifetime ahead of now did not come from a clock, and is past too.
     pub fn is_expired(&self, lifetime: Duration, now: i64) -> bool {
-        now - self.issued >= lifetime.as_millis() as i64
+        let lifetime = i64::try_from(lifetime.as_millis()).unwrap_or(i64::MAX);
+        now.saturating_sub(self.issued) >= lifetime || self.issued.saturating_sub(now) > lifetime
     }
 }
 
@@ -243,6 +276,15 @@ pub enum NodeEvent {
     TicketRedeemed { by: String },
     /// A node this vault did not know is now a peer.
     PeerJoined { id: String },
+    /// A node that holds a vault brought its key to the join request this node shows: the words
+    /// of that request and what the node says it is. The key is kept only once
+    /// [`Node::answer_join`] says so.
+    JoinOffered {
+        id: String,
+        kind: Option<String>,
+        name: Option<String>,
+        words: Vec<String>,
+    },
     /// One peer's part of a key rotation, as it happens.
     KeyRotation {
         id: String,
@@ -707,11 +749,14 @@ enum Message {
     Final(Updates),
     Done,
     /// The dialer, which holds the vault, brings its key to a node that showed a join request,
-    /// sealed with the request's secret; the answerer confirms with `Done`.
+    /// sealed with the request's secret; the answerer confirms with `Done` once the person at it
+    /// kept the key, or answers `Refused`.
     Join {
         key: [u8; 32],
         relay: Relay,
     },
+    /// The person at the answerer refused the key a `Join` brought.
+    Refused,
 }
 
 /// The end of a session that speaks: the one that dialed, or the one that answered.
@@ -929,6 +974,8 @@ struct Shared {
     listeners: Mutex<Vec<Box<dyn NodeListener>>>,
     /// The join request this node shows, until it is used or replaced.
     request: Mutex<Option<JoinRequest>>,
+    /// Where the answer to the key on offer goes, while a session waits for it.
+    offer: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
 }
 
 /// Counts a running session for as long as it lives.
@@ -965,12 +1012,23 @@ impl Shared {
         lock(&self.connected).remove(id);
     }
 
-    /// The request this node shows, while it lasts.
-    fn pending_request(&self) -> Option<JoinRequest> {
+    /// Open a first frame with the secret of the request this node shows, while the request
+    /// lasts. A frame that opens takes the request with it, under the lock, so it is good once
+    /// whatever two callers do at the same time.
+    fn take_join(&self, sealed: &[u8]) -> Option<(JoinRequest, [u8; 32], Relay, Aside)> {
         let lifetime = self.ticket_lifetime();
-        lock(&self.request)
-            .clone()
+        let mut slot = lock(&self.request);
+        let opened = slot
+            .as_ref()
             .filter(|request| !request.is_expired(lifetime, now_millis()))
+            .and_then(
+                |request| match open_frame(&request.secret, Side::Dialer, sealed) {
+                    Ok((Message::Join { key, relay }, aside)) => Some((key, relay, aside)),
+                    _ => None,
+                },
+            );
+        let (key, relay, aside) = opened?;
+        slot.take().map(|request| (request, key, relay, aside))
     }
 
     /// The addresses this node listens on, loopback included, for a peer that cannot look it up.
@@ -1013,7 +1071,7 @@ impl Shared {
             .await
             .map_err(peer_error)?;
         let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-        send_message(
+        send_with_aside(
             &mut send,
             &request.secret,
             Side::Dialer,
@@ -1021,13 +1079,14 @@ impl Shared {
                 key,
                 relay: self.relay.clone(),
             },
+            &Aside::new(&self.identity, None),
         )
         .await?;
-        let Message::Done =
-            read_message(&mut recv, &request.secret, Side::Answerer, MAX_FRAME).await?
-        else {
-            return Err(peer_error("the device did not confirm the key"));
-        };
+        match read_message(&mut recv, &request.secret, Side::Answerer, MAX_FRAME).await {
+            Ok(Message::Done) => {}
+            Ok(Message::Refused) => return Err(peer_error("the device refused the key")),
+            _ => return Err(peer_error("the device did not confirm the key")),
+        }
         send.finish().map_err(peer_error)?;
         connection.close(0u32.into(), b"done");
         Ok(())
@@ -1246,24 +1305,53 @@ impl Shared {
             Err(err) => {
                 // A node without the vault key may be bringing it: the frame opens with the
                 // secret of the request this node shows, while the request lasts, and only then.
-                let brought = self.pending_request().and_then(|request| {
-                    match open_frame(&request.secret, Side::Dialer, &sealed) {
-                        Ok((Message::Join { key, relay }, _)) => Some((request, key, relay)),
-                        _ => None,
-                    }
-                });
-                let Some((request, given, relay)) = brought else {
+                let Some((request, given, relay, aside)) = self.take_join(&sealed) else {
                     connection.close(1u32.into(), b"not paired");
                     return Err(err);
                 };
+                // The key is kept only when the person at this device says so, told who brought
+                // it; until then, and when they refuse, the request is still on show.
+                let identity = aside.identity();
+                let (answer, asked) = tokio::sync::oneshot::channel();
+                *lock(&self.offer) = Some(answer);
+                self.emit(NodeEvent::JoinOffered {
+                    id: remote_text.clone(),
+                    kind: identity.kind.clone(),
+                    name: identity.name.clone(),
+                    words: request.words().to_vec(),
+                });
+                let kept = matches!(
+                    tokio::time::timeout(CONFIRM_TIMEOUT, asked).await,
+                    Ok(Ok(true))
+                );
+                *lock(&self.offer) = None;
+                if !kept {
+                    {
+                        let mut slot = lock(&self.request);
+                        if slot.is_none() {
+                            *slot = Some(request.clone());
+                        }
+                    }
+                    send_message(
+                        &mut send,
+                        &request.secret,
+                        Side::Answerer,
+                        &Message::Refused,
+                    )
+                    .await?;
+                    send.finish().map_err(peer_error)?;
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
+                    return Err(peer_error("the key was refused here"));
+                }
                 {
-                    // A vault paired already keeps its key; the request is good once.
+                    // A vault paired already keeps its key.
                     let vault = self.vault();
                     vault.adopt_key(&given)?;
                     vault.remember_peer(&remote_text, &relay, &[])?;
                     vault.allow(&remote_text)?;
+                    vault.note_identity(&remote_text, &identity)?;
                 }
-                *lock(&self.request) = None;
                 send_message(&mut send, &request.secret, Side::Answerer, &Message::Done).await?;
                 send.finish().map_err(peer_error)?;
                 // Connected, but not seen in a session yet: the first sync is the first fetch.
@@ -1404,6 +1492,7 @@ impl Node {
             identity: options.identity,
             listeners: Mutex::new(Vec::new()),
             request: Mutex::new(None),
+            offer: Mutex::new(None),
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
@@ -1483,7 +1572,7 @@ impl Node {
         Ok(ticket)
     }
 
-    /// Show a join request: a code for a device that holds the vault to scan, and four words.
+    /// Show a join request: a code for a device that holds the vault to scan, and six words.
     /// It replaces the one shown before, lasts as long as a ticket, and is good once.
     pub fn join_request(&self) -> Result<JoinRequest> {
         let mut secret = [0u8; 32];
@@ -1499,7 +1588,7 @@ impl Node {
         Ok(request)
     }
 
-    /// Read a join request another device shows, to put its four words to the person. Nothing
+    /// Read a join request another device shows, to put its six words to the person. Nothing
     /// moves until [`Node::confirm_request`]. A request of this node's own, or one past its
     /// lifetime, is refused here.
     pub fn read_request(&self, text: &str) -> Result<JoinRequest> {
@@ -1519,7 +1608,7 @@ impl Node {
         Ok(request)
     }
 
-    /// The person confirmed the four words: bring this vault's key to the device that showed the
+    /// The person confirmed the six words: bring this vault's key to the device that showed the
     /// request and remember it as a peer. Do not call it from inside an async runtime.
     pub fn confirm_request(&self, request: &JoinRequest) -> Result<PeerInfo> {
         let request = self.read_request(&request.encode())?;
@@ -1553,6 +1642,18 @@ impl Node {
             id: peer.id.clone(),
         });
         Ok(peer)
+    }
+
+    /// The person at this device answered the key on offer, told by [`NodeEvent::JoinOffered`]:
+    /// `keep` takes it and makes the node that brought it a peer; otherwise it is turned away and
+    /// the request stays on show. Nothing is on offer after the session that brought it ends.
+    pub fn answer_join(&self, keep: bool) -> Result<()> {
+        let answer = lock(&self.shared.offer)
+            .take()
+            .ok_or_else(|| Error::Invalid("peer: no key is on offer".to_string()))?;
+        answer
+            .send(keep)
+            .map_err(|_| Error::Invalid("peer: the offer is over".to_string()))
     }
 
     /// Accept a ticket from another vault: remember its peer and take its vault key. A peer is
