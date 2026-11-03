@@ -914,15 +914,31 @@ fn a_key_under_the_wrong_secret_is_turned_away_and_a_request_is_good_once() {
         .unwrap();
     c.node.sync_now().unwrap();
     assert_eq!(c.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
+    // Turned away at once: nothing is put to the person at the TV, and it is not a refusal.
+    let heard = Recorder::listening(&t.node);
+    let started = Instant::now();
+    let used = c.node.confirm_request(&shown).unwrap_err().to_string();
+    assert!(started.elapsed() < Duration::from_secs(20), "{used}");
+    assert!(!used.contains("refused"), "{used}");
     assert!(
-        c.node.confirm_request(&shown).is_err(),
-        "the request was used"
+        !heard
+            .events()
+            .iter()
+            .any(|event| matches!(event, NodeEvent::JoinOffered { .. })),
+        "the used request offered nothing"
     );
     assert_eq!(t.node.peers().unwrap().len(), 1);
-    // A TV that is paired already keeps its key, whatever request it shows.
+    // A TV that is paired already keeps its key, whatever request it shows, and puts nothing to
+    // the person.
     let b = Peer::new(Some(&fixture()), None);
     let again = t.node.join_request().unwrap();
-    assert!(confirm_with_tv(&b, &t, &again, true).0.is_err());
+    let started = Instant::now();
+    assert!(b.node.confirm_request(&again).is_err());
+    assert!(started.elapsed() < Duration::from_secs(20));
+    assert!(!heard
+        .events()
+        .iter()
+        .any(|event| matches!(event, NodeEvent::JoinOffered { .. })));
     assert_eq!(t.node.peers().unwrap().len(), 1);
     assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
     // A vault does not read its own request.

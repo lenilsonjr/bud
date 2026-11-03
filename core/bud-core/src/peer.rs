@@ -140,7 +140,7 @@ pub struct Ticket {
 
 /// What a device without the vault shows to be let in, as G19 turns pairing around for a device
 /// with no camera: its node id, where it listens, and a secret the session that brings the key is
-/// sealed with. Four words derived from it are shown on both sides, so the person confirms the
+/// sealed with. Six words derived from it are shown on both sides, so the person confirms the
 /// phone scanned this device's code before any key moves.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinRequest {
@@ -211,9 +211,15 @@ impl JoinRequest {
         hasher.update(&self.node);
         hasher.update(&self.secret);
         hasher.update(&self.issued.to_le_bytes());
-        hasher.update(self.relay.to_text().as_bytes());
+        // Each part of variable length goes in after its length, so no two requests hash alike.
+        let relay = self.relay.to_text();
+        hasher.update(&(relay.len() as u32).to_le_bytes());
+        hasher.update(relay.as_bytes());
+        hasher.update(&(self.addrs.len() as u32).to_le_bytes());
         for addr in &self.addrs {
-            hasher.update(addr.to_string().as_bytes());
+            let addr = addr.to_string();
+            hasher.update(&(addr.len() as u32).to_le_bytes());
+            hasher.update(addr.as_bytes());
         }
         let mut reader = hasher.finalize_xof();
         let mut chosen: Vec<usize> = Vec::with_capacity(6);
@@ -974,8 +980,9 @@ struct Shared {
     listeners: Mutex<Vec<Box<dyn NodeListener>>>,
     /// The join request this node shows, until it is used or replaced.
     request: Mutex<Option<JoinRequest>>,
-    /// Where the answer to the key on offer goes, while a session waits for it.
-    offer: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
+    /// Where the answer to the key on offer goes, while a session waits for it, under the secret
+    /// of the request the key came to, so one session never clears another's offer.
+    offer: Mutex<Option<([u8; 32], tokio::sync::oneshot::Sender<bool>)>>,
 }
 
 /// Counts a running session for as long as it lives.
@@ -1309,11 +1316,32 @@ impl Shared {
                     connection.close(1u32.into(), b"not paired");
                     return Err(err);
                 };
+                // A vault paired with another vault already keeps its key: refused at once, with
+                // nothing put to the person.
+                let paired_elsewhere = {
+                    let vault = self.vault();
+                    vault.peer_key()? != given && !vault.peer_list()?.is_empty()
+                };
+                if paired_elsewhere {
+                    send_message(
+                        &mut send,
+                        &request.secret,
+                        Side::Answerer,
+                        &Message::Refused,
+                    )
+                    .await?;
+                    send.finish().map_err(peer_error)?;
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
+                    return Err(peer_error(
+                        "this vault is paired with another vault already",
+                    ));
+                }
                 // The key is kept only when the person at this device says so, told who brought
                 // it; until then, and when they refuse, the request is still on show.
                 let identity = aside.identity();
                 let (answer, asked) = tokio::sync::oneshot::channel();
-                *lock(&self.offer) = Some(answer);
+                *lock(&self.offer) = Some((request.secret, answer));
                 self.emit(NodeEvent::JoinOffered {
                     id: remote_text.clone(),
                     kind: identity.kind.clone(),
@@ -1324,7 +1352,15 @@ impl Shared {
                     tokio::time::timeout(CONFIRM_TIMEOUT, asked).await,
                     Ok(Ok(true))
                 );
-                *lock(&self.offer) = None;
+                {
+                    let mut offer = lock(&self.offer);
+                    if offer
+                        .as_ref()
+                        .is_some_and(|(tag, _)| *tag == request.secret)
+                    {
+                        *offer = None;
+                    }
+                }
                 if !kept {
                     {
                         let mut slot = lock(&self.request);
@@ -1344,16 +1380,16 @@ impl Shared {
                         tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
                     return Err(peer_error("the key was refused here"));
                 }
+                // The phone hears Done first: a key kept after the phone has gone is not kept.
+                send_message(&mut send, &request.secret, Side::Answerer, &Message::Done).await?;
+                send.finish().map_err(peer_error)?;
                 {
-                    // A vault paired already keeps its key.
                     let vault = self.vault();
                     vault.adopt_key(&given)?;
                     vault.remember_peer(&remote_text, &relay, &[])?;
                     vault.allow(&remote_text)?;
                     vault.note_identity(&remote_text, &identity)?;
                 }
-                send_message(&mut send, &request.secret, Side::Answerer, &Message::Done).await?;
-                send.finish().map_err(peer_error)?;
                 // Connected, but not seen in a session yet: the first sync is the first fetch.
                 lock(&self.connected).insert(remote_text.clone());
                 self.emit(NodeEvent::PeerJoined {
@@ -1648,7 +1684,7 @@ impl Node {
     /// `keep` takes it and makes the node that brought it a peer; otherwise it is turned away and
     /// the request stays on show. Nothing is on offer after the session that brought it ends.
     pub fn answer_join(&self, keep: bool) -> Result<()> {
-        let answer = lock(&self.shared.offer)
+        let (_, answer) = lock(&self.shared.offer)
             .take()
             .ok_or_else(|| Error::Invalid("peer: no key is on offer".to_string()))?;
         answer

@@ -1,5 +1,5 @@
-//! The words a join request's fingerprint is spoken in: 256 plain English nouns, so six of them
-//! carry 32 bits and read aloud across a room without a letter being mistaken for another.
+//! The words a join request's fingerprint is spoken in: 256 plain English nouns, so six distinct
+//! ones carry almost 48 bits and read aloud across a room without a letter being mistaken for another.
 
 pub(crate) const WORDS: [&str; 256] = [
     "acorn", "amber", "anchor", "apple", "arrow", "aspen", "atlas", "autumn", "badge", "baker",
