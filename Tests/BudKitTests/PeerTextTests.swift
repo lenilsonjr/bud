@@ -83,4 +83,15 @@ final class PeerTextTests: XCTestCase {
         let ticket = Ticket(text: "bud1", qr: [[true]], madeAt: now)
         XCTAssertEqual(ticket.expiresAt, now.addingTimeInterval(600))
     }
+
+
+    func testWhatLooksLikeAJoinRequest() {
+        let code = PeerText.requestPrefix + String(repeating: "k7f3c8z1q5", count: 17)
+        XCTAssertTrue(PeerText.looksLikeRequest(code))
+        XCTAssertTrue(PeerText.looksLikeRequest(code.uppercased()))
+        XCTAssertTrue(PeerText.looksLikeRequest(PeerText.grouped(code)), "spaces do not matter")
+        XCTAssertFalse(PeerText.looksLikeRequest("bud1" + String(repeating: "k7f3c8z1q5", count: 13)), "a ticket")
+        XCTAssertFalse(PeerText.looksLikeRequest(PeerText.requestPrefix + "short"))
+        XCTAssertFalse(PeerText.looksLikeRequest(code + "!"))
+    }
 }

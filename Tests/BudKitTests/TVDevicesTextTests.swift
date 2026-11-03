@@ -25,4 +25,15 @@ final class TVDevicesTextTests: XCTestCase {
         XCTAssertTrue(TVDevicesText.fetchIsDone(received: 1380, total: 1380))
         XCTAssertFalse(TVDevicesText.fetchIsDone(received: 900, total: nil), "No total means the first sync's end decides")
     }
+
+
+    func testTheRequestColumnLines() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(TVDevicesText.requestExpiry(nil, now: now), "Making a code…")
+        let request = JoinRequest(code: "budr1", qr: [], words: ["amber", "cedar", "harbor", "lantern"], madeAt: now)
+        XCTAssertEqual(TVDevicesText.requestExpiry(request, now: now.addingTimeInterval(2)), "Works once · new code in 9:58")
+        XCTAssertEqual(TVDevicesText.wordsLine(request.words), "amber · cedar · harbor · lantern")
+        XCTAssertEqual(TVDevicesText.typeInstead, "Type a ticket instead")
+        XCTAssertTrue(TVDevicesText.requestNote.contains("words match"))
+    }
 }

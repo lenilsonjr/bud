@@ -200,4 +200,65 @@ final class MemoryPeersTests: XCTestCase {
             XCTAssertEqual(error as? AcceptError, expected, line: line)
         }
     }
+
+
+    func testAJoinRequestCarriesACodeAQrFourWordsAndALifetime() async throws {
+        let (peers, clock) = make()
+        let request = try await peers.joinRequest()
+        XCTAssertTrue(PeerText.looksLikeRequest(request.code))
+        XCTAssertEqual(request.qr.count, 29)
+        XCTAssertEqual(request.words.count, 4)
+        XCTAssertEqual(request.madeAt, clock.now)
+        XCTAssertEqual(request.expiresAt, clock.now.addingTimeInterval(JoinRequest.lifetime))
+        let next = try await peers.joinRequest()
+        XCTAssertNotEqual(next.code, request.code)
+    }
+
+    func testReadingARequestGivesItsWordsAndConfirmingAddsTheDeviceAndTellsIt() async throws {
+        let (peers, _) = make()
+        let events = try await peers.events()
+        let request = try await peers.joinRequest()
+        let words = try await peers.readRequest(request.code.uppercased())
+        XCTAssertEqual(words, request.words, "the same four words on both sides")
+        let before = try await peers.devices().count
+        let device = try await peers.confirmRequest(request.code)
+        XCTAssertEqual(device.kind, .tv)
+        let after = try await peers.devices()
+        XCTAssertEqual(after.count, before + 1)
+        XCTAssertEqual(after.last, device)
+        var iterator = events.makeAsyncIterator()
+        let event = await iterator.next()
+        XCTAssertEqual(event, .deviceJoined(device))
+    }
+
+    func testARequestWorksOnceAndExpiresAndAStrangeCodeIsRefused() async throws {
+        let (peers, clock) = make()
+        let request = try await peers.joinRequest()
+        _ = try await peers.confirmRequest(request.code)
+        await XCTAssertThrowsRequest(.refused) { _ = try await peers.confirmRequest(request.code) }
+        let later = try await peers.joinRequest()
+        clock.advance(JoinRequest.lifetime + 1)
+        await XCTAssertThrowsRequest(.expired) { _ = try await peers.readRequest(later.code) }
+        await XCTAssertThrowsRequest(.expired) { _ = try await peers.confirmRequest(later.code) }
+        await XCTAssertThrowsRequest(.notARequest) { _ = try await peers.readRequest("bud1 not a request") }
+        let unknown = PeerText.requestPrefix + String(repeating: "q", count: 160)
+        let elsewhere = try await peers.readRequest(unknown)
+        XCTAssertEqual(elsewhere.count, 4, "a code from elsewhere reads")
+        await XCTAssertThrowsRequest(.unreachable) { _ = try await peers.confirmRequest(unknown) }
+        await peers.setRequestFailure(.refused)
+        await XCTAssertThrowsRequest(.refused) { _ = try await peers.readRequest(unknown) }
+    }
+
+    private func XCTAssertThrowsRequest(
+        _ expected: RequestError, line: UInt = #line, _ run: () async throws -> Void
+    ) async {
+        do {
+            try await run()
+            XCTFail("nothing was thrown", line: line)
+        } catch let error as RequestError {
+            XCTAssertEqual(error, expected, line: line)
+        } catch {
+            XCTFail("another error: \(error)", line: line)
+        }
+    }
 }

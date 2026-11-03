@@ -241,4 +241,80 @@ extension DeviceStoreTests {
         await store.syncNow()
         await eventually { summaries == [summary] }
     }
+
+
+    func testTheRequestColumnGetsARequestAndRefreshesItOnExpiry() async throws {
+        let (store, _, clock) = await make()
+        await store.openRequest()
+        let first = try XCTUnwrap(store.currentRequest)
+        XCTAssertEqual(first.words.count, 4)
+        await store.refreshRequestIfExpired()
+        XCTAssertEqual(store.currentRequest, first, "fresh, so kept")
+        clock.advance(JoinRequest.lifetime + 1)
+        await store.refreshRequestIfExpired()
+        XCTAssertNotEqual(store.currentRequest, first)
+        store.closeRequest()
+        XCTAssertNil(store.currentRequest)
+        await store.refreshRequestIfExpired()
+        XCTAssertNil(store.currentRequest, "closed, so none")
+    }
+
+    func testADeviceBringingTheKeyWhileTheRequestIsOpenStartsTheFirstFetch() async throws {
+        let (store, peers, _) = await make()
+        await store.openRequest()
+        let request = try XCTUnwrap(store.currentRequest)
+        // The phone, from its side, confirms the words and brings the key.
+        let phone = try await peers.confirmRequest(request.code)
+        await eventually { store.joinPhase == .joined(phone, received: 0, total: nil) }
+        XCTAssertNil(store.currentRequest, "the request is done with")
+        await peers.emitFetchProgress(received: 3, total: 7)
+        await eventually { store.joinPhase == .joined(phone, received: 3, total: 7) }
+    }
+
+    func testAJoinedDeviceWithNoRequestOpenOnlyRefreshes() async throws {
+        let (store, peers, _) = await make()
+        let request = try await peers.joinRequest()
+        _ = try await peers.confirmRequest(request.code)
+        await eventually { store.devices.count == 6 }
+        XCTAssertEqual(store.joinPhase, .idle)
+    }
+
+    func testThePhoneReadsTheWordsThenConfirmsAndTheDeviceIsListed() async throws {
+        let (store, peers, _) = await make()
+        let request = try await peers.joinRequest()
+        await store.readRequest(request.code)
+        XCTAssertEqual(store.requestPhase, .words(request.words, code: request.code))
+        await store.confirmRequest()
+        guard case let .confirmed(device) = store.requestPhase else { return XCTFail("\(store.requestPhase)") }
+        XCTAssertTrue(store.devices.contains(device))
+        store.resetRequest()
+        XCTAssertEqual(store.requestPhase, .idle)
+        await store.confirmRequest()
+        XCTAssertEqual(store.requestPhase, .idle, "nothing to confirm without words")
+    }
+
+    func testAFailedRequestNamesWhy() async throws {
+        let (store, peers, _) = await make()
+        await store.readRequest("bud1 a ticket")
+        XCTAssertEqual(store.requestPhase, .failed(.notARequest))
+        let request = try await peers.joinRequest()
+        await peers.setRequestFailure(.expired)
+        await store.readRequest(request.code)
+        XCTAssertEqual(store.requestPhase, .failed(.expired))
+        await peers.setRequestFailure(nil)
+        await store.readRequest(request.code)
+        await peers.setRequestFailure(.refused)
+        await store.confirmRequest()
+        XCTAssertEqual(store.requestPhase, .failed(.refused))
+    }
+
+    func testTheRequestErrorReadsTheCoreMessages() {
+        XCTAssertEqual(RequestError(message: "Invalid: not a join request: wrong start"), .notARequest)
+        XCTAssertEqual(RequestError(message: "peer: that request is past its lifetime"), .expired)
+        XCTAssertEqual(RequestError(message: "peer: that request is this vault's"), .expired)
+        XCTAssertEqual(RequestError(message: "peer: the device did not answer"), .unreachable)
+        XCTAssertEqual(RequestError(message: "peer: the device did not confirm the key"), .refused)
+        XCTAssertEqual(RequestError(message: "peer: this vault is paired with another vault already"), .refused)
+        XCTAssertNil(RequestError(message: "something else"))
+    }
 }

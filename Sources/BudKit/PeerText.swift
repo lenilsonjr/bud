@@ -31,6 +31,18 @@ public enum PeerText {
         return typed.hasPrefix("bud1") && abs(typed.count - ticketLength) <= ticketTolerance
     }
 
+    /// A join request's code starts with this; it is longer than a ticket and its length varies
+    /// with the addresses it carries.
+    public static let requestPrefix = "budr1"
+    public static let requestMinimumLength = 120
+
+    /// Whether the text starts like a join request and is long enough to be one.
+    public static func looksLikeRequest(_ text: String) -> Bool {
+        let typed = squeezed(text).lowercased()
+        return typed.hasPrefix(requestPrefix) && typed.count >= requestMinimumLength
+            && typed.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) }
+    }
+
     /// "seen just now", "seen 4 minutes ago", "seen 2 hours ago".
     public static func seen(_ date: Date?, now: Date) -> String {
         guard let date else { return "not seen yet" }

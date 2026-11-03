@@ -67,6 +67,65 @@ public struct Ticket: Hashable, Sendable {
     }
 }
 
+/// What a device without the vault shows to be let in (G19): the code for the device with the
+/// vault to scan, the modules of its QR code (`true` is dark), the four words both sides show, and
+/// when it stops working.
+public struct JoinRequest: Hashable, Sendable {
+    /// How long a request works, in seconds; the same as a ticket.
+    public static let lifetime: TimeInterval = Ticket.lifetime
+
+    public var code: String
+    public var qr: [[Bool]]
+    public var words: [String]
+    public var madeAt: Date
+    public var expiresAt: Date
+
+    public init(code: String, qr: [[Bool]], words: [String], madeAt: Date, expiresAt: Date? = nil) {
+        self.code = code
+        self.qr = qr
+        self.words = words
+        self.madeAt = madeAt
+        self.expiresAt = expiresAt ?? madeAt.addingTimeInterval(JoinRequest.lifetime)
+    }
+}
+
+/// Why a join request could not be read or confirmed.
+public enum RequestError: Error, Equatable, Sendable {
+    /// The code does not start like a request, or is damaged.
+    case notARequest
+    /// The request is past its lifetime, or was this vault's own.
+    case expired
+    /// The device that showed it could not be reached, or did not answer.
+    case unreachable
+    /// The device turned the key away: the request was used, or it is paired already.
+    case refused
+
+    /// The case the core's message stands for, or nil for a message that is none of them.
+    public init?(message: String) {
+        let text = message.lowercased()
+        if text.contains("not a join request") {
+            self = .notARequest
+        } else if text.contains("past its lifetime") || text.contains("this vault's") {
+            self = .expired
+        } else if text.contains("did not answer") || text.contains("could not reach") || text.contains("connect") {
+            self = .unreachable
+        } else if text.contains("did not confirm") || text.contains("paired") {
+            self = .refused
+        } else {
+            return nil
+        }
+    }
+
+    /// The error as one of the cases, with an unknown one read as the device not answering.
+    public init(_ error: Error) {
+        if let known = error as? RequestError {
+            self = known
+        } else {
+            self = RequestError(message: String(describing: error)) ?? .unreachable
+        }
+    }
+}
+
 /// Why a ticket could not be accepted: the three cases the pairing frames name.
 public enum AcceptError: Error, Equatable, Sendable {
     /// The text does not start like a ticket, or is damaged.
@@ -173,6 +232,15 @@ public protocol Peers: Sendable {
     func ticket(withAddresses: Bool) async throws -> Ticket
     /// Pairs with the vault that made the ticket. Throws `AcceptError`.
     func accept(_ text: String) async throws -> Device
+    /// Shows a join request for a device that holds the vault to scan; it replaces the one shown
+    /// before, lasts as long as a ticket, and is good once.
+    func joinRequest() async throws -> JoinRequest
+    /// Reads a request another device shows: its four words, for the person to confirm against
+    /// the device's. Nothing moves until `confirmRequest`. Throws `RequestError`.
+    func readRequest(_ code: String) async throws -> [String]
+    /// The person confirmed the words: brings this vault's key to the device that showed the
+    /// request and remembers it. Throws `RequestError`.
+    func confirmRequest(_ code: String) async throws -> Device
     func remove(_ id: String) async throws
     /// Gives a device a label of this vault's own; nil or empty takes it away.
     func rename(_ id: String, label: String?) async throws

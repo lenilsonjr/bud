@@ -23,6 +23,24 @@ public enum TVDevicesText {
     /// The pair column's instruction.
     public static let pairNote = "On your iPhone or iPad: Settings › Devices › Add this iPhone to a vault, then scan this."
 
+    /// The request column (G19), shown while this Apple TV has no vault: the eyebrow, the
+    /// instruction, and the button to the typed ticket.
+    public static let requestTitle = "Add this Apple TV to a vault"
+    public static let requestNote =
+        "On your iPhone: Settings › Devices › Add a device, scan this code, and check that the words match."
+    public static let typeInstead = "Type a ticket instead"
+
+    /// "amber · cedar · harbor · lantern": the four words as one line.
+    public static func wordsLine(_ words: [String]) -> String {
+        words.joined(separator: " · ")
+    }
+
+    /// "Works once · new code in 9:58"; the store makes a new request when this one runs out.
+    public static func requestExpiry(_ request: JoinRequest?, now: Date) -> String {
+        guard let request else { return "Making a code…" }
+        return "Works once · new code in \(PeerText.countdown(until: request.expiresAt, now: now))"
+    }
+
     /// "Works once · new code in 9:58"; the store makes a new ticket when this one runs out.
     public static func expiry(_ ticket: Ticket?, now: Date) -> String {
         guard let ticket else { return "Making a ticket…" }
