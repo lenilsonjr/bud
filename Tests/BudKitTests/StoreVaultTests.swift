@@ -48,8 +48,8 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.center, rootID)
         let records = try await vault.snapshot()
         XCTAssertTrue(records.isEmpty)
-        XCTAssertEqual(store.toasts.current?.message, "Started over")
-        XCTAssertNil(store.toasts.current?.undo)
+        XCTAssertEqual(store.toasts.current?.action.message, "Started over")
+        XCTAssertNil(store.toasts.current?.action.undo)
     }
 
     func testAFreshStartCanPlantTheSampleWorldAgain() async throws {
@@ -62,7 +62,7 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.children(of: rootID).first?.text, "Launch the newsletter")
         let records = try await vault.snapshot()
         XCTAssertEqual(titles(records), titles(Tree.seed().records()))
-        XCTAssertEqual(store.toasts.current?.message, "Started over with the sample vault")
+        XCTAssertEqual(store.toasts.current?.action.message, "Started over with the sample vault")
     }
 
     func testACaptureLandsInTheVaultsInbox() async throws {
