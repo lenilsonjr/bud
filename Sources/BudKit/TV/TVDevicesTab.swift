@@ -94,11 +94,17 @@ struct TVRequestColumn: View {
     private static let button = TextStyle(typeface: .text, size: 29, weight: 600)
 
     var body: some View {
-        if let offer = devices.offer {
-            offerState(offer)
-        } else {
-            requestState
+        // The request opens and closes with the column, not with either state: swapping to the
+        // offer and back is not leaving.
+        ZStack {
+            if let offer = devices.offer {
+                offerState(offer)
+            } else {
+                requestState
+            }
         }
+        .task { await devices.openRequest() }
+        .onDisappear { devices.closeRequest() }
     }
 
     /// The second state: a key is on offer.
@@ -131,7 +137,6 @@ struct TVRequestColumn: View {
         .frame(maxHeight: .infinity)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
         .onExitCommand { Task { await devices.answerJoin(keep: false) } }
-        .onDisappear { devices.closeRequest() }
     }
 
     private var requestState: some View {
@@ -166,8 +171,6 @@ struct TVRequestColumn: View {
         .frame(width: 620)
         .frame(maxHeight: .infinity)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-        .task { await devices.openRequest() }
-        .onDisappear { devices.closeRequest() }
     }
 
     /// The six words as pills, three to a row so none is ever cut: read aloud across the room or
