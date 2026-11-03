@@ -13,6 +13,7 @@ mod query;
 mod scan;
 mod sync;
 mod watch;
+mod words;
 
 pub use edit::sanitize_filename;
 pub use frontmatter::{
@@ -26,8 +27,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub use peer::{
-    Identity, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr, Relay,
-    RotateReport, RotationOutcome, Ticket,
+    Identity, JoinRequest, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr,
+    Relay, RotateReport, RotationOutcome, Ticket,
 };
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};

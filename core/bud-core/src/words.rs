@@ -1,0 +1,31 @@
+//! The words a join request's fingerprint is spoken in: 256 plain English nouns, so four of them
+//! carry 32 bits and read aloud across a room without a letter being mistaken for another.
+
+pub(crate) const WORDS: [&str; 256] = [
+    "acorn", "amber", "anchor", "apple", "arrow", "aspen", "atlas", "autumn", "badge", "baker",
+    "bamboo", "barley", "basil", "beach", "beacon", "berry", "birch", "bison", "blossom", "bluff",
+    "boulder", "branch", "breeze", "bridge", "brook", "bucket", "butter", "cabin", "cactus",
+    "camel", "candle", "canoe", "canyon", "carrot", "castle", "cedar", "cello", "chalk", "cherry",
+    "cider", "cinder", "cliff", "cloud", "clover", "cobalt", "cocoa", "comet", "copper", "coral",
+    "cotton", "cradle", "crane", "creek", "crystal", "cumin", "daisy", "dawn", "delta", "desert",
+    "dew", "diamond", "dune", "eagle", "ember", "engine", "falcon", "fennel", "fern", "fiddle",
+    "finch", "fjord", "flame", "flint", "forest", "fossil", "fox", "galaxy", "garden", "garnet",
+    "geyser", "ginger", "glacier", "glade", "goose", "granite", "grape", "gravel", "grove",
+    "guitar", "hammer", "harbor", "harp", "hawk", "hazel", "heron", "hill", "honey", "horizon",
+    "iceberg", "indigo", "iris", "island", "ivory", "ivy", "jade", "jaguar", "jasmine", "jelly",
+    "juniper", "kayak", "kettle", "kiwi", "koala", "lagoon", "lantern", "lark", "lava", "lemon",
+    "lilac", "lily", "linen", "lion", "lotus", "magnet", "mango", "maple", "marble", "meadow",
+    "melon", "meteor", "mint", "mirror", "moss", "mustard", "nectar", "nest", "nickel", "noodle",
+    "nutmeg", "oak", "oasis", "ocean", "olive", "onyx", "opal", "orbit", "orchid", "otter",
+    "oyster", "paddle", "panda", "papaya", "parrot", "peach", "pearl", "pebble", "pepper", "piano",
+    "pine", "planet", "plum", "pocket", "pony", "poppy", "prairie", "pumpkin", "quartz", "quill",
+    "rabbit", "radish", "rain", "raven", "reef", "ribbon", "river", "robin", "rocket", "rose",
+    "ruby", "saddle", "saffron", "sage", "salmon", "sand", "sapphire", "scarf", "shadow", "shell",
+    "silk", "silver", "sled", "snow", "spark", "spruce", "squash", "star", "stone", "storm",
+    "sugar", "summit", "sunset", "swan", "thistle", "thunder", "tiger", "timber", "toffee",
+    "tomato", "topaz", "tulip", "tundra", "turtle", "valley", "velvet", "violet", "walnut",
+    "walrus", "water", "willow", "window", "winter", "wolf", "yarrow", "yogurt", "zebra", "zephyr",
+    "zinc", "zinnia", "acacia", "anise", "basin", "bay", "beet", "bell", "bloom", "bramble",
+    "brass", "canvas", "carob", "cave", "chive", "clay", "coast", "cove", "crab", "cress", "crow",
+    "cube", "dory", "elm", "feather", "flute", "frost", "glove", "hedge", "inlet",
+];

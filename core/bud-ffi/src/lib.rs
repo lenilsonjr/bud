@@ -234,6 +234,14 @@ impl From<bud_core::SyncReport> for SyncSummary {
     }
 }
 
+/// What a device without the vault shows to be let in: the code for the device with the vault to
+/// scan, and the four words both sides show for the person to confirm.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct JoinCode {
+    pub code: String,
+    pub words: Vec<String>,
+}
+
 /// What a node tells as it goes, for the screens that show pairing and syncing.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum PeerEvent {
@@ -341,19 +349,46 @@ impl PeerNode {
 
     /// The same ticket as the modules of a QR code, row by row; `true` is dark.
     pub fn ticket_qr(&self, with_addresses: bool) -> Result<Vec<Vec<bool>>> {
-        self.with(|node| {
-            let qr = Self::ticket_of(node, with_addresses)?.qr()?;
-            Ok(qr
-                .dark
-                .chunks(qr.width.max(1))
-                .map(<[bool]>::to_vec)
-                .collect())
-        })
+        self.with(|node| Ok(Self::rows(Self::ticket_of(node, with_addresses)?.qr()?)))
     }
 
     /// Pair with the vault that made `ticket`.
     pub fn accept_ticket(&self, ticket: String) -> Result<PeerRecord> {
         self.with(|node| Ok(node.accept_ticket(&ticket)?.into()))
+    }
+
+    /// Show a join request, for a device that holds the vault to scan: it replaces the one shown
+    /// before, lasts as long as a ticket, and is good once. The words are the request's
+    /// fingerprint; the device that scans it shows the same four.
+    pub fn join_request(&self) -> Result<JoinCode> {
+        self.with(|node| {
+            let request = node.join_request()?;
+            Ok(JoinCode {
+                code: request.encode(),
+                words: request.words().to_vec(),
+            })
+        })
+    }
+
+    /// A join request's code as the modules of a QR code, row by row; `true` is dark.
+    pub fn join_request_qr(&self, code: String) -> Result<Vec<Vec<bool>>> {
+        self.with(|_| Ok(Self::rows(bud_core::JoinRequest::parse(&code)?.qr()?)))
+    }
+
+    /// Read a request another device shows: its four words, for the person to confirm against
+    /// the device's. Nothing moves until `confirm_request`. A request of this vault's own, or one
+    /// past its lifetime, is refused.
+    pub fn read_request(&self, code: String) -> Result<Vec<String>> {
+        self.with(|node| Ok(node.read_request(&code)?.words().to_vec()))
+    }
+
+    /// The person confirmed the words: bring this vault's key to the device that showed the
+    /// request, and remember it as a peer.
+    pub fn confirm_request(&self, code: String) -> Result<PeerRecord> {
+        self.with(|node| {
+            let request = node.read_request(&code)?;
+            Ok(node.confirm_request(&request)?.into())
+        })
     }
 
     pub fn peers(&self) -> Result<Vec<PeerRecord>> {
@@ -402,6 +437,13 @@ impl PeerNode {
 }
 
 impl PeerNode {
+    fn rows(qr: bud_core::Qr) -> Vec<Vec<bool>> {
+        qr.dark
+            .chunks(qr.width.max(1))
+            .map(<[bool]>::to_vec)
+            .collect()
+    }
+
     fn ticket_of(
         node: &bud_core::Node,
         with_addresses: bool,
