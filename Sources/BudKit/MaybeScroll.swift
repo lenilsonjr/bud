@@ -25,6 +25,18 @@ private struct CompactKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+extension EnvironmentValues {
+    /// Opens Go anywhere from wherever a gesture asks for it; the root view sets it.
+    var goAnywhere: () -> Void {
+        get { self[GoAnywhereKey.self] }
+        set { self[GoAnywhereKey.self] = newValue }
+    }
+}
+
+private struct GoAnywhereKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
 /// A vertical scroll view in the app; a plain column in a still picture.
 struct MaybeScroll<Content: View>: View {
     @Environment(\.stillPicture) private var still
