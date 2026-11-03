@@ -283,7 +283,10 @@ final class SnapshotTests: XCTestCase {
         let rotate = RotateKeyBody(
             lines: DevicesText.rotationLines(Array(fixtures[0...2]), progress: midway, kind: .mac),
             count: DevicesText.rotationCount(midway))
-        let dialogs: [(String, AnyView)] = [("remove-device", AnyView(remove)), ("rotate-key", AnyView(rotate))]
+        let fresh = FreshStartDialog(close: {}, perform: { _ in })
+        let dialogs: [(String, AnyView)] = [
+            ("remove-device", AnyView(remove)), ("rotate-key", AnyView(rotate)), ("fresh-start", AnyView(fresh)),
+        ]
         for (name, dialog) in dialogs {
             for scheme in [ColorScheme.light, .dark] {
                 let card = dialog

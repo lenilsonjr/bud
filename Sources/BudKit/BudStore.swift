@@ -185,6 +185,23 @@ public final class BudStore: ObservableObject {
 
     public var centerTrail: [UUID] { Array(tree.ancestors(of: center).reversed()) + [center] }
 
+    /// Posted by a Settings window that has no store of its own (the Mac's ⌘,); `userInfo["sample"]`
+    /// says whether to start from the sample world. The root view performs it on its store.
+    public static let freshStartRequested = Notification.Name("BudStore.freshStartRequested")
+
+    /// Erases every bud on this device, the Trash included, and starts over: empty, or with the
+    /// sample world. Not undoable: the dialog asks first. Other devices keep what they hold.
+    public func freshStart(sample: Bool) {
+        let fresh = Self.normalized(sample ? Tree.seed() : Tree())
+        modal = nil
+        lens = nil
+        place = nil
+        center = rootID
+        commit { $0 = fresh }
+        write { try await $0.reset(to: fresh.records()) }
+        toasts.show(Undoable(message: sample ? "Started over with the sample vault" : "Started over", systemImage: "sparkles"))
+    }
+
     /// The open to-do to do next inside the current bud, or, when it has none, the next one
     /// anywhere, marked as elsewhere. Nil when nothing is open at all.
     public var nextStep: (bud: Bud, elsewhere: Bool)? {
