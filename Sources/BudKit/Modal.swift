@@ -11,6 +11,8 @@ enum Modal: Hashable, Identifiable {
     /// Settings › Devices: the ticket sheet, the join sheet, and the two dialogs.
     case showTicket
     case joinVault
+    /// Scan the code a device without the vault shows, and send it the key.
+    case addNearby
     case removeDevice(id: String)
     case rotateKey
     /// Settings › Start over: erase this device's vault, empty or with the sample world.
@@ -20,6 +22,7 @@ enum Modal: Hashable, Identifiable {
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
     static let showTicketID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D1")!
     static let joinVaultID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
+    static let addNearbyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D5")!
     static let removeDeviceID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
     static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
     static let freshStartID = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
@@ -33,6 +36,7 @@ enum Modal: Hashable, Identifiable {
         case .deleteForever(let id): return id ?? Self.emptyTrashID
         case .showTicket: return Self.showTicketID
         case .joinVault: return Self.joinVaultID
+        case .addNearby: return Self.addNearbyID
         case .removeDevice: return Self.removeDeviceID
         case .rotateKey: return Self.rotateKeyID
         case .freshStart: return Self.freshStartID
@@ -108,6 +112,7 @@ struct ModalHost: View {
             case .deleteForever(let id): DeleteForeverDialog(store: store, id: id)
             case .showTicket: TicketSheet(devices: store.devices, close: { store.modal = .settings })
             case .joinVault: JoinSheet(devices: store.devices, close: { store.modal = .settings })
+            case .addNearby: NearbySheet(devices: store.devices, close: { store.modal = .settings })
             case let .removeDevice(id):
                 RemoveDeviceDialog(
                     devices: store.devices, id: id, close: { store.modal = .settings }, present: { store.modal = $0 })

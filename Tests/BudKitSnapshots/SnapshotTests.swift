@@ -342,6 +342,37 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheNearbySheet() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let words = ["amber", "cedar", "harbor", "lantern", "otter", "quartz"]
+        let tv = Device(id: "t6vbr9e5w1q7y3u8i2o6p0a4s1dh2kxe", reach: .local, name: "Den", kind: .tv)
+        let states: [(String, RequestPhase, Bool)] = [
+            ("nearby-denied", .idle, true),
+            ("nearby-words", .words(words, code: "budr1"), false),
+            ("nearby-waiting", .confirming, false),
+            ("nearby-added", .confirmed(tv), false),
+            ("nearby-refused", .failed(.refused), false),
+        ]
+        for (name, phase, denied) in states {
+            for scheme in [ColorScheme.light, .dark] {
+                let sheet = NearbySheetBody(phase: phase, cameraDenied: denied, onAdd: {}, onScanAgain: {}, onClose: {})
+                    .modalCard()
+                    .frame(width: 393 - 2 * ModalMetrics.margin)
+                    .padding(16)
+                    .background(Theme.canvas)
+                    .environment(\.compact, true)
+                let data = try render(sheet, scheme: scheme)
+                let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheFourButtons() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
