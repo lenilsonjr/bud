@@ -35,16 +35,17 @@ struct TVReadScreen: View {
     var body: some View {
         Group {
             if let bud = store.tree.bud(id) {
-                HStack(alignment: .top, spacing: 80) {
+                // 820 for the page, 800 for the children: a row's title and tag fit at three metres.
+                HStack(alignment: .top, spacing: 60) {
                     page(bud)
-                        .frame(width: 1040, alignment: .topLeading)
+                        .frame(width: 820, alignment: .topLeading)
                         .focusSection()
                     children
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .focusSection()
                 }
                 .padding(.top, 80)
-                .padding(.horizontal, 160)
+                .padding(.horizontal, 120)
                 .padding(.bottom, 90)
             } else {
                 // The bud went while the screen was up (trashed from the menu, or synced away).
@@ -127,9 +128,12 @@ struct TVReadScreen: View {
         .animation(.easeOut(duration: 0.2), value: lit)
     }
 
-    /// The body as the Mac draws it, scaled for the room; focusable so the remote scrolls it.
+    /// The body as the Mac draws it, scaled for the room; focusable so the remote scrolls it,
+    /// with the ring drawn around it while it holds the focus.
     private func bodyBlocks(_ source: String) -> some View {
-        VStack(alignment: .leading, spacing: 22) {
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+        let lit = focused == .body
+        return VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(MarkdownBlocks.parse(source).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(_, let text):
@@ -154,9 +158,16 @@ struct TVReadScreen: View {
                 }
             }
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(lit ? Theme.amethystSoft : .clear, in: shape)
+        .overlay(shape.stroke(lit ? Theme.amethyst : .clear, lineWidth: 2))
+        .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
+        .padding(.horizontal, -24)
         .focusable()
         .focused($focused, equals: .body)
+        .animation(.easeOut(duration: 0.2), value: lit)
     }
 
     private func paragraph(_ text: String) -> some View {
@@ -181,9 +192,9 @@ struct TVReadScreen: View {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(rows, id: \.id) { row in
-                            TVBudRow(row: row, lit: focused == .row(row.id)) { stack.append(row.id) }
+                            TVBudRow(row: row, lit: focused == .row(row.id)) { read(row.id) }
                                 .focused($focused, equals: .row(row.id))
-                                .budMenu(row.id, store: store, onAdd: { adding = TVAddTarget(id: row.id) }, onOpen: { stack.append(row.id) })
+                                .budMenu(row.id, store: store, onAdd: { adding = TVAddTarget(id: row.id) }, onOpen: { read(row.id) })
                         }
                     }
                     .padding(.vertical, 30)
@@ -204,12 +215,18 @@ struct TVReadScreen: View {
         }
     }
 
+    /// A child takes the screen, its title in focus so Menu and Play/Pause know where they are.
+    private func read(_ child: UUID) {
+        stack.append(child)
+        focused = .title
+    }
+
     private func stepBack() {
         if stack.isEmpty {
             close()
         } else {
-            stack.removeLast()
-            focused = .title
+            let left = stack.removeLast()
+            focused = .row(left)
         }
     }
 }
