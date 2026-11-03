@@ -49,6 +49,8 @@ struct TVShell: View {
                     .overlay(alignment: .top) { trail }
             case .devices:
                 TVDevicesTab(devices: devices, onJoin: { joining = true })
+                    // Menu steps out, as on the canvas: back to Canvas rather than out of the app.
+                    .onExitCommand { tab = .canvas }
             }
         }
         .background(Theme.window.ignoresSafeArea())
