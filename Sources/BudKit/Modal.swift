@@ -13,6 +13,8 @@ enum Modal: Hashable, Identifiable {
     case joinVault
     case removeDevice(id: String)
     case rotateKey
+    /// Settings › Start over: erase this device's vault, empty or with the sample world.
+    case freshStart
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
@@ -20,6 +22,7 @@ enum Modal: Hashable, Identifiable {
     static let joinVaultID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D2")!
     static let removeDeviceID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
     static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
+    static let freshStartID = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
 
     var id: UUID {
         switch self {
@@ -32,6 +35,7 @@ enum Modal: Hashable, Identifiable {
         case .joinVault: return Self.joinVaultID
         case .removeDevice: return Self.removeDeviceID
         case .rotateKey: return Self.rotateKeyID
+        case .freshStart: return Self.freshStartID
         }
     }
 
@@ -108,6 +112,8 @@ struct ModalHost: View {
                 RemoveDeviceDialog(
                     devices: store.devices, id: id, close: { store.modal = .settings }, present: { store.modal = $0 })
             case .rotateKey: RotateKeyDialog(devices: store.devices, close: { store.modal = .settings })
+            case .freshStart:
+                FreshStartDialog(close: { store.modal = .settings }, perform: { store.freshStart(sample: $0) })
             }
         }
         .modalCard()

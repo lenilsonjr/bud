@@ -1,7 +1,7 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// Settings: Appearance, the vault folder and Devices. A Try section returns whenever two layouts need
+/// Settings: Appearance, the vault folder, Devices and Start over. A Try section returns whenever two layouts need
 /// comparing on a device before one is kept. On the Mac it is the Settings window (⌘,); on iPhone and
 /// iPad it is a modal from the gear in the top bar, with Done to close it.
 public struct SettingsView: View {
@@ -45,6 +45,14 @@ public struct SettingsView: View {
             DevicesSection(devices: devices, present: { modal in
                 if let present { present(modal) } else { local = modal }
             })
+            section("Start over", caption: "Erases every bud on this device and starts again, empty or with the sample vault.") {
+                Button {
+                    if let present { present(.freshStart) } else { local = .freshStart }
+                } label: {
+                    BudButtonLabel(title: "Start over…", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.budDestructive)
+            }
             if let onDone {
                 HStack {
                     Spacer()
@@ -67,6 +75,11 @@ public struct SettingsView: View {
                 case let .removeDevice(id):
                     RemoveDeviceDialog(devices: devices, id: id, close: { local = nil }, present: { local = $0 })
                 case .rotateKey: RotateKeyDialog(devices: devices, close: { local = nil })
+                case .freshStart:
+                    // The Mac's Settings window has no store; the root view performs the request on its own.
+                    FreshStartDialog(close: { local = nil }, perform: { sample in
+                        NotificationCenter.default.post(name: BudStore.freshStartRequested, object: nil, userInfo: ["sample": sample])
+                    })
                 default: EmptyView()
                 }
             }

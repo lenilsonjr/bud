@@ -50,6 +50,9 @@ public struct BudRootView: View {
         .environment(\.compact, compact)
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }
+        .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
+            store.freshStart(sample: note.userInfo?["sample"] as? Bool ?? false)
+        }
     }
 
     @ViewBuilder private var surface: some View {

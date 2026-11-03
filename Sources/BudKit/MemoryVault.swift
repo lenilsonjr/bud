@@ -115,6 +115,11 @@ public actor MemoryVault: Vault {
         save()
     }
 
+    public func reset(to records: [BudRecord]) async throws {
+        tree = Tree(records: records)
+        save()
+    }
+
     public func search(_ query: String, limit: Int) async throws -> [HitRecord] {
         TreeSearcher(tree: tree).search(query, limit: limit).map { hit in
             let snippet = tree.lede(of: hit.id)

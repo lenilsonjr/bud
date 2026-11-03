@@ -34,6 +34,37 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(planted.id)?.text, "Book the printer")
     }
 
+    func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.trash(thread.id)
+        await store.settle()
+        XCTAssertFalse(store.tree.trashed.isEmpty)
+        store.center = try XCTUnwrap(store.tree.children(of: rootID).first?.id)
+        store.freshStart(sample: false)
+        await store.settle()
+        XCTAssertTrue(store.tree.buds.isEmpty)
+        XCTAssertTrue(store.tree.trashed.isEmpty)
+        XCTAssertEqual(store.center, rootID)
+        let records = try await vault.snapshot()
+        XCTAssertTrue(records.isEmpty)
+        XCTAssertEqual(store.toasts.current?.message, "Started over")
+        XCTAssertNil(store.toasts.current?.undo)
+    }
+
+    func testAFreshStartCanPlantTheSampleWorldAgain() async throws {
+        let vault = MemoryVault(tree: Tree())
+        let store = BudStore(vault: vault)
+        await store.reload()
+        XCTAssertTrue(store.tree.buds.isEmpty)
+        store.freshStart(sample: true)
+        await store.settle()
+        XCTAssertEqual(store.tree.children(of: rootID).first?.text, "Launch the newsletter")
+        let records = try await vault.snapshot()
+        XCTAssertEqual(titles(records), titles(Tree.seed().records()))
+        XCTAssertEqual(store.toasts.current?.message, "Started over with the sample vault")
+    }
+
     func testACaptureLandsInTheVaultsInbox() async throws {
         let (store, vault) = await loaded()
         let bud = try XCTUnwrap(store.capture("Buy stamps", source: "mac"))

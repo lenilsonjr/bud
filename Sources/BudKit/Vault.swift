@@ -126,6 +126,8 @@ public protocol Vault: Sendable {
     func restore(_ path: String) async throws -> String
     func emptyTrash() async throws
     func deleteForever(_ path: String) async throws
+    /// Replaces everything, the Trash included, with these records: a fresh start, empty or seeded.
+    func reset(to records: [BudRecord]) async throws
 
     func search(_ query: String, limit: Int) async throws -> [HitRecord]
     /// The open to-dos due on or before the day, and the buds scheduled for it.
