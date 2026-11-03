@@ -234,6 +234,70 @@ impl From<bud_core::SyncReport> for SyncSummary {
     }
 }
 
+/// What a node tells as it goes, for the screens that show pairing and syncing.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum PeerEvent {
+    /// A node redeemed a ticket this vault issued.
+    TicketRedeemed { by: String },
+    /// A node this vault did not know is now a peer.
+    PeerJoined { id: String },
+    /// One peer's part of a key rotation: `confirmed` when it took the new key in the hand over,
+    /// else `holds_key` says what a probe found.
+    KeyRotation {
+        id: String,
+        confirmed: bool,
+        holds_key: bool,
+    },
+    /// The rotation is over, with the ids of the peers that still hold the old key.
+    RotationDone { reached: u64, missed: Vec<String> },
+    /// A first fetch from a peer: how many documents arrived, and how many buds the peer holds
+    /// when it said.
+    FetchProgress { received: u64, total: Option<u64> },
+}
+
+impl From<bud_core::NodeEvent> for PeerEvent {
+    fn from(event: bud_core::NodeEvent) -> Self {
+        use bud_core::{NodeEvent, RotationOutcome};
+        match event {
+            NodeEvent::TicketRedeemed { by } => PeerEvent::TicketRedeemed { by },
+            NodeEvent::PeerJoined { id } => PeerEvent::PeerJoined { id },
+            NodeEvent::KeyRotation { id, outcome } => {
+                let (confirmed, holds_key) = match outcome {
+                    RotationOutcome::Confirmed => (true, true),
+                    RotationOutcome::Probed { holds_key } => (false, holds_key),
+                };
+                PeerEvent::KeyRotation {
+                    id,
+                    confirmed,
+                    holds_key,
+                }
+            }
+            NodeEvent::RotationDone(report) => PeerEvent::RotationDone {
+                reached: report.reached as u64,
+                missed: report.missed,
+            },
+            NodeEvent::FetchProgress { received, total } => PeerEvent::FetchProgress {
+                received: received as u64,
+                total: total.map(|n| n as u64),
+            },
+        }
+    }
+}
+
+/// Told each [`PeerEvent`] as it happens, on the node's own threads.
+#[uniffi::export(callback_interface)]
+pub trait PeerListener: Send + Sync {
+    fn event(&self, event: PeerEvent);
+}
+
+struct ForwardEvents(Box<dyn PeerListener>);
+
+impl bud_core::NodeListener for ForwardEvents {
+    fn event(&self, event: bud_core::NodeEvent) {
+        self.0.event(event.into());
+    }
+}
+
 /// A running peer node for one open vault. It stops when [`PeerNode::stop`] is called or this
 /// object is released.
 #[derive(uniffi::Object)]
@@ -298,6 +362,14 @@ impl PeerNode {
 
     pub fn forget_peer(&self, id: String) -> Result<()> {
         self.with(|node| node.forget_peer(&id))
+    }
+
+    /// Hear every [`PeerEvent`] from now on, until the node stops.
+    pub fn listen(&self, listener: Box<dyn PeerListener>) -> Result<()> {
+        self.with(|node| {
+            node.listen(Box::new(ForwardEvents(listener)));
+            Ok(())
+        })
     }
 
     /// Give a peer a label of this vault's own, shown instead of the name it sends; none or an

@@ -25,7 +25,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use peer::{Identity, Node, NodeOptions, NodeState, PeerInfo, Qr, Relay, RotateReport, Ticket};
+pub use peer::{
+    Identity, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr, Relay,
+    RotateReport, RotationOutcome, Ticket,
+};
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};
 pub use watch::{VaultListener, Watch};
@@ -358,6 +361,13 @@ impl Vault {
             &format!("{SELECT} WHERE parent IS NULL AND place = ?1 {ORDER}"),
             params![place.as_str()],
         )
+    }
+
+    /// How many buds the index holds, the Trash included.
+    pub fn bud_count(&self) -> Result<usize> {
+        let count: i64 =
+            lock(&self.conn).query_row("SELECT COUNT(*) FROM buds", [], |r| r.get(0))?;
+        Ok(usize::try_from(count).unwrap_or(0))
     }
 
     /// Every bud in the index, parents before children.

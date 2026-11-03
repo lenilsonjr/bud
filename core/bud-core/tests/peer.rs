@@ -3,7 +3,9 @@
 
 mod common;
 
-use bud_core::{Identity, Node, NodeOptions, Relay, Ticket, Vault};
+use bud_core::{
+    Identity, Node, NodeEvent, NodeListener, NodeOptions, Relay, RotationOutcome, Ticket, Vault,
+};
 use common::{copy_dir, fingerprint, fixture};
 use pretty_assertions::assert_eq;
 use std::path::{Path, PathBuf};
@@ -77,6 +79,28 @@ impl Peer {
 
     fn write(&self, name: &str, text: &str) {
         std::fs::write(self.path(name), text).unwrap();
+    }
+}
+
+/// Keeps every event a node tells, in order.
+#[derive(Clone, Default)]
+struct Recorder(Arc<Mutex<Vec<NodeEvent>>>);
+
+impl Recorder {
+    fn listening(node: &Node) -> Recorder {
+        let recorder = Recorder::default();
+        node.listen(Box::new(recorder.clone()));
+        recorder
+    }
+
+    fn events(&self) -> Vec<NodeEvent> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl NodeListener for Recorder {
+    fn event(&self, event: NodeEvent) {
+        self.0.lock().unwrap().push(event);
     }
 }
 
@@ -412,6 +436,91 @@ fn rotating_the_key_moves_the_remaining_peers_and_turns_the_old_key_away() {
     d.node.accept_ticket(&stale).unwrap();
     assert!(d.node.sync_now().is_err());
     assert_eq!(d.read("Gift ideas.md"), None);
+}
+
+#[test]
+fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_fetch() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    let heard_by_a = Recorder::listening(&a.node);
+    let heard_by_b = Recorder::listening(&b.node);
+    let total = a.vault.lock().unwrap().bud_count().unwrap();
+    assert!(total > 0);
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    assert_eq!(heard_by_a.events(), vec![], "nothing happens until b dials");
+    b.node.sync_now().unwrap();
+    // a hears the ticket go, and the new peer, before its answer leaves.
+    assert_eq!(
+        heard_by_a.events(),
+        vec![
+            NodeEvent::TicketRedeemed { by: b.node.id() },
+            NodeEvent::PeerJoined { id: b.node.id() },
+        ]
+    );
+    // b knows the size of the vault before the first document is applied, and the count rises
+    // to it when the fetch ends.
+    let events = heard_by_b.events();
+    assert_eq!(
+        events[0],
+        NodeEvent::FetchProgress {
+            received: 0,
+            total: Some(total),
+        }
+    );
+    assert_eq!(
+        events[1],
+        NodeEvent::FetchProgress {
+            received: total,
+            total: Some(total),
+        }
+    );
+    assert_eq!(events.len(), 2);
+    // A later sync is not a first fetch and says nothing.
+    b.node.sync_now().unwrap();
+    assert_eq!(heard_by_b.events().len(), 2);
+    assert_eq!(heard_by_a.events().len(), 2);
+}
+
+#[test]
+fn a_rotation_is_told_peer_by_peer_before_its_report() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    let d = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c, &d] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    // d no longer knows a, so it turns the new key away.
+    d.node.forget_peer(&a.node.id()).unwrap();
+    let heard = Recorder::listening(&a.node);
+    let report = a.node.rotate_key().unwrap();
+    let events = heard.events();
+    let (last, each) = events.split_last().unwrap();
+    assert_eq!(last, &NodeEvent::RotationDone(report.clone()));
+    let mut outcomes: Vec<(String, RotationOutcome)> = each
+        .iter()
+        .map(|event| match event {
+            NodeEvent::KeyRotation { id, outcome } => (id.clone(), *outcome),
+            other => panic!("not a rotation step: {other:?}"),
+        })
+        .collect();
+    outcomes.sort_by(|x, y| x.0.cmp(&y.0));
+    let mut expected = vec![
+        (b.node.id(), RotationOutcome::Confirmed),
+        (c.node.id(), RotationOutcome::Confirmed),
+        (d.node.id(), RotationOutcome::Probed { holds_key: false }),
+    ];
+    expected.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(outcomes, expected);
+    assert_eq!(report.reached, 2);
+    assert_eq!(report.missed, vec![d.node.id()]);
 }
 
 #[test]
