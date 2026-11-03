@@ -61,6 +61,9 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         # Baked in so TestFlight never shows a Missing-Compliance gate (no non-exempt crypto).
         ITSAppUsesNonExemptEncryption: false
+        # The join sheet scans a ticket's QR code; App Store Connect turns away a package that
+        # links the camera without this purpose string (ITMS-90683).
+        NSCameraUsageDescription: Bud uses the camera to scan the ticket shown by a device that already has the vault.
   Bud-macOS:
     type: application
     platform: macOS
