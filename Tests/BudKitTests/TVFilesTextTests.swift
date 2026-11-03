@@ -27,7 +27,7 @@ final class TVFilesTextTests: XCTestCase {
         let rows = TVFilesText.rows(.today, in: tree)
         XCTAssertEqual(rows.map(\.title), ["Verify the address", "A walk before the first meeting"])
         guard case let .due(date)? = rows.first?.tag else { return XCTFail("The overdue to-do is tagged Due") }
-        XCTAssertEqual(TVFilesText.label(.due(date)), "Due " + TVFilesText.label(.scheduled(date))!)
+        XCTAssertEqual(TVFilesText.label(.due(date)), "Overdue · " + TVFilesText.label(.scheduled(date))!, "The seed's address check was due yesterday")
         guard case .scheduled = rows.last?.tag else { return XCTFail("The walk is tagged with its day") }
         XCTAssertEqual(rows.first?.caption, "Launch the newsletter › Set up the sender")
     }
@@ -49,10 +49,18 @@ final class TVFilesTextTests: XCTestCase {
         XCTAssertEqual(TVFilesText.label(newsletter.tag), "4 inside · 5 open")
         let inside = TVFilesText.rows(.everything, in: tree, inside: newsletter.id)
         XCTAssertEqual(inside.first?.title, "Pick a name")
-        XCTAssertEqual(inside.first?.caption, "Launch the newsletter")
+        XCTAssertEqual(inside.first?.caption, "To-do", "Inside a bud the trail is above, so the row says its kind")
+        XCTAssertEqual(TVFilesText.rows(.todos, in: tree, inside: newsletter.id), inside, "A walk in from any page shows the bud's children")
         XCTAssertEqual(TVFilesText.trail(inside: inside.first!.id, in: tree), ["Launch the newsletter", "Pick a name"])
         XCTAssertEqual(TVFilesText.trail(inside: rootID, in: tree), [])
         XCTAssertEqual(TVFilesText.rows(.pinned, in: tree).map(\.title), ["Launch the newsletter"])
+    }
+
+    func testADueDateReadsOverdueOnceTheDayHasPassed() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(TVFilesText.label(.due(now.addingTimeInterval(-86_400)), now: now)!.hasPrefix("Overdue · "))
+        XCTAssertTrue(TVFilesText.label(.due(now.addingTimeInterval(3_600)), now: now)!.hasPrefix("Due "))
+        XCTAssertTrue(TVFilesText.label(.due(now), now: now)!.hasPrefix("Due "), "Due today is not overdue yet")
     }
 
     func testEveryPageHasAnEmptyLine() {

@@ -68,8 +68,12 @@ public enum TVFilesText {
         }
     }
 
-    /// The rows a page shows. Everything lists the buds under `inside`, the root by default.
+    /// The rows a page shows. Inside a bud, whichever page the walk began on, the rows are the
+    /// bud's children with their kind under the title, since the trail above says where they are.
     public static func rows(_ page: TVFilesPage, in tree: Tree, inside: UUID = rootID, on day: Date = Date()) -> [TVFilesRow] {
+        if inside != rootID {
+            return tree.children(of: inside).map { row($0, in: tree, caption: kind($0)) }
+        }
         switch page {
         case .inbox:
             return tree.inbox().map { row($0, in: tree, caption: "Captured \(Tree.dayLabel(for: $0.created, now: day).lowercased())") }
@@ -92,11 +96,12 @@ public enum TVFilesText {
         return tree.breadcrumb(of: id) + [tree.title(of: id)]
     }
 
-    /// "Due 3 Nov", "3 Nov", "3 inside · 1 open".
-    public static func label(_ tag: TVFilesRow.Tag) -> String? {
+    /// "Due 3 Nov", "Overdue · 2 Nov" once the day has passed, "3 Nov", "3 inside · 1 open".
+    public static func label(_ tag: TVFilesRow.Tag, now: Date = Date(), calendar: Calendar = .current) -> String? {
         switch tag {
         case .none: return nil
-        case let .due(date): return "Due \(short(date))"
+        case let .due(date):
+            return date < calendar.startOfDay(for: now) ? "Overdue · \(short(date))" : "Due \(short(date))"
         case let .scheduled(date): return short(date)
         case let .inside(count, open): return "\(count) inside" + (open > 0 ? " · \(open) open" : "")
         }
@@ -108,10 +113,14 @@ public enum TVFilesText {
         return f.string(from: date)
     }
 
+    private static func kind(_ bud: Bud) -> String {
+        bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note"
+    }
+
     private static func row(_ bud: Bud, in tree: Tree, caption: String? = nil, tag: TVFilesRow.Tag = .none) -> TVFilesRow {
         let kids = tree.children(of: bud.id)
         let crumbs = tree.breadcrumb(of: bud.id).filter { $0 != "Inbox" }
-        let line = caption ?? (crumbs.isEmpty ? (bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note") : crumbs.joined(separator: " › "))
+        let line = caption ?? (crumbs.isEmpty ? kind(bud) : crumbs.joined(separator: " › "))
         let finalTag: TVFilesRow.Tag
         if case .none = tag, !kids.isEmpty {
             finalTag = .inside(kids.count, open: tree.openCount(under: bud.id))

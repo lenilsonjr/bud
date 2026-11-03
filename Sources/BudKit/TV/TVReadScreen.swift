@@ -196,11 +196,11 @@ struct TVReadScreen: View {
     /// Play/Pause closes the to-do in focus, or the next step inside the bud, or the bud itself.
     private func playPause() {
         if case let .row(child) = focused, store.tree.bud(child)?.isTodo == true {
-            store.toggle(child)
+            store.tvTick(child)
         } else if let step = store.tree.nextStep(under: id), step.id != id {
-            store.toggle(step.id)
-        } else if store.tree.bud(id)?.isTodo == true {
-            store.toggle(id)
+            store.tvTick(step.id)
+        } else {
+            store.tvTick(id)
         }
     }
 
