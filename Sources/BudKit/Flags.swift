@@ -34,3 +34,18 @@ public final class Flags: ObservableObject {
     }
 }
 #endif
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+extension Appearance {
+    /// The scheme to prefer: nil leaves it to the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+#endif

@@ -19,7 +19,6 @@ struct TVJoinModal: View {
     private static let count = TextStyle(typeface: .text, size: 22, weight: 400)
     private static let aside = TextStyle(typeface: .text, size: 24, weight: 400)
     private static let failureTitle = TextStyle(typeface: .text, size: 28, weight: 600)
-    private static let button = TextStyle(typeface: .text, size: 29, weight: 600)
 
     private var status: EntryStatus {
         if case .failed = devices.joinPhase { return .checked }
@@ -54,11 +53,11 @@ struct TVJoinModal: View {
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             Spacer(minLength: 0)
             HStack(spacing: 24) {
-                kitButton("Join", systemImage: "arrow.right.to.line", primary: true, lit: focus == .join, enabled: canJoin) {
+                TVKitButton(title: "Join", systemImage: "arrow.right.to.line", kind: .primary, lit: focus == .join, enabled: canJoin) {
                     Task { await devices.join(text: text) }
                 }
                 .focused($focus, equals: .join)
-                kitButton("Cancel", primary: false, lit: focus == .cancel, enabled: true, action: cancel)
+                TVKitButton(title: "Cancel", kind: .secondary, lit: focus == .cancel, action: cancel)
                     .focused($focus, equals: .cancel)
             }
         }
@@ -123,29 +122,6 @@ struct TVJoinModal: View {
         .padding(.vertical, 18)
         .frame(width: 1240, alignment: .leading)
         .background(Theme.roseSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    private func kitButton(
-        _ title: String, systemImage: String? = nil, primary: Bool, lit: Bool, enabled: Bool, action: @escaping () -> Void
-    ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        return Button(action: action) {
-            HStack(spacing: 14) {
-                if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 26, weight: .semibold))
-                }
-                Text(title).textStyle(Self.button)
-            }
-            .foregroundStyle(primary ? Theme.onLeaf : Theme.text)
-            .frame(width: 300, height: 84)
-            .background(primary ? Theme.leafFill : (lit ? Theme.amethystSoft : Theme.raised), in: shape)
-            .overlay(shape.stroke(lit ? Theme.amethyst : (primary ? .clear : Theme.line), lineWidth: lit ? 2 : 1))
-            .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
-            .opacity(enabled ? 1 : 0.4)
-        }
-        .buttonStyle(.tvBare)
-        .disabled(!enabled)
-        .animation(.easeOut(duration: 0.2), value: lit)
     }
 
     private func cancel() {

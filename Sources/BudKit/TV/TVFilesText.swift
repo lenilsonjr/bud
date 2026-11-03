@@ -113,6 +113,11 @@ public enum TVFilesText {
         return f.string(from: date)
     }
 
+    /// One bud as a row with its trail under the title, for the hits of Go anywhere.
+    public static func row(_ id: UUID, in tree: Tree) -> TVFilesRow? {
+        tree.bud(id).map { row($0, in: tree) }
+    }
+
     private static func kind(_ bud: Bud) -> String {
         bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note"
     }

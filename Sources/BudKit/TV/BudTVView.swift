@@ -1,18 +1,20 @@
 #if canImport(SwiftUI) && os(tvOS)
 import SwiftUI
 
-/// The tabs of the TV, the three G16 names: the orbit canvas, Files and Devices.
+/// The tabs of the TV: the orbit canvas, Files, and Settings, which Devices grew into as G16
+/// allows.
 enum TVTab: String, CaseIterable, Hashable {
     case canvas = "Canvas"
     case files = "Files"
-    case devices = "Devices"
+    case settings = "Settings"
 }
 
 /// Bud on Apple TV: the same orbit canvas, driven by the remote. Swiping moves the focus from
 /// card to card, the light rests on the focused one, a click centers a bud with children or
 /// ticks a to-do, Menu steps out, Play/Pause ticks the to-do in focus. Capture is one line. A
-/// glass pill at the top switches to Files, the pages the Mac sidebar has, and to Devices, where
-/// the TV pairs the next device or joins a vault.
+/// glass pill at the top switches to Files, the pages the Mac sidebar has, and to Settings, where
+/// the TV picks its appearance, starts over, pairs the next device or joins a vault; the
+/// magnifier beside the tabs goes anywhere by typing.
 public struct BudTVView: View {
     @StateObject private var store: BudStore
 
@@ -35,7 +37,10 @@ struct TVShell: View {
     @State private var joining = false
     @State private var fetching = false
     @State private var reading: TVAddTarget? = nil
+    @State private var searching = false
+    @ObservedObject private var flags = Flags.shared
     @FocusState private var focusedTab: TVTab?
+    @FocusState private var searchLit: Bool
 
     init(store: BudStore) {
         self.store = store
@@ -52,8 +57,8 @@ struct TVShell: View {
                     .overlay(alignment: .top) { trail }
             case .files:
                 TVFilesTab(store: store, covered: reading != nil, onLeave: { tab = .canvas }, onOpen: open)
-            case .devices:
-                TVDevicesTab(devices: devices, onJoin: { joining = true })
+            case .settings:
+                TVSettingsTab(store: store, devices: devices, flags: flags, onJoin: { joining = true })
                     // Menu steps out, as on the canvas: back to Canvas rather than out of the app.
                     .onExitCommand { tab = .canvas }
             }
@@ -65,6 +70,8 @@ struct TVShell: View {
         .fullScreenCover(isPresented: $joining) { TVJoinModal(devices: devices, close: { joining = false }) }
         .fullScreenCover(isPresented: $fetching) { fetchScreen }
         .fullScreenCover(item: $reading) { target in TVReadScreen(store: store, start: target.id, close: { reading = nil }) }
+        .fullScreenCover(isPresented: $searching) { TVSearchScreen(store: store, close: { searching = false }) }
+        .preferredColorScheme(flags.appearance.colorScheme)
         .task { await devices.start() }
         .onChange(of: devices.joinPhase) { _, phase in
             guard case let .joined(_, received, total) = phase else { return }
@@ -97,7 +104,8 @@ struct TVShell: View {
         tab = .canvas
     }
 
-    /// The glass pill of tabs: the focused one glows amethyst, the chosen one reads in full ink.
+    /// The glass pill of tabs, the magnifier at its end: the focused one glows amethyst, the
+    /// chosen tab reads in full ink.
     private var tabs: some View {
         HStack(spacing: 8) {
             ForEach(TVTab.allCases, id: \.self) { item in
@@ -115,6 +123,19 @@ struct TVShell: View {
                 .buttonStyle(.tvBare)
                 .focused($focusedTab, equals: item)
             }
+            let shape = RoundedRectangle(cornerRadius: 32, style: .continuous)
+            Button { searching = true } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(Theme.text2)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 14)
+                    .background(searchLit ? Theme.amethystSoft : .clear, in: shape)
+                    .overlay(shape.stroke(searchLit ? Theme.amethyst : .clear, lineWidth: 2))
+            }
+            .buttonStyle(.tvBare)
+            .focused($searchLit)
+            .accessibilityLabel(TVSearchText.title)
         }
         .padding(8)
         .background(Theme.glass, in: RoundedRectangle(cornerRadius: 40, style: .continuous))
