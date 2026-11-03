@@ -27,7 +27,7 @@ public enum TVDevicesText {
     /// instruction, and the button to the typed ticket.
     public static let requestTitle = "Add this Apple TV to a vault"
     public static let requestNote =
-        "On your iPhone: Settings › Devices › Add a device, scan this code, and check that the words match."
+        "On your iPhone: Settings › Devices › Add a device nearby, point it at this code, and check that the words match."
     public static let typeInstead = "Type a ticket instead"
 
     /// "amber · cedar · harbor · lantern · otter · quartz": the six words as one line.
