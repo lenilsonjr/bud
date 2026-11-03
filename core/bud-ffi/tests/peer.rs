@@ -302,7 +302,7 @@ fn a_tv_shows_a_request_and_the_phone_confirms_its_words_and_brings_the_key() {
     a.node.sync_now().unwrap();
     let shown = t.node.join_request().unwrap();
     assert!(shown.code.starts_with("budr1"));
-    assert_eq!(shown.words.len(), 4);
+    assert_eq!(shown.words.len(), 6);
     let qr = t.node.join_request_qr(shown.code.clone()).unwrap();
     assert!(qr.len() > 20 && qr.iter().all(|row| row.len() == qr.len()));
     assert_eq!(
@@ -310,8 +310,33 @@ fn a_tv_shows_a_request_and_the_phone_confirms_its_words_and_brings_the_key() {
         shown.words
     );
     assert!(t.node.peers().unwrap().is_empty());
-    let peer = a.node.confirm_request(shown.code.clone()).unwrap();
+    // The TV is told who brought the key and keeps it on the person's say so.
+    let heard_by_t = Heard::default();
+    t.node.listen(Box::new(heard_by_t.clone())).unwrap();
+    let peer = std::thread::scope(|scope| {
+        let confirming = scope.spawn(|| a.node.confirm_request(shown.code.clone()));
+        eventually("the tv is told of the key", || {
+            heard_by_t
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(event, PeerEvent::JoinOffered { .. }))
+        });
+        t.node.answer_join(true).unwrap();
+        confirming.join().unwrap().unwrap()
+    });
     assert_eq!(peer.id, t.node.id().unwrap());
+    assert_eq!(
+        heard_by_t.0.lock().unwrap()[0],
+        PeerEvent::JoinOffered {
+            id: a.node.id().unwrap(),
+            kind: None,
+            name: None,
+            words: shown.words.clone(),
+        }
+    );
+    assert!(t.node.answer_join(true).is_err());
     t.node.sync_now().unwrap();
     eventually("the note reaches the tv", || {
         std::fs::read_to_string(t.dir.path().join("Newsletter.md")).is_ok()
