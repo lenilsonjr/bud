@@ -34,6 +34,7 @@ struct TVShell: View {
     @State private var tab: TVTab = .canvas
     @State private var joining = false
     @State private var fetching = false
+    @State private var reading: TVAddTarget? = nil
     @FocusState private var focusedTab: TVTab?
 
     init(store: BudStore) {
@@ -46,7 +47,7 @@ struct TVShell: View {
             tabs
             switch tab {
             case .canvas:
-                TVCanvas(store: store)
+                TVCanvas(store: store, onOpen: open)
                     .ignoresSafeArea()
                     .overlay(alignment: .top) { trail }
             case .files:
@@ -63,6 +64,7 @@ struct TVShell: View {
         .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
         .fullScreenCover(isPresented: $joining) { TVJoinModal(devices: devices, close: { joining = false }) }
         .fullScreenCover(isPresented: $fetching) { fetchScreen }
+        .fullScreenCover(item: $reading) { target in TVReadScreen(store: store, start: target.id, close: { reading = nil }) }
         .task { await devices.start() }
         .onChange(of: devices.joinPhase) { _, phase in
             guard case let .joined(_, received, total) = phase else { return }
@@ -84,10 +86,9 @@ struct TVShell: View {
         }
     }
 
-    /// Open from the Files menu: the bud becomes the center and the canvas shows it.
+    /// Open, from a menu or a leaf in Files: the bud is read full screen.
     private func open(_ id: UUID) {
-        store.center = id
-        tab = .canvas
+        reading = TVAddTarget(id: id)
     }
 
     private func finishFetch() {
@@ -153,6 +154,7 @@ struct TVShell: View {
 /// center and only slides when the focus wanders out of view.
 struct TVCanvas: View {
     @ObservedObject var store: BudStore
+    let onOpen: (UUID) -> Void
     @State private var camera: CGPoint = .zero
     @State private var adding: TVAddTarget? = nil
     @FocusState private var focused: UUID?
@@ -176,7 +178,7 @@ struct TVCanvas: View {
                             TVCardFace(id: id, store: store, lit: focused == id)
                         }
                         .buttonStyle(.tvBare)
-                        .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { open(id) })
+                        .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { onOpen(id) })
                         .focused($focused, equals: id)
                         .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
                         .scaleEffect(scale * (focused == id ? 1.06 : 1))
@@ -229,12 +231,6 @@ struct TVCanvas: View {
         } else if store.tree.bud(id)?.isTodo == true {
             store.toggle(id)
         }
-    }
-
-    /// Open from the menu: a bud becomes the center, whether or not it has children yet.
-    private func open(_ id: UUID) {
-        guard id != store.center else { return }
-        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
     }
 
     private func toggleFocused() {
@@ -329,7 +325,7 @@ struct TVCardFace: View {
     }
 }
 
-/// The bud a menu's Add inside… plants under.
+/// The bud a menu's Add inside… plants under, or the read screen opens on.
 struct TVAddTarget: Identifiable {
     let id: UUID
 }
