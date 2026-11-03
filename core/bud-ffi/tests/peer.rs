@@ -294,3 +294,27 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
     a.node.stop();
     assert!(a.node.listen(Box::new(Heard::default())).is_err());
 }
+
+#[test]
+fn a_tv_shows_a_request_and_the_phone_confirms_its_words_and_brings_the_key() {
+    let a = side(&[("Newsletter.md", "A note.\n")], RelaySetting::Off);
+    let t = side(&[], RelaySetting::Off);
+    a.node.sync_now().unwrap();
+    let shown = t.node.join_request().unwrap();
+    assert!(shown.code.starts_with("budr1"));
+    assert_eq!(shown.words.len(), 4);
+    let qr = t.node.join_request_qr(shown.code.clone()).unwrap();
+    assert!(qr.len() > 20 && qr.iter().all(|row| row.len() == qr.len()));
+    assert_eq!(
+        a.node.read_request(shown.code.clone()).unwrap(),
+        shown.words
+    );
+    assert!(t.node.peers().unwrap().is_empty());
+    let peer = a.node.confirm_request(shown.code.clone()).unwrap();
+    assert_eq!(peer.id, t.node.id().unwrap());
+    t.node.sync_now().unwrap();
+    eventually("the note reaches the tv", || {
+        std::fs::read_to_string(t.dir.path().join("Newsletter.md")).is_ok()
+    });
+    assert!(t.node.join_request_qr("bud1abc".to_string()).is_err());
+}

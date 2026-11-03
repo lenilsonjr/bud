@@ -4,7 +4,8 @@
 mod common;
 
 use bud_core::{
-    Identity, Node, NodeEvent, NodeListener, NodeOptions, Relay, RotationOutcome, Ticket, Vault,
+    Identity, JoinRequest, Node, NodeEvent, NodeListener, NodeOptions, Relay, RotationOutcome,
+    Ticket, Vault,
 };
 use common::{copy_dir, fingerprint, fixture};
 use pretty_assertions::assert_eq;
@@ -746,4 +747,113 @@ fn a_node_that_says_nothing_about_itself_still_syncs() {
     );
     let seen_by_b = &b.node.peers().unwrap()[0];
     assert_eq!(seen_by_b.kind.as_deref(), Some("mac"));
+}
+
+#[test]
+fn a_join_request_is_a_short_string_whose_four_words_both_sides_derive() {
+    let t = Peer::new(None, None);
+    let request = t.node.join_request().unwrap();
+    let text = request.encode();
+    assert!(text.starts_with("budr1"), "{text}");
+    assert!(text.chars().all(|c| c.is_ascii_alphanumeric()));
+    assert_eq!(JoinRequest::parse(&text).unwrap(), request);
+    assert_eq!(JoinRequest::parse(&text.to_uppercase()).unwrap(), request);
+    let words = request.words();
+    assert_eq!(JoinRequest::parse(&text).unwrap().words(), words);
+    assert!(words
+        .iter()
+        .all(|word| word.chars().all(|c| c.is_ascii_lowercase())));
+    // The next request of the same node reads with other words.
+    assert_ne!(t.node.join_request().unwrap().words(), words);
+    assert!(
+        JoinRequest::parse("bud1abc").is_err(),
+        "a ticket is not a request"
+    );
+    assert!(JoinRequest::parse("budr1abc").is_err());
+}
+
+#[test]
+fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the_vault() {
+    // a holds the vault, as the phone; t is a device without one, as the TV.
+    let a = Peer::new(Some(&fixture()), None);
+    let t = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    let heard_by_a = Recorder::listening(&a.node);
+    let heard_by_t = Recorder::listening(&t.node);
+    let shown = t.node.join_request().unwrap();
+    let read = a.node.read_request(&shown.encode()).unwrap();
+    assert_eq!(read.words(), shown.words(), "the same four words on both");
+    assert!(
+        t.node.peers().unwrap().is_empty(),
+        "nothing moves before the confirmation"
+    );
+    assert!(a.node.peers().unwrap().is_empty());
+    let peer = a.node.confirm_request(&read).unwrap();
+    assert_eq!(peer.id, t.node.id());
+    assert_eq!(
+        heard_by_t.events(),
+        vec![NodeEvent::PeerJoined { id: a.node.id() }]
+    );
+    assert_eq!(
+        heard_by_a.events(),
+        vec![NodeEvent::PeerJoined { id: t.node.id() }]
+    );
+    // The TV holds the vault key now and syncs as any peer does.
+    assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
+    assert_eq!(t.node.peers().unwrap()[0].id, a.node.id());
+    t.node.sync_now().unwrap();
+    assert!(t.read("Gift ideas.md").is_some(), "the vault came over");
+    let edited = format!("{}Candles.\n", a.read("Gift ideas.md").unwrap());
+    a.write("Gift ideas.md", &edited);
+    a.node.sync_now().unwrap();
+    eventually("the edit reaches the tv", || {
+        t.read("Gift ideas.md") == Some(edited.clone())
+    });
+}
+
+#[test]
+fn a_join_request_is_refused_after_its_lifetime_on_either_side() {
+    let a = Peer::new(Some(&fixture()), None);
+    let t = Peer::new(None, None);
+    t.node.set_ticket_lifetime(Duration::from_millis(1));
+    let shown = t.node.join_request().unwrap();
+    std::thread::sleep(Duration::from_millis(10));
+    // The phone, with the usual lifetime, still reads the words; the TV turns the key away.
+    let read = a.node.read_request(&shown.encode()).unwrap();
+    assert!(a.node.confirm_request(&read).is_err());
+    assert!(t.node.peers().unwrap().is_empty());
+    assert!(a.node.peers().unwrap().is_empty());
+    // A phone with the short lifetime refuses to read it at all.
+    a.node.set_ticket_lifetime(Duration::from_millis(1));
+    assert!(a.node.read_request(&shown.encode()).is_err());
+}
+
+#[test]
+fn a_key_under_the_wrong_secret_is_turned_away_and_a_request_is_good_once() {
+    let a = Peer::new(Some(&fixture()), None);
+    let t = Peer::new(None, None);
+    let shown = t.node.join_request().unwrap();
+    // A code with the TV's address but not its secret shows other words, and brings nothing.
+    let forged = JoinRequest {
+        secret: [9; 32],
+        ..shown.clone()
+    };
+    assert_ne!(forged.words(), shown.words());
+    assert!(a.node.confirm_request(&forged).is_err());
+    assert!(t.node.peers().unwrap().is_empty());
+    // The right one works, once.
+    a.node.confirm_request(&shown).unwrap();
+    let b = Peer::new(Some(&fixture()), None);
+    assert!(
+        b.node.confirm_request(&shown).is_err(),
+        "the request was used"
+    );
+    assert_eq!(t.node.peers().unwrap().len(), 1);
+    // A TV that is paired already keeps its key, whatever request it shows.
+    let again = t.node.join_request().unwrap();
+    assert!(b.node.confirm_request(&again).is_err());
+    assert_eq!(t.node.peers().unwrap().len(), 1);
+    assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
+    // A vault does not read its own request.
+    assert!(t.node.read_request(&again.encode()).is_err());
 }

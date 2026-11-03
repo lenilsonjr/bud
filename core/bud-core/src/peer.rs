@@ -29,6 +29,7 @@
 
 use crate::lock;
 use crate::sync::{Heads, Updates};
+use crate::words::WORDS;
 use crate::{Error, Result, SyncReport, Vault};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
@@ -53,6 +54,10 @@ const ALPN: &[u8] = b"bud/sync/1";
 const MDNS_SERVICE: &str = "bud";
 /// A ticket string starts with this, then the base32 of its fields.
 const TICKET_PREFIX: &str = "bud1";
+/// A join request as text starts with this.
+const REQUEST_PREFIX: &str = "budr1";
+/// What the four words of a request are derived under.
+const WORDS_CONTEXT: &[u8] = b"bud/join/1";
 /// Bound to the data a message is sealed with, so a sealed message of another use never opens.
 const SEAL_CONTEXT: &[u8] = b"bud/sync/1";
 const NODE_KEY_FILE: &str = "node.key";
@@ -128,6 +133,91 @@ pub struct Ticket {
     pub relay: Relay,
     pub key: [u8; 32],
     pub addrs: Vec<SocketAddr>,
+}
+
+/// What a device without the vault shows to be let in, as G19 turns pairing around for a device
+/// with no camera: its node id, where it listens, and a secret the session that brings the key is
+/// sealed with. Four words derived from it are shown on both sides, so the person confirms the
+/// phone scanned this device's code before any key moves.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JoinRequest {
+    pub node: [u8; 32],
+    pub secret: [u8; 32],
+    /// When it was made, in milliseconds since the epoch; a request is refused after its lifetime.
+    pub issued: i64,
+    pub relay: Relay,
+    pub addrs: Vec<SocketAddr>,
+}
+
+impl JoinRequest {
+    /// The request as a string of letters and digits.
+    pub fn encode(&self) -> String {
+        let bytes = postcard::to_stdvec(self).unwrap_or_default();
+        format!(
+            "{REQUEST_PREFIX}{}",
+            BASE32_NOPAD.encode(&bytes).to_ascii_lowercase()
+        )
+    }
+
+    /// The request of a string; letter case does not matter.
+    pub fn parse(text: &str) -> Result<JoinRequest> {
+        let bad = |why: &str| Error::Invalid(format!("not a join request: {why}"));
+        let text = text.trim().to_ascii_lowercase();
+        let body = text
+            .strip_prefix(REQUEST_PREFIX)
+            .ok_or_else(|| bad("wrong start"))?;
+        let bytes = BASE32_NOPAD
+            .decode(body.to_ascii_uppercase().as_bytes())
+            .map_err(|_| bad("not base32"))?;
+        let (request, rest) =
+            postcard::take_from_bytes::<JoinRequest>(&bytes).map_err(|_| bad("damaged"))?;
+        if !rest.is_empty() {
+            return Err(bad("trailing bytes"));
+        }
+        Ok(request)
+    }
+
+    /// The content of the QR code for this request.
+    pub fn qr(&self) -> Result<Qr> {
+        qr_of(&self.encode())
+    }
+
+    /// The requesting node's id in hex.
+    pub fn id(&self) -> String {
+        HEXLOWER.encode(&self.node)
+    }
+
+    /// The four words both sides show: a fingerprint of the node and the secret, so they match
+    /// only when the phone scanned this device's code.
+    pub fn words(&self) -> [String; 4] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(WORDS_CONTEXT);
+        hasher.update(&self.node);
+        hasher.update(&self.secret);
+        let hash = hasher.finalize();
+        let bytes = hash.as_bytes();
+        std::array::from_fn(|i| WORDS[bytes[i] as usize].to_string())
+    }
+
+    /// Whether the request is past its lifetime at `now` milliseconds.
+    pub fn is_expired(&self, lifetime: Duration, now: i64) -> bool {
+        now - self.issued >= lifetime.as_millis() as i64
+    }
+}
+
+/// The modules of a QR code for `text`. Upper case lets the code use its denser alphanumeric
+/// mode; parsing ignores case.
+fn qr_of(text: &str) -> Result<Qr> {
+    let code = qrcode::QrCode::new(text.to_ascii_uppercase().as_bytes())
+        .map_err(|err| Error::Invalid(format!("qr code: {err}")))?;
+    Ok(Qr {
+        width: code.width(),
+        dark: code
+            .to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    })
 }
 
 /// What a key rotation did: the peers that took the new key, and the ones it could not reach.
@@ -211,17 +301,7 @@ impl Ticket {
 
     /// The content of the QR code for this ticket.
     pub fn qr(&self) -> Result<Qr> {
-        // Upper case lets the code use its denser alphanumeric mode; `parse` ignores case.
-        let code = qrcode::QrCode::new(self.encode().to_ascii_uppercase().as_bytes())
-            .map_err(|err| Error::Invalid(format!("qr code: {err}")))?;
-        Ok(Qr {
-            width: code.width(),
-            dark: code
-                .to_colors()
-                .into_iter()
-                .map(|c| c == qrcode::Color::Dark)
-                .collect(),
-        })
+        qr_of(&self.encode())
     }
 }
 
@@ -626,6 +706,12 @@ enum Message {
     },
     Final(Updates),
     Done,
+    /// The dialer, which holds the vault, brings its key to a node that showed a join request,
+    /// sealed with the request's secret; the answerer confirms with `Done`.
+    Join {
+        key: [u8; 32],
+        relay: Relay,
+    },
 }
 
 /// The end of a session that speaks: the one that dialed, or the one that answered.
@@ -739,6 +825,17 @@ async fn read_with_aside(
     from: Side,
     max: usize,
 ) -> Result<(Message, Aside)> {
+    let sealed = read_frame(recv, max).await?;
+    open_frame(key, from, &sealed)
+}
+
+/// The message of a sealed frame, and its aside.
+fn open_frame(key: &[u8; 32], from: Side, sealed: &[u8]) -> Result<(Message, Aside)> {
+    decode(&open(key, from, sealed)?)
+}
+
+/// Read one sealed frame of at most `max` bytes, as sent.
+async fn read_frame(recv: &mut iroh::endpoint::RecvStream, max: usize) -> Result<Vec<u8>> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(peer_error)?;
     let len = u32::from_be_bytes(len) as usize;
@@ -754,7 +851,7 @@ async fn read_with_aside(
             .map_err(peer_error)?;
         sealed.extend_from_slice(&chunk[..want]);
     }
-    decode(&open(key, from, &sealed)?)
+    Ok(sealed)
 }
 
 /// The node key, read from `path`, or made and written there for the first time.
@@ -830,6 +927,8 @@ struct Shared {
     identity: Identity,
     /// Who hears what happens.
     listeners: Mutex<Vec<Box<dyn NodeListener>>>,
+    /// The join request this node shows, until it is used or replaced.
+    request: Mutex<Option<JoinRequest>>,
 }
 
 /// Counts a running session for as long as it lives.
@@ -864,6 +963,74 @@ impl Shared {
 
     fn lost(&self, id: &str) {
         lock(&self.connected).remove(id);
+    }
+
+    /// The request this node shows, while it lasts.
+    fn pending_request(&self) -> Option<JoinRequest> {
+        let lifetime = self.ticket_lifetime();
+        lock(&self.request)
+            .clone()
+            .filter(|request| !request.is_expired(lifetime, now_millis()))
+    }
+
+    /// The addresses this node listens on, loopback included, for a peer that cannot look it up.
+    fn listen_addrs(&self) -> Vec<SocketAddr> {
+        let endpoint = &self.endpoint;
+        let mut addrs: Vec<SocketAddr> = endpoint.addr().ip_addrs().copied().collect();
+        for bound in endpoint.bound_sockets() {
+            if bound.ip().is_unspecified() {
+                let loopback = match bound.ip() {
+                    IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::LOCALHOST),
+                };
+                addrs.push(SocketAddr::new(loopback, bound.port()));
+            } else {
+                addrs.push(bound);
+            }
+        }
+        addrs.sort();
+        addrs.dedup();
+        addrs
+    }
+
+    /// Bring the vault key to the node that showed `request`, over a session sealed with the
+    /// request's secret.
+    async fn offer(&self, request: &JoinRequest) -> Result<()> {
+        let key = self.vault().peer_key()?;
+        let peer = PeerInfo {
+            id: request.id(),
+            relay: request.relay.clone(),
+            addrs: request.addrs.clone(),
+            last_seen: None,
+            missed: false,
+            kind: None,
+            name: None,
+            label: None,
+        };
+        let connection = self
+            .endpoint
+            .connect(self.address_of(&peer)?, ALPN)
+            .await
+            .map_err(peer_error)?;
+        let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
+        send_message(
+            &mut send,
+            &request.secret,
+            Side::Dialer,
+            &Message::Join {
+                key,
+                relay: self.relay.clone(),
+            },
+        )
+        .await?;
+        let Message::Done =
+            read_message(&mut recv, &request.secret, Side::Answerer, MAX_FRAME).await?
+        else {
+            return Err(peer_error("the device did not confirm the key"));
+        };
+        send.finish().map_err(peer_error)?;
+        connection.close(0u32.into(), b"done");
+        Ok(())
     }
 
     fn emit(&self, event: NodeEvent) {
@@ -1071,7 +1238,40 @@ impl Shared {
         }
         let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.accept_bi().await.map_err(peer_error)?;
-        let first = read_with_aside(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
+        let sealed = read_frame(&mut recv, MAX_HELLO).await?;
+        let first = match open_frame(&key, Side::Dialer, &sealed) {
+            Ok(opened) => Ok(opened),
+            Err(err) => {
+                // A node without the vault key may be bringing it: the frame opens with the
+                // secret of the request this node shows, while the request lasts, and only then.
+                let brought = self.pending_request().and_then(|request| {
+                    match open_frame(&request.secret, Side::Dialer, &sealed) {
+                        Ok((Message::Join { key, relay }, _)) => Some((request, key, relay)),
+                        _ => None,
+                    }
+                });
+                let Some((request, given, relay)) = brought else {
+                    connection.close(1u32.into(), b"not paired");
+                    return Err(err);
+                };
+                {
+                    // A vault paired already keeps its key; the request is good once.
+                    let vault = self.vault();
+                    vault.adopt_key(&given)?;
+                    vault.remember_peer(&remote_text, &relay, &[])?;
+                    vault.allow(&remote_text)?;
+                }
+                *lock(&self.request) = None;
+                send_message(&mut send, &request.secret, Side::Answerer, &Message::Done).await?;
+                send.finish().map_err(peer_error)?;
+                self.reached(&remote_text);
+                self.emit(NodeEvent::PeerJoined {
+                    id: remote_text.clone(),
+                });
+                let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
+                return Ok(());
+            }
+        };
         let (theirs, ticket, aside) = match first {
             Ok((Message::Hello { heads, ticket }, aside)) => (heads, ticket, aside),
             Ok((Message::Rotate(new), _)) => {
@@ -1200,6 +1400,7 @@ impl Node {
             dropped_acks: AtomicUsize::new(0),
             identity: options.identity,
             listeners: Mutex::new(Vec::new()),
+            request: Mutex::new(None),
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
@@ -1275,23 +1476,80 @@ impl Node {
     /// peer that cannot look the node up.
     pub fn ticket_with_addresses(&self) -> Result<Ticket> {
         let mut ticket = self.ticket()?;
-        let endpoint = &self.shared.endpoint;
-        let mut addrs: Vec<SocketAddr> = endpoint.addr().ip_addrs().copied().collect();
-        for bound in endpoint.bound_sockets() {
-            if bound.ip().is_unspecified() {
-                let loopback = match bound.ip() {
-                    IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::LOCALHOST),
-                    IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::LOCALHOST),
-                };
-                addrs.push(SocketAddr::new(loopback, bound.port()));
-            } else {
-                addrs.push(bound);
-            }
-        }
-        addrs.sort();
-        addrs.dedup();
-        ticket.addrs = addrs;
+        ticket.addrs = self.shared.listen_addrs();
         Ok(ticket)
+    }
+
+    /// Show a join request: a code for a device that holds the vault to scan, and four words.
+    /// It replaces the one shown before, lasts as long as a ticket, and is good once.
+    pub fn join_request(&self) -> Result<JoinRequest> {
+        let mut secret = [0u8; 32];
+        getrandom::fill(&mut secret).map_err(peer_error)?;
+        let request = JoinRequest {
+            node: *self.shared.endpoint.id().as_bytes(),
+            secret,
+            issued: now_millis(),
+            relay: self.shared.relay.clone(),
+            addrs: self.shared.listen_addrs(),
+        };
+        *lock(&self.shared.request) = Some(request.clone());
+        Ok(request)
+    }
+
+    /// Read a join request another device shows, to put its four words to the person. Nothing
+    /// moves until [`Node::confirm_request`]. A request of this node's own, or one past its
+    /// lifetime, is refused here.
+    pub fn read_request(&self, text: &str) -> Result<JoinRequest> {
+        let request = JoinRequest::parse(text)?;
+        let id = PublicKey::from_bytes(&request.node).map_err(peer_error)?;
+        if id == self.shared.endpoint.id() {
+            return Err(Error::Invalid(
+                "peer: that request is this vault's".to_string(),
+            ));
+        }
+        request.relay.url()?;
+        if request.is_expired(self.shared.ticket_lifetime(), now_millis()) {
+            return Err(Error::Invalid(
+                "peer: that request is past its lifetime".to_string(),
+            ));
+        }
+        Ok(request)
+    }
+
+    /// The person confirmed the four words: bring this vault's key to the device that showed the
+    /// request and remember it as a peer. Do not call it from inside an async runtime.
+    pub fn confirm_request(&self, request: &JoinRequest) -> Result<PeerInfo> {
+        let request = self.read_request(&request.encode())?;
+        let peer = PeerInfo {
+            id: request.id(),
+            relay: request.relay.clone(),
+            addrs: request.addrs.clone(),
+            last_seen: None,
+            missed: false,
+            kind: None,
+            name: None,
+            label: None,
+        };
+        if self.shared.vault().is_peer(&peer.id)? {
+            return Err(Error::Exists(peer.id));
+        }
+        let shared = &self.shared;
+        self.runtime()?.block_on(async {
+            tokio::time::timeout(SESSION_TIMEOUT, shared.offer(&request))
+                .await
+                .map_err(|_| peer_error("the device did not answer"))
+                .and_then(|done| done)
+        })?;
+        {
+            let vault = self.shared.vault();
+            vault.remember_peer(&peer.id, &peer.relay, &peer.addrs)?;
+            vault.allow(&peer.id)?;
+        }
+        self.shared.reached(&peer.id);
+        self.shared.emit(NodeEvent::PeerJoined {
+            id: peer.id.clone(),
+        });
+        Ok(peer)
     }
 
     /// Accept a ticket from another vault: remember its peer and take its vault key. A peer is
