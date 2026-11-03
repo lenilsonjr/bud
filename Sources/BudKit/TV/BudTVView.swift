@@ -58,7 +58,7 @@ struct TVShell: View {
             case .files:
                 TVFilesTab(store: store, covered: reading != nil, onLeave: { tab = .canvas }, onOpen: open)
             case .settings:
-                TVSettingsTab(store: store, devices: devices, flags: flags, onJoin: { joining = true })
+                TVSettingsTab(store: store, devices: devices, flags: flags, onJoin: { joining = true }, onStartOver: startOver)
                     // Menu steps out, as on the canvas: back to Canvas rather than out of the app.
                     .onExitCommand { tab = .canvas }
             }
@@ -96,6 +96,12 @@ struct TVShell: View {
     /// Open, from a menu or a leaf in Files: the bud is read full screen.
     private func open(_ id: UUID) {
         reading = TVAddTarget(id: id)
+    }
+
+    /// After Erase: the canvas, with the Canvas pill lit, so the new vault is what the viewer sees.
+    private func startOver() {
+        tab = .canvas
+        focusedTab = .canvas
     }
 
     private func finishFetch() {
@@ -139,7 +145,10 @@ struct TVShell: View {
         }
         .padding(8)
         .background(Theme.glass, in: RoundedRectangle(cornerRadius: 40, style: .continuous))
+        .frame(maxWidth: .infinity)
         .frame(height: 150)
+        // The whole header is one section, so Up reaches the pill from any column below it.
+        .focusSection()
     }
 
     private var trail: some View {
