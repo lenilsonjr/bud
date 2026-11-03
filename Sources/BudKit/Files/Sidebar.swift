@@ -16,6 +16,12 @@ struct Sidebar: View {
         ScrollViewReader { proxy in
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 2) {
+                    // The probe: a first child of no height that reports the top edge as the
+                    // navigator scrolls. A reader in the content's background reports only once.
+                    GeometryReader { geo in
+                        Color.clear.preference(key: TopEdgeKey.self, value: geo.frame(in: .named(Self.space)).minY)
+                    }
+                    .frame(height: 0)
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.place == .inbox) { store.openInbox() }
                     place("Everything", glyph: "leaf.fill", count: nil, selected: store.place == nil && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.place = nil }
@@ -46,9 +52,6 @@ struct Sidebar: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)
-                .background(GeometryReader { geo in
-                    Color.clear.preference(key: TopEdgeKey.self, value: geo.frame(in: .named(Self.space)).minY)
-                })
             }
             .coordinateSpace(name: Self.space)
             // On a phone, a pull down on the navigator opens Go anywhere, as the third frame.

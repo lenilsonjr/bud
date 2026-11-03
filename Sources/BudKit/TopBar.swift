@@ -31,6 +31,7 @@ struct TopBar: View {
                 }
                 .buttonStyle(.plain)
                 .help("Go anywhere")
+                .accessibilityLabel("Go anywhere")
                 Button(action: onAdd) {
                     Image(systemName: "plus")
                         .foregroundStyle(Theme.text)
