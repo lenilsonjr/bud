@@ -97,7 +97,12 @@ struct ModalHost: View {
         Theme.scrim
             .ignoresSafeArea()
             .contentShape(Rectangle())
-            .onTapGesture { store.modal = nil }
+            .onTapGesture {
+                // A key on its way cannot be called back: the card stays until the other device
+                // answers.
+                if store.modal == .addNearby && store.devices.requestPhase == .confirming { return }
+                store.modal = nil
+            }
             .transition(.opacity)
     }
 
