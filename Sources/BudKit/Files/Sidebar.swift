@@ -6,6 +6,11 @@ import SwiftUI
 struct Sidebar: View {
     @ObservedObject var store: BudStore
     @State private var expanded: Set<UUID> = []
+    @State private var pull = PhonePalette.Pull()
+    @Environment(\.compact) private var compact
+    @Environment(\.goAnywhere) private var goAnywhere
+
+    private static let space = "navigator"
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -41,6 +46,15 @@ struct Sidebar: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: TopEdgeKey.self, value: geo.frame(in: .named(Self.space)).minY)
+                })
+            }
+            .coordinateSpace(name: Self.space)
+            // On a phone, a pull down on the navigator opens Go anywhere, as the third frame.
+            .onPreferenceChange(TopEdgeKey.self) { y in
+                guard compact, pull.offset(y) else { return }
+                goAnywhere()
             }
             .onAppear { reveal(store.center, proxy: proxy) }
             .onChange(of: store.center) { _, now in reveal(now, proxy: proxy) }
@@ -53,6 +67,13 @@ struct Sidebar: View {
         expanded.formUnion(store.tree.ancestors(of: id))
         if store.tree.hasChildren(id) { expanded.insert(id) }
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+    }
+
+    /// Where the navigator's content begins, in the navigator's own space: above zero while it is
+    /// pulled down.
+    private struct TopEdgeKey: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
     }
 
     private func toggle(_ id: UUID) {

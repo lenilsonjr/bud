@@ -27,7 +27,8 @@ public struct BudRootView: View {
             TopBar(store: store, onAdd: { store.modal = .capture }, onSearch: { searching = true })
             surface
         }
-        .overlay { if searching { palette } }
+        .overlay { if searching && !compact { palette } }
+        .sheet(isPresented: Binding(get: { searching && compact }, set: { searching = $0 })) { paletteSheet }
         .overlay { ModalHost(store: store) }
         // Above the modal too, so a toast from a dialog shows while Settings still covers the window.
         .overlay(alignment: .bottom) {
@@ -48,6 +49,7 @@ public struct BudRootView: View {
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
         .environment(\.compact, compact)
+        .environment(\.goAnywhere, { searching = true })
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }
         .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
@@ -62,6 +64,15 @@ public struct BudRootView: View {
         case .files:
             FilesView(store: store)
         }
+    }
+
+    /// Go anywhere on a phone: a sheet from the bottom with the keyboard up, half the screen or
+    /// the whole of it, as the third iPhone frame; a pull down dismisses it.
+    private var paletteSheet: some View {
+        CommandPalette(store: store, inSheet: true) { searching = false }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Theme.raised)
     }
 
     /// Go anywhere over the whole view; a click on the dim closes it.

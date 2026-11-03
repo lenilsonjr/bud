@@ -5,6 +5,8 @@ import SwiftUI
 /// keys in the footer. Return centers the pick on the canvas, ⌘Return opens it in Files.
 struct CommandPalette: View {
     @ObservedObject var store: BudStore
+    /// In a phone sheet: the sheet draws the card, and the list takes what height it has.
+    var inSheet = false
     let onClose: () -> Void
     @State private var query = ""
     @State private var picked = 0
@@ -15,6 +17,9 @@ struct CommandPalette: View {
         case bud(SearchHit)
         case destination(Destination)
     }
+
+    /// On a phone a tap goes where you are: Files selects the hit, the canvas centers it.
+    private var tapOpensInFiles: Bool { compact && store.surface == .files }
 
     private var browsing: Bool { query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -68,7 +73,16 @@ struct CommandPalette: View {
                                 .id(index)
                                 .onTapGesture {
                                     picked = index
-                                    go(rows, inFiles: false)
+                                    // On a phone a tap goes where you are; on the Mac the keys say.
+                                    go(rows, inFiles: tapOpensInFiles)
+                                }
+                                .contextMenu {
+                                    if compact, case .bud = row {
+                                        Button(PhonePalette.otherWay(inFiles: tapOpensInFiles)) {
+                                            picked = index
+                                            go(rows, inFiles: !tapOpensInFiles)
+                                        }
+                                    }
                                 }
                         }
                         if rows.isEmpty {
@@ -81,7 +95,7 @@ struct CommandPalette: View {
                     .padding(.horizontal, 6)
                     .padding(.bottom, 8)
                 }
-                .frame(maxHeight: compact ? 300 : 360, alignment: .top)
+                .frame(maxHeight: inSheet ? .infinity : (compact ? 300 : 360), alignment: .top)
                 .clipped()
                 .onChange(of: picked) { _, now in proxy.scrollTo(now) }
             }
@@ -94,10 +108,10 @@ struct CommandPalette: View {
                     .padding(.vertical, 8)
             }
         }
-        .frame(maxWidth: 560)
-        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).stroke(Theme.line, lineWidth: 1))
-        .shadow(color: Theme.shadowStrong, radius: 24, y: 12)
+        .frame(maxWidth: inSheet ? .infinity : 560)
+        .background(inSheet ? .clear : Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous).stroke(inSheet ? .clear : Theme.line, lineWidth: 1))
+        .shadow(color: inSheet ? .clear : Theme.shadowStrong, radius: inSheet ? 0 : 24, y: inSheet ? 0 : 12)
         .onAppear { typing = true; picked = firstPick(in: rows) }
         .onChange(of: query) { _, _ in picked = firstPick(in: self.rows) }
         .onKeyPress(.downArrow) { move(1, in: rows.count); return .handled }
