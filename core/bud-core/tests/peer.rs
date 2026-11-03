@@ -798,11 +798,32 @@ fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the
         heard_by_a.events(),
         vec![NodeEvent::PeerJoined { id: t.node.id() }]
     );
-    // The TV holds the vault key now and syncs as any peer does.
+    // The TV holds the vault key now and syncs as any peer does; its first sync is a first
+    // fetch, told with the size of the vault.
     assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
     assert_eq!(t.node.peers().unwrap()[0].id, a.node.id());
     t.node.sync_now().unwrap();
     assert!(t.read("Gift ideas.md").is_some(), "the vault came over");
+    let total = a.vault.lock().unwrap().bud_count().unwrap();
+    assert_eq!(
+        heard_by_t.events()[1..],
+        [
+            NodeEvent::FetchProgress {
+                received: 0,
+                total: Some(total),
+            },
+            NodeEvent::FetchProgress {
+                received: total,
+                total: Some(total),
+            },
+        ]
+    );
+    t.node.sync_now().unwrap();
+    assert_eq!(
+        heard_by_t.events().len(),
+        3,
+        "a later sync is not a first fetch"
+    );
     let edited = format!("{}Candles.\n", a.read("Gift ideas.md").unwrap());
     a.write("Gift ideas.md", &edited);
     a.node.sync_now().unwrap();

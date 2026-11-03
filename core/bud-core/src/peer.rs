@@ -1102,7 +1102,9 @@ impl Shared {
             let vault = self.vault();
             (vault.heads()?, vault.pending_ticket(&peer.id)?)
         };
-        let first = ticket.is_some();
+        // A first fetch: the session that redeems a ticket, or the first with a peer that brought
+        // the key to a join request, which has not been seen in a session yet.
+        let first = ticket.is_some() || peer.last_seen.is_none();
         send_with_aside(
             &mut send,
             &key,
@@ -1264,7 +1266,8 @@ impl Shared {
                 *lock(&self.request) = None;
                 send_message(&mut send, &request.secret, Side::Answerer, &Message::Done).await?;
                 send.finish().map_err(peer_error)?;
-                self.reached(&remote_text);
+                // Connected, but not seen in a session yet: the first sync is the first fetch.
+                lock(&self.connected).insert(remote_text.clone());
                 self.emit(NodeEvent::PeerJoined {
                     id: remote_text.clone(),
                 });
