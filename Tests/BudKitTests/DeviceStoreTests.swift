@@ -345,6 +345,17 @@ extension DeviceStoreTests {
         XCTAssertEqual(store.requestPhase, .idle, "the closed sheet's answer is not shown")
     }
 
+    func testAReadThatEndsAfterAResetIsDropped() async throws {
+        let (store, peers, _) = await make()
+        let request = try await peers.joinRequest()
+        await peers.setReadDelay(0.1)
+        let reading = Task { await store.readRequest(request.code) }
+        await eventually { store.requestPhase == .reading }
+        store.resetRequest()
+        await reading.value
+        XCTAssertEqual(store.requestPhase, .idle, "the closed sheet's words are not shown")
+    }
+
     func testAFailedRequestNamesWhy() async throws {
         let (store, peers, _) = await make()
         await store.readRequest("bud1 a ticket")

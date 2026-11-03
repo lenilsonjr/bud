@@ -43,6 +43,7 @@ public actor MemoryPeers: Peers {
     private var awaiting: CheckedContinuation<Bool, Never>?
     private var offerAfter: TimeInterval?
     private var lastWords: [String] = []
+    private var readDelay: TimeInterval = 0
     private var counter = 0
 
     /// Launch arguments for a tour over memory: one paired device, so Settings shows the pair
@@ -105,6 +106,9 @@ public actor MemoryPeers: Peers {
 
     /// What reading or confirming a request fails with from now on; nil lets them work.
     public func setRequestFailure(_ error: RequestError?) { requestFailure = error }
+
+    /// How long reading a request takes from now on, as a slow network would.
+    public func setReadDelay(_ seconds: TimeInterval) { readDelay = seconds }
 
     /// How the device that shows a request answers a key on offer: kept or refused on its own,
     /// or nil to wait for `answerJoin`.
@@ -175,6 +179,7 @@ public actor MemoryPeers: Peers {
 
     public func readRequest(_ code: String) async throws -> [String] {
         guard PeerText.looksLikeRequest(code) else { throw RequestError.notARequest }
+        if readDelay > 0 { try? await Task.sleep(nanoseconds: UInt64(readDelay * 1_000_000_000)) }
         if let requestFailure { throw requestFailure }
         let key = String(code.filter { !$0.isWhitespace }).lowercased()
         if let request = requests[key], clock() >= request.expiresAt { throw RequestError.expired }
