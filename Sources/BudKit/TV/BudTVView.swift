@@ -1,16 +1,18 @@
 #if canImport(SwiftUI) && os(tvOS)
 import SwiftUI
 
-/// The tabs of the TV: the orbit canvas and Devices. Files can join them later.
+/// The tabs of the TV, the three G16 names: the orbit canvas, Files and Devices.
 enum TVTab: String, CaseIterable, Hashable {
     case canvas = "Canvas"
+    case files = "Files"
     case devices = "Devices"
 }
 
 /// Bud on Apple TV: the same orbit canvas, driven by the remote. Swiping moves the focus from
 /// card to card, the light rests on the focused one, a click centers a bud with children or
 /// ticks a to-do, Menu steps out, Play/Pause ticks the to-do in focus. Capture is one line. A
-/// glass pill at the top switches to Devices, where the TV pairs the next device or joins a vault.
+/// glass pill at the top switches to Files, the pages the Mac sidebar has, and to Devices, where
+/// the TV pairs the next device or joins a vault.
 public struct BudTVView: View {
     @StateObject private var store: BudStore
 
@@ -47,6 +49,8 @@ struct TVShell: View {
                 TVCanvas(store: store)
                     .ignoresSafeArea()
                     .overlay(alignment: .top) { trail }
+            case .files:
+                TVFilesTab(store: store, onLeave: { tab = .canvas }, onOpen: open)
             case .devices:
                 TVDevicesTab(devices: devices, onJoin: { joining = true })
                     // Menu steps out, as on the canvas: back to Canvas rather than out of the app.
@@ -78,6 +82,12 @@ struct TVShell: View {
         } else {
             Theme.window.ignoresSafeArea()
         }
+    }
+
+    /// Open from the Files menu: the bud becomes the center and the canvas shows it.
+    private func open(_ id: UUID) {
+        store.center = id
+        tab = .canvas
     }
 
     private func finishFetch() {
