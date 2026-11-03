@@ -92,6 +92,8 @@ public struct OrbitCanvas: View {
             return .handled
         }
         .onKeyPress(KeyEquivalent("n")) {
+            // A card already open keeps the window: N does not replace it.
+            guard store.modal == nil else { return .ignored }
             addUnderTheLitCard()
             return .handled
         }
