@@ -12,6 +12,17 @@ public enum JoinPhase: Equatable, Sendable {
     case joined(Device, received: Int, total: Int?)
 }
 
+/// Where the phone's scan of a join request is.
+public enum RequestPhase: Equatable, Sendable {
+    case idle
+    case reading
+    /// The code was read; the person compares these words with the device's.
+    case words([String], code: String)
+    case confirming
+    case confirmed(Device)
+    case failed(RequestError)
+}
+
 /// How far a key rotation has got, for the dialog.
 public struct RotationProgress: Equatable, Sendable {
     /// How many devices it has to reach.
@@ -47,6 +58,10 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var relay: RelaySetting = .default
     /// The device that used the ticket on show, until the sheet is closed or asks again.
     @Published public private(set) var redeemedBy: String?
+    /// The join request on show while this device asks to be let in; replaced when it expires.
+    @Published public private(set) var currentRequest: JoinRequest?
+    /// Where the scan of another device's request is, on the device that holds the vault.
+    @Published public private(set) var requestPhase: RequestPhase = .idle
     /// Told when a sync is over, for the toast that says what it brought in.
     public var onSyncFinished: ((SyncSummary) -> Void)?
     /// Told when a key rotation is over, for the toast that says who missed it.
@@ -56,7 +71,9 @@ public final class DeviceStore: ObservableObject {
     private let now: @Sendable () -> Date
     private var listening: Task<Void, Never>?
     private var renewing: Task<Void, Never>?
+    private var renewingRequest: Task<Void, Never>?
     private var sheetOpen = false
+    private var requestOpen = false
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
 
@@ -73,6 +90,7 @@ public final class DeviceStore: ObservableObject {
     deinit {
         listening?.cancel()
         renewing?.cancel()
+        renewingRequest?.cancel()
     }
 
     /// "k7f3…q2m9": the first four characters of an id, an ellipsis and the last four.
@@ -96,6 +114,7 @@ public final class DeviceStore: ObservableObject {
         listening?.cancel()
         listening = nil
         closeTicket()
+        closeRequest()
     }
 
     /// Reads the devices and the sync state again.
@@ -149,6 +168,64 @@ public final class DeviceStore: ObservableObject {
             await self?.refreshTicketIfExpired()
         }
     }
+
+    // MARK: Join request
+
+    /// This device asks to be let in: shows a request and keeps it fresh until `closeRequest`.
+    public func openRequest() async {
+        requestOpen = true
+        await renewRequest()
+    }
+
+    public func closeRequest() {
+        requestOpen = false
+        renewingRequest?.cancel()
+        renewingRequest = nil
+        currentRequest = nil
+    }
+
+    /// Makes a new request if one is on show and the one shown has run out.
+    public func refreshRequestIfExpired() async {
+        guard requestOpen, currentRequest.map({ $0.expiresAt <= now() }) ?? true else { return }
+        await renewRequest()
+    }
+
+    private func renewRequest() async {
+        guard let request = try? await peers.joinRequest(), requestOpen else { return }
+        currentRequest = request
+        renewingRequest?.cancel()
+        let wait = max(0, request.expiresAt.timeIntervalSince(now()))
+        renewingRequest = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.refreshRequestIfExpired()
+        }
+    }
+
+    /// On the device with the vault: reads the request the person scanned and puts its words up.
+    public func readRequest(_ code: String) async {
+        requestPhase = .reading
+        do {
+            requestPhase = .words(try await peers.readRequest(code), code: code)
+        } catch {
+            requestPhase = .failed(RequestError(error))
+        }
+    }
+
+    /// The person confirmed the words match: brings the key over to the device that asked.
+    public func confirmRequest() async {
+        guard case let .words(_, code) = requestPhase else { return }
+        requestPhase = .confirming
+        do {
+            let device = try await peers.confirmRequest(code)
+            requestPhase = .confirmed(device)
+            await refresh()
+        } catch {
+            requestPhase = .failed(RequestError(error))
+        }
+    }
+
+    public func resetRequest() { requestPhase = .idle }
 
     // MARK: Join
 
@@ -232,7 +309,14 @@ public final class DeviceStore: ObservableObject {
         case let .ticketRedeemed(id):
             redeemedBy = id
             await refresh()
-        case .deviceJoined:
+        case let .deviceJoined(device):
+            if requestOpen {
+                // The device that scanned this one's request brought the key: the first fetch
+                // begins, as it does after a ticket.
+                closeRequest()
+                fetched = (0, nil)
+                joinPhase = .joined(device, received: 0, total: nil)
+            }
             await refresh()
         case let .syncFinished(summary):
             lastSummary = summary

@@ -34,7 +34,15 @@ public actor MemoryPeers: Peers {
     private var nextSummary = SyncSummary()
     private var relaySetting = RelaySetting.default
     private var issued: [String: Issued] = [:]
+    private var requests: [String: Issued] = [:]
+    private var requestFailure: RequestError?
     private var counter = 0
+
+    /// The words a memory request's fingerprint is spoken in; the core has 256 of them.
+    static let words = [
+        "amber", "cedar", "harbor", "lantern", "meadow", "otter", "pebble", "quartz",
+        "river", "saffron", "thistle", "violet", "walnut", "zephyr", "indigo", "juniper",
+    ]
     private var listeners: [UUID: AsyncStream<PeerEvent>.Continuation] = [:]
 
     public init(
@@ -67,6 +75,9 @@ public actor MemoryPeers: Peers {
         emit(.fetchProgress(received: received, total: total))
     }
 
+    /// What reading or confirming a request fails with from now on; nil lets them work.
+    public func setRequestFailure(_ error: RequestError?) { requestFailure = error }
+
     // MARK: Peers
 
     public func devices() async throws -> [Device] { all }
@@ -96,6 +107,51 @@ public actor MemoryPeers: Peers {
         emit(.ticketRedeemed(by: device.id))
         emit(.deviceJoined(device))
         return device
+    }
+
+    public func joinRequest() async throws -> JoinRequest {
+        counter += 1
+        var random = Generator(seed: UInt64(counter) &* 0xA076_1D64_78BD_642F)
+        let code = PeerText.requestPrefix + random.token(175)
+        let qr = (0..<29).map { _ in (0..<29).map { _ in random.next() % 2 == 0 } }
+        let madeAt = clock()
+        let expiresAt = madeAt.addingTimeInterval(lifetime)
+        requests[code] = Issued(madeAt: madeAt, expiresAt: expiresAt)
+        return JoinRequest(code: code, qr: qr, words: Self.wordsOf(code), madeAt: madeAt, expiresAt: expiresAt)
+    }
+
+    public func readRequest(_ code: String) async throws -> [String] {
+        guard PeerText.looksLikeRequest(code) else { throw RequestError.notARequest }
+        if let requestFailure { throw requestFailure }
+        let key = String(code.filter { !$0.isWhitespace }).lowercased()
+        if let request = requests[key], clock() >= request.expiresAt { throw RequestError.expired }
+        return Self.wordsOf(key)
+    }
+
+    public func confirmRequest(_ code: String) async throws -> Device {
+        guard PeerText.looksLikeRequest(code) else { throw RequestError.notARequest }
+        if let requestFailure { throw requestFailure }
+        let key = String(code.filter { !$0.isWhitespace }).lowercased()
+        guard reachable, var request = requests[key] else { throw RequestError.unreachable }
+        guard clock() < request.expiresAt else { throw RequestError.expired }
+        guard !request.used else { throw RequestError.refused }
+        request.used = true
+        requests[key] = request
+        counter += 1
+        var random = Generator(seed: UInt64(counter) &* 0xD1B5_4A32_D192_ED03)
+        let device = Device(id: random.token(32), reach: .local, lastSeen: clock(), kind: .tv)
+        all.append(device)
+        emit(.deviceJoined(device))
+        return device
+    }
+
+    /// Four words from the code alone, so the device that shows it and the one that reads it
+    /// agree without talking.
+    static func wordsOf(_ code: String) -> [String] {
+        var state: UInt64 = 0x9E37_79B9_7F4A_7C15
+        for byte in code.utf8 { state = (state ^ UInt64(byte)) &* 0x100_0000_01B3 }
+        var random = Generator(seed: state)
+        return (0..<4).map { _ in words[Int(random.next() % UInt64(words.count))] }
     }
 
     public func remove(_ id: String) async throws {

@@ -77,9 +77,16 @@ struct TVSettingsTab: View {
             .scrollClipDisabled()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .focusSection()
-            TVPairColumn(devices: devices, lit: focused == "join", onJoin: onJoin)
-                .focused($focused, equals: "join")
-                .focusSection()
+            // A TV with no other device asks to be let in (G19); one with a vault pairs the next.
+            if DevicesText.isEmpty(devices.devices) {
+                TVRequestColumn(devices: devices, lit: focused == "join", onType: onJoin)
+                    .focused($focused, equals: "join")
+                    .focusSection()
+            } else {
+                TVPairColumn(devices: devices, lit: focused == "join", onJoin: onJoin)
+                    .focused($focused, equals: "join")
+                    .focusSection()
+            }
         }
         .padding(.top, 30)
         .padding(.horizontal, 160)

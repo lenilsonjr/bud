@@ -76,6 +76,94 @@ struct TVDeviceRow: View {
     }
 }
 
+/// ADD THIS APPLE TV TO A VAULT (G19), shown while the TV has no other device: the 280 pt QR
+/// tile with the join request on show, the four words under it for the person to check on the
+/// iPhone, the instruction, the expiry that counts down, and the typed ticket as the way in
+/// without a phone.
+struct TVRequestColumn: View {
+    @ObservedObject var devices: DeviceStore
+    let lit: Bool
+    let onType: () -> Void
+
+    private static let eyebrow = TextStyle(typeface: .text, size: 20, weight: 700, tracking: 1.6, uppercase: true)
+    private static let word = TextStyle(typeface: .text, size: 30, weight: 600)
+    private static let note = TextStyle(typeface: .text, size: 24, weight: 400)
+    private static let expiry = TextStyle(typeface: .text, size: 20, weight: 400)
+    private static let button = TextStyle(typeface: .text, size: 29, weight: 600)
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(spacing: 28) {
+                Text(TVDevicesText.requestTitle)
+                    .textStyle(Self.eyebrow)
+                    .foregroundStyle(Theme.leaf)
+                if let request = devices.currentRequest {
+                    QRTile(modules: request.qr, size: 280, corner: 24, expired: context.date >= request.expiresAt)
+                    words(request.words)
+                } else {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Theme.hubInk)
+                        .frame(width: 280, height: 280)
+                        .overlay { ProgressView().tint(Theme.hub) }
+                }
+                Text(TVDevicesText.requestNote)
+                    .textStyle(Self.note)
+                    .foregroundStyle(Theme.text2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(TVDevicesText.requestExpiry(devices.currentRequest, now: context.date))
+                    .textStyle(Self.expiry)
+                    .foregroundStyle(Theme.text3)
+                    .monospacedDigit()
+                Spacer(minLength: 0)
+                typeButton
+            }
+        }
+        .padding(44)
+        .frame(width: 620)
+        .frame(maxHeight: .infinity)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .task { await devices.openRequest() }
+        .onDisappear { devices.closeRequest() }
+    }
+
+    /// The four words as pills in a row, read aloud across the room or checked on the phone.
+    private func words(_ words: [String]) -> some View {
+        HStack(spacing: 12) {
+            ForEach(Array(words.enumerated()), id: \.offset) { _, word in
+                Text(word)
+                    .textStyle(Self.word)
+                    .foregroundStyle(Theme.text)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(TVDevicesText.wordsLine(words))
+    }
+
+    private var typeButton: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return Button(action: onType) {
+            HStack(spacing: 14) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 26, weight: .semibold))
+                Text(TVDevicesText.typeInstead)
+                    .textStyle(Self.button)
+            }
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 40)
+            .frame(width: 532, height: 84)
+            .background(lit ? Theme.amethystSoft : Theme.raised, in: shape)
+            .overlay(shape.stroke(lit ? Theme.amethyst : Theme.line, lineWidth: lit ? 2 : 1))
+            .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
+        }
+        .buttonStyle(.tvBare)
+        .animation(.easeOut(duration: 0.2), value: lit)
+    }
+}
+
 /// PAIR THE NEXT DEVICE: the 280 pt QR tile with the ticket on show, the instruction, the expiry
 /// that counts down, and the button that joins a vault from here instead.
 struct TVPairColumn: View {
