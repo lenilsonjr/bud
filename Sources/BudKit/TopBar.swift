@@ -61,6 +61,7 @@ struct TopBar: View {
             }
             .buttonStyle(.plain)
             .help("Settings")
+            .accessibilityLabel("Settings")
             #endif
         }
         .task { await store.devices.start() }
