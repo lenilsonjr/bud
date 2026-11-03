@@ -36,7 +36,35 @@ public actor MemoryPeers: Peers {
     private var issued: [String: Issued] = [:]
     private var requests: [String: Issued] = [:]
     private var requestFailure: RequestError?
+    /// What the device that shows a request answers a key on offer with, when no one answers by
+    /// hand: nil leaves `confirmRequest` waiting for `answerJoin`.
+    private var autoAnswer: Bool? = true
+    private var offered: JoinOffer?
+    private var awaiting: CheckedContinuation<Bool, Never>?
+    private var offerAfter: TimeInterval?
+    private var lastWords: [String] = []
     private var counter = 0
+
+    /// Launch arguments for a tour over memory: one paired device, so Settings shows the pair
+    /// column; and a key on offer a few seconds after a request is shown, so the confirm state
+    /// can be seen.
+    public static let pairedArgument = "-bud-paired"
+    public static let offerArgument = "-bud-offer"
+    static let offerDelay: TimeInterval = 6
+
+    /// The peers an app over memory starts with: this device alone, or what the launch
+    /// arguments ask for.
+    public static func forLaunch(arguments: [String], now: @escaping @Sendable () -> Date = { Date() }) -> MemoryPeers {
+        var devices = [Device(id: "this-device", isThisDevice: true, reach: .local)]
+        if arguments.contains(pairedArgument) {
+            devices.append(Device(id: fixtures(now: now())[1].id, reach: .direct, lastSeen: now(), kind: .iphone))
+        }
+        let peers = MemoryPeers(devices: devices, now: now)
+        if arguments.contains(offerArgument) {
+            Task { await peers.setOfferAfter(offerDelay) }
+        }
+        return peers
+    }
 
     /// The words a memory request's fingerprint is spoken in; the core has 256 of them.
     static let words = [
@@ -78,6 +106,24 @@ public actor MemoryPeers: Peers {
     /// What reading or confirming a request fails with from now on; nil lets them work.
     public func setRequestFailure(_ error: RequestError?) { requestFailure = error }
 
+    /// How the device that shows a request answers a key on offer: kept or refused on its own,
+    /// or nil to wait for `answerJoin`.
+    public func setAutoAnswer(_ keep: Bool?) { autoAnswer = keep }
+
+    /// Puts a key on offer this many seconds after each request is shown, as a phone would; nil
+    /// stops it.
+    public func setOfferAfter(_ seconds: TimeInterval?) { offerAfter = seconds }
+
+    /// A device with the vault brings its key to the request on show: the listeners hear the
+    /// offer and `answerJoin` settles it, as `confirmRequest` does from the other side.
+    public func offerJoin(kind: DeviceKind? = .iphone, name: String? = "Ada’s iPhone") {
+        counter += 1
+        var random = Generator(seed: UInt64(counter) &* 0xD1B5_4A32_D192_ED03)
+        let offer = JoinOffer(id: random.token(32), kind: kind, name: name, words: lastWords)
+        offered = offer
+        emit(.joinOffered(offer))
+    }
+
     // MARK: Peers
 
     public func devices() async throws -> [Device] { all }
@@ -117,7 +163,14 @@ public actor MemoryPeers: Peers {
         let madeAt = clock()
         let expiresAt = madeAt.addingTimeInterval(lifetime)
         requests[code] = Issued(madeAt: madeAt, expiresAt: expiresAt)
-        return JoinRequest(code: code, qr: qr, words: Self.wordsOf(code), madeAt: madeAt, expiresAt: expiresAt)
+        lastWords = Self.wordsOf(code)
+        if let offerAfter {
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(offerAfter * 1_000_000_000))
+                await self?.offerJoin()
+            }
+        }
+        return JoinRequest(code: code, qr: qr, words: lastWords, madeAt: madeAt, expiresAt: expiresAt)
     }
 
     public func readRequest(_ code: String) async throws -> [String] {
@@ -135,23 +188,59 @@ public actor MemoryPeers: Peers {
         guard reachable, var request = requests[key] else { throw RequestError.unreachable }
         guard clock() < request.expiresAt else { throw RequestError.expired }
         guard !request.used else { throw RequestError.refused }
+        // The device that shows the request is told who brought the key and keeps it only on
+        // the person's say so; both sides are this one actor over memory.
+        counter += 1
+        var random = Generator(seed: UInt64(counter) &* 0xD1B5_4A32_D192_ED03)
+        let offer = JoinOffer(id: random.token(32), kind: .iphone, name: nil, words: Self.wordsOf(key))
+        offered = offer
+        emit(.joinOffered(offer))
+        let kept: Bool
+        if let autoAnswer {
+            kept = autoAnswer
+            offered = nil
+        } else {
+            kept = await withCheckedContinuation { awaiting = $0 }
+        }
+        guard kept else { throw RequestError.refused }
         request.used = true
         requests[key] = request
         counter += 1
-        var random = Generator(seed: UInt64(counter) &* 0xD1B5_4A32_D192_ED03)
+        random = Generator(seed: UInt64(counter) &* 0xD1B5_4A32_D192_ED03)
         let device = Device(id: random.token(32), reach: .local, lastSeen: clock(), kind: .tv)
         all.append(device)
         emit(.deviceJoined(device))
         return device
     }
 
-    /// Four words from the code alone, so the device that shows it and the one that reads it
-    /// agree without talking.
+    public func answerJoin(keep: Bool) async throws {
+        guard let offer = offered else { throw PeersError.nothingOffered }
+        offered = nil
+        if let awaiting {
+            self.awaiting = nil
+            awaiting.resume(returning: keep)
+            return
+        }
+        // A key offered by hand: kept, the device that brought it is listed, as the phone would
+        // be once it has the answer.
+        guard keep else { return }
+        let device = Device(id: offer.id, reach: .local, lastSeen: clock(), name: offer.name, kind: offer.kind)
+        all.append(device)
+        emit(.deviceJoined(device))
+    }
+
+    /// Six distinct words from the code alone, so the device that shows it and the one that
+    /// reads it agree without talking.
     static func wordsOf(_ code: String) -> [String] {
         var state: UInt64 = 0x9E37_79B9_7F4A_7C15
         for byte in code.utf8 { state = (state ^ UInt64(byte)) &* 0x100_0000_01B3 }
         var random = Generator(seed: state)
-        return (0..<4).map { _ in words[Int(random.next() % UInt64(words.count))] }
+        var chosen: [String] = []
+        while chosen.count < 6 {
+            let word = words[Int(random.next() % UInt64(words.count))]
+            if !chosen.contains(word) { chosen.append(word) }
+        }
+        return chosen
     }
 
     public func remove(_ id: String) async throws {

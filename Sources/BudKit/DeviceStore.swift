@@ -60,6 +60,8 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var redeemedBy: String?
     /// The join request on show while this device asks to be let in; replaced when it expires.
     @Published public private(set) var currentRequest: JoinRequest?
+    /// The key a device brought to the request on show, until the person keeps or refuses it.
+    @Published public private(set) var offer: JoinOffer?
     /// Where the scan of another device's request is, on the device that holds the vault.
     @Published public private(set) var requestPhase: RequestPhase = .idle
     /// Told when a sync is over, for the toast that says what it brought in.
@@ -79,8 +81,7 @@ public final class DeviceStore: ObservableObject {
 
     /// The store the apps use until a real node plugs in: this device alone, so Settings shows the
     /// invitation.
-    public static let shared = DeviceStore(
-        peers: MemoryPeers(devices: [Device(id: "this-device", isThisDevice: true, reach: .local)]))
+    public static let shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
@@ -182,6 +183,15 @@ public final class DeviceStore: ObservableObject {
         renewingRequest?.cancel()
         renewingRequest = nil
         currentRequest = nil
+        offer = nil
+    }
+
+    /// The person at this device kept or refused the key on offer. Refused, the request stays on
+    /// show for another try.
+    public func answerJoin(keep: Bool) async {
+        guard offer != nil else { return }
+        offer = nil
+        try? await peers.answerJoin(keep: keep)
     }
 
     /// Makes a new request if one is on show and the one shown has run out.
@@ -309,10 +319,12 @@ public final class DeviceStore: ObservableObject {
         case let .ticketRedeemed(id):
             redeemedBy = id
             await refresh()
+        case let .joinOffered(offered):
+            if requestOpen { offer = offered }
         case let .deviceJoined(device):
             if requestOpen {
-                // The device that scanned this one's request brought the key: the first fetch
-                // begins, as it does after a ticket.
+                // The device that scanned this one's request brought the key and the person kept
+                // it: the first fetch begins, as it does after a ticket.
                 closeRequest()
                 fetched = (0, nil)
                 joinPhase = .joined(device, received: 0, total: nil)

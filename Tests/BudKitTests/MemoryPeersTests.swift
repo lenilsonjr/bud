@@ -202,12 +202,13 @@ final class MemoryPeersTests: XCTestCase {
     }
 
 
-    func testAJoinRequestCarriesACodeAQrFourWordsAndALifetime() async throws {
+    func testAJoinRequestCarriesACodeAQrSixDistinctWordsAndALifetime() async throws {
         let (peers, clock) = make()
         let request = try await peers.joinRequest()
         XCTAssertTrue(PeerText.looksLikeRequest(request.code))
         XCTAssertEqual(request.qr.count, 29)
-        XCTAssertEqual(request.words.count, 4)
+        XCTAssertEqual(request.words.count, 6)
+        XCTAssertEqual(Set(request.words).count, 6, "no word repeats")
         XCTAssertEqual(request.madeAt, clock.now)
         XCTAssertEqual(request.expiresAt, clock.now.addingTimeInterval(JoinRequest.lifetime))
         let next = try await peers.joinRequest()
@@ -219,7 +220,7 @@ final class MemoryPeersTests: XCTestCase {
         let events = try await peers.events()
         let request = try await peers.joinRequest()
         let words = try await peers.readRequest(request.code.uppercased())
-        XCTAssertEqual(words, request.words, "the same four words on both sides")
+        XCTAssertEqual(words, request.words, "the same six words on both sides")
         let before = try await peers.devices().count
         let device = try await peers.confirmRequest(request.code)
         XCTAssertEqual(device.kind, .tv)
@@ -227,8 +228,75 @@ final class MemoryPeersTests: XCTestCase {
         XCTAssertEqual(after.count, before + 1)
         XCTAssertEqual(after.last, device)
         var iterator = events.makeAsyncIterator()
+        guard case let .joinOffered(offer) = await iterator.next() else { return XCTFail("no offer first") }
+        XCTAssertEqual(offer.words, request.words, "the TV is told the same words")
         let event = await iterator.next()
         XCTAssertEqual(event, .deviceJoined(device))
+    }
+
+    func testTheTVKeepsOrRefusesTheKeyOnOffer() async throws {
+        let (peers, _) = make()
+        await peers.setAutoAnswer(nil)
+        let request = try await peers.joinRequest()
+        let before = try await peers.devices().count
+        // Refused: the phone hears it, nothing is added, and the code still works.
+        let refusing = Task { try await peers.confirmRequest(request.code) }
+        try await answerWhenOffered(peers, keep: false)
+        do {
+            _ = try await refusing.value
+            XCTFail("the refusal was not heard")
+        } catch let error as RequestError {
+            XCTAssertEqual(error, .refused)
+        }
+        let afterRefusal = try await peers.devices().count
+        XCTAssertEqual(afterRefusal, before)
+        let keeping = Task { try await peers.confirmRequest(request.code) }
+        try await answerWhenOffered(peers, keep: true)
+        let device = try await keeping.value
+        let afterKeep = try await peers.devices()
+        XCTAssertEqual(afterKeep.last, device)
+        do {
+            try await peers.answerJoin(keep: true)
+            XCTFail("nothing was on offer")
+        } catch let error as PeersError {
+            XCTAssertEqual(error, .nothingOffered)
+        }
+    }
+
+    func testAKeyOfferedByHandAddsTheDeviceWithItsNameWhenKept() async throws {
+        let (peers, _) = make()
+        let events = try await peers.events()
+        let request = try await peers.joinRequest()
+        await peers.offerJoin(kind: .iphone, name: "Ada’s iPhone")
+        var iterator = events.makeAsyncIterator()
+        guard case let .joinOffered(offer) = await iterator.next() else { return XCTFail("no offer") }
+        XCTAssertEqual(offer.words, request.words)
+        XCTAssertEqual(offer.name, "Ada’s iPhone")
+        try await peers.answerJoin(keep: true)
+        guard case let .deviceJoined(device) = await iterator.next() else { return XCTFail("not joined") }
+        XCTAssertEqual(device.id, offer.id)
+        XCTAssertEqual(device.kind, .iphone)
+        XCTAssertEqual(device.displayName, "Ada’s iPhone")
+    }
+
+    func testTheLaunchArgumentsSeedAPairedDevice() async throws {
+        let alone = try await MemoryPeers.forLaunch(arguments: []).devices()
+        XCTAssertEqual(alone.count, 1)
+        let paired = try await MemoryPeers.forLaunch(arguments: [MemoryPeers.pairedArgument]).devices()
+        XCTAssertEqual(paired.count, 2)
+        XCTAssertFalse(DevicesText.isEmpty(paired))
+    }
+
+    private func answerWhenOffered(_ peers: MemoryPeers, keep: Bool) async throws {
+        for _ in 0..<400 {
+            do {
+                try await peers.answerJoin(keep: keep)
+                return
+            } catch {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+        }
+        XCTFail("no key was offered")
     }
 
     func testARequestWorksOnceAndExpiresAndAStrangeCodeIsRefused() async throws {
@@ -243,7 +311,7 @@ final class MemoryPeersTests: XCTestCase {
         await XCTAssertThrowsRequest(.notARequest) { _ = try await peers.readRequest("bud1 not a request") }
         let unknown = PeerText.requestPrefix + String(repeating: "q", count: 160)
         let elsewhere = try await peers.readRequest(unknown)
-        XCTAssertEqual(elsewhere.count, 4, "a code from elsewhere reads")
+        XCTAssertEqual(elsewhere.count, 6, "a code from elsewhere reads")
         await XCTAssertThrowsRequest(.unreachable) { _ = try await peers.confirmRequest(unknown) }
         await peers.setRequestFailure(.refused)
         await XCTAssertThrowsRequest(.refused) { _ = try await peers.readRequest(unknown) }

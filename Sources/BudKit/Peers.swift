@@ -68,7 +68,7 @@ public struct Ticket: Hashable, Sendable {
 }
 
 /// What a device without the vault shows to be let in (G19): the code for the device with the
-/// vault to scan, the modules of its QR code (`true` is dark), the four words both sides show, and
+/// vault to scan, the modules of its QR code (`true` is dark), the six words both sides show, and
 /// when it stops working.
 public struct JoinRequest: Hashable, Sendable {
     /// How long a request works, in seconds; the same as a ticket.
@@ -86,6 +86,22 @@ public struct JoinRequest: Hashable, Sendable {
         self.words = words
         self.madeAt = madeAt
         self.expiresAt = expiresAt ?? madeAt.addingTimeInterval(JoinRequest.lifetime)
+    }
+}
+
+/// The key a device with the vault brought to the request this one shows: who brought it and the
+/// words of the request, for the person at this device to keep or refuse.
+public struct JoinOffer: Hashable, Sendable {
+    public var id: String
+    public var kind: DeviceKind?
+    public var name: String?
+    public var words: [String]
+
+    public init(id: String, kind: DeviceKind? = nil, name: String? = nil, words: [String]) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.words = words
     }
 }
 
@@ -109,7 +125,7 @@ public enum RequestError: Error, Equatable, Sendable {
             self = .expired
         } else if text.contains("did not answer") || text.contains("could not reach") || text.contains("connect") {
             self = .unreachable
-        } else if text.contains("did not confirm") || text.contains("paired") {
+        } else if text.contains("did not confirm") || text.contains("refused") || text.contains("paired") {
             self = .refused
         } else {
             return nil
@@ -152,6 +168,8 @@ public enum AcceptError: Error, Equatable, Sendable {
 
 public enum PeersError: Error, Equatable, Sendable {
     case noSuchDevice(String)
+    /// No key is on offer to answer.
+    case nothingOffered
 }
 
 /// How this node reaches peers that are not on the same network.
@@ -218,6 +236,9 @@ public enum PeerEvent: Hashable, Sendable {
     /// A device used the ticket this one showed.
     case ticketRedeemed(by: String)
     case deviceJoined(Device)
+    /// A device with the vault brought its key to the request this one shows; it is kept only on
+    /// `answerJoin`.
+    case joinOffered(JoinOffer)
     case syncFinished(SyncSummary)
     /// Changes arriving from a vault just joined; `total` is nil while it is not known.
     case fetchProgress(received: Int, total: Int?)
@@ -235,12 +256,15 @@ public protocol Peers: Sendable {
     /// Shows a join request for a device that holds the vault to scan; it replaces the one shown
     /// before, lasts as long as a ticket, and is good once.
     func joinRequest() async throws -> JoinRequest
-    /// Reads a request another device shows: its four words, for the person to confirm against
+    /// Reads a request another device shows: its six words, for the person to confirm against
     /// the device's. Nothing moves until `confirmRequest`. Throws `RequestError`.
     func readRequest(_ code: String) async throws -> [String]
     /// The person confirmed the words: brings this vault's key to the device that showed the
     /// request and remembers it. Throws `RequestError`.
     func confirmRequest(_ code: String) async throws -> Device
+    /// The person at this device answered the key on offer: kept, the device that brought it is
+    /// a peer; refused, the request stays on show.
+    func answerJoin(keep: Bool) async throws
     func remove(_ id: String) async throws
     /// Gives a device a label of this vault's own; nil or empty takes it away.
     func rename(_ id: String, label: String?) async throws

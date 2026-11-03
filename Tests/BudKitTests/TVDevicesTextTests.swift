@@ -30,10 +30,22 @@ final class TVDevicesTextTests: XCTestCase {
     func testTheRequestColumnLines() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         XCTAssertEqual(TVDevicesText.requestExpiry(nil, now: now), "Making a code…")
-        let request = JoinRequest(code: "budr1", qr: [], words: ["amber", "cedar", "harbor", "lantern"], madeAt: now)
+        let request = JoinRequest(
+            code: "budr1", qr: [], words: ["amber", "cedar", "harbor", "lantern", "otter", "quartz"], madeAt: now)
         XCTAssertEqual(TVDevicesText.requestExpiry(request, now: now.addingTimeInterval(2)), "Works once · new code in 9:58")
-        XCTAssertEqual(TVDevicesText.wordsLine(request.words), "amber · cedar · harbor · lantern")
+        XCTAssertEqual(TVDevicesText.wordsLine(request.words), "amber · cedar · harbor · lantern · otter · quartz")
         XCTAssertEqual(TVDevicesText.typeInstead, "Type a ticket instead")
         XCTAssertTrue(TVDevicesText.requestNote.contains("words match"))
+    }
+
+    func testTheOfferLineNamesWhoBroughtTheKey() {
+        let words = ["amber", "cedar", "harbor", "lantern", "otter", "quartz"]
+        XCTAssertEqual(
+            TVDevicesText.offerLine(JoinOffer(id: "x", kind: .iphone, name: "Ada’s iPhone", words: words)),
+            "iPhone · Ada’s iPhone")
+        XCTAssertEqual(TVDevicesText.offerLine(JoinOffer(id: "x", kind: .mac, words: words)), "Mac")
+        XCTAssertEqual(TVDevicesText.offerLine(JoinOffer(id: "x", name: " Den ", words: words)), "Den")
+        XCTAssertEqual(TVDevicesText.offerLine(JoinOffer(id: "x", words: words)), "A device")
+        XCTAssertTrue(TVDevicesText.offerNote.contains("Select keeps"))
     }
 }
