@@ -104,6 +104,12 @@ public actor MemoryPeers: Peers {
         missing.remove(id)
     }
 
+    public func rename(_ id: String, label: String?) async throws {
+        guard let i = all.firstIndex(where: { $0.id == id }) else { throw PeersError.noSuchDevice(id) }
+        let trimmed = label?.trimmingCharacters(in: .whitespaces) ?? ""
+        all[i].label = trimmed.isEmpty ? nil : trimmed
+    }
+
     public func allow(_ id: String) async throws {
         guard let index = all.firstIndex(where: { $0.id == id }) else { throw PeersError.noSuchDevice(id) }
         all[index].missed = false

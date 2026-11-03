@@ -10,7 +10,8 @@ public enum DeviceKind: String, CaseIterable, Codable, Sendable {
     case mac, iphone, ipad, tv
 }
 
-/// A device paired with this vault. `name` and `kind` are nil until the core carries them.
+/// A device paired with this vault. `name` and `kind` come from the device itself in its first
+/// session and are nil until then; `label` is this vault's own word for it.
 public struct Device: Identifiable, Hashable, Sendable {
     public var id: String
     public var isThisDevice: Bool
@@ -18,12 +19,15 @@ public struct Device: Identifiable, Hashable, Sendable {
     public var lastSeen: Date?
     /// The last key rotation could not move this device: it holds the old key.
     public var missed: Bool
+    /// The name the device's system gives it, as the device sent it.
     public var name: String?
     public var kind: DeviceKind?
+    /// The label this vault gave the device, shown instead of `name` when set.
+    public var label: String?
 
     public init(
         id: String, isThisDevice: Bool = false, reach: Reach = .direct, lastSeen: Date? = nil, missed: Bool = false,
-        name: String? = nil, kind: DeviceKind? = nil
+        name: String? = nil, kind: DeviceKind? = nil, label: String? = nil
     ) {
         self.id = id
         self.isThisDevice = isThisDevice
@@ -32,6 +36,15 @@ public struct Device: Identifiable, Hashable, Sendable {
         self.missed = missed
         self.name = name
         self.kind = kind
+        self.label = label
+    }
+
+    /// What a row leads with: the label, else the name, else nothing (the row shows the id).
+    public var displayName: String? {
+        let label = label?.trimmingCharacters(in: .whitespaces) ?? ""
+        if !label.isEmpty { return label }
+        let name = name?.trimmingCharacters(in: .whitespaces) ?? ""
+        return name.isEmpty ? nil : name
     }
 }
 
@@ -161,6 +174,8 @@ public protocol Peers: Sendable {
     /// Pairs with the vault that made the ticket. Throws `AcceptError`.
     func accept(_ text: String) async throws -> Device
     func remove(_ id: String) async throws
+    /// Gives a device a label of this vault's own; nil or empty takes it away.
+    func rename(_ id: String, label: String?) async throws
     /// Lets a device the last rotation turned away back in.
     func allow(_ id: String) async throws
     /// Makes a new vault key and gives it to every device; the stream ends with `.done`.

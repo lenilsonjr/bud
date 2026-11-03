@@ -182,6 +182,12 @@ pub struct PeerRecord {
     pub last_seen: Option<u64>,
     /// The last key rotation could not move this peer: it holds the old key.
     pub missed: bool,
+    /// What the peer said it is in its last session: `mac`, `iphone`, `ipad` or `tv`.
+    pub kind: Option<String>,
+    /// The name the peer's system gives it, as the peer sent it.
+    pub name: Option<String>,
+    /// The label this vault gave the peer, preferred over `name` when shown.
+    pub label: Option<String>,
 }
 
 impl From<bud_core::PeerInfo> for PeerRecord {
@@ -191,6 +197,9 @@ impl From<bud_core::PeerInfo> for PeerRecord {
             relay: peer.relay.into(),
             last_seen: peer.last_seen.and_then(|seen| u64::try_from(seen).ok()),
             missed: peer.missed,
+            kind: peer.kind,
+            name: peer.name,
+            label: peer.label,
         }
     }
 }
@@ -291,6 +300,12 @@ impl PeerNode {
         self.with(|node| node.forget_peer(&id))
     }
 
+    /// Give a peer a label of this vault's own, shown instead of the name it sends; none or an
+    /// empty one takes it away.
+    pub fn rename_peer(&self, id: String, label: Option<String>) -> Result<()> {
+        self.with(|node| node.rename_peer(&id, label.as_deref()))
+    }
+
     /// Make a new vault key and give it to every peer. Returns the ids of the peers it could not
     /// reach and that still hold the old key, and are turned away. `peers` marks them as `missed`.
     pub fn rotate_key(&self) -> Result<Vec<String>> {
@@ -347,7 +362,21 @@ pub fn open_vault(vault_dir: String, index_path: String) -> Result<Arc<Vault>> {
 /// seconds and answers the ones that sync with it.
 #[uniffi::export]
 pub fn start_node(vault: Arc<Vault>, relay: RelaySetting) -> Result<Arc<PeerNode>> {
-    let node = bud_core::Node::start(Arc::clone(&vault.inner), relay.into())?;
+    start_node_as(vault, relay, None, None)
+}
+
+/// Start a peer node that tells its peers what it is: its kind (`mac`, `iphone`, `ipad`, `tv`)
+/// and the name its system gives it, both optional.
+#[uniffi::export]
+pub fn start_node_as(
+    vault: Arc<Vault>,
+    relay: RelaySetting,
+    kind: Option<String>,
+    name: Option<String>,
+) -> Result<Arc<PeerNode>> {
+    let options =
+        bud_core::NodeOptions::new(relay.into()).with_identity(bud_core::Identity { kind, name });
+    let node = bud_core::Node::start_with(Arc::clone(&vault.inner), options)?;
     Ok(Arc::new(PeerNode {
         node: Mutex::new(Some(node)),
     }))

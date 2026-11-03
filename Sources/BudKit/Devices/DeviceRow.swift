@@ -20,8 +20,8 @@ struct DeviceRow: View {
                 .foregroundStyle(device.missed ? Theme.rose : Theme.text3)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(PeerText.shortID(device.id))
-                        .textRole(.mono)
+                    Text(device.displayName ?? PeerText.shortID(device.id))
+                        .textRole(device.displayName == nil ? .mono : .cardTitle)
                         .foregroundStyle(Theme.text)
                     if device.isThisDevice { tag }
                 }

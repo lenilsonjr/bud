@@ -75,6 +75,7 @@ struct TVDeviceRow: View {
     let lit: Bool
 
     private static let id = TextStyle(typeface: .mono, size: 30, weight: 400)
+    private static let name = TextStyle(typeface: .text, size: 30, weight: 500)
     private static let tag = TextStyle(typeface: .text, size: 20, weight: 600)
     private static let meta = TextStyle(typeface: .text, size: 22, weight: 400)
 
@@ -89,8 +90,8 @@ struct TVDeviceRow: View {
                     .background(Theme.lit, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 14) {
-                        Text(PeerText.shortID(device.id))
-                            .textStyle(Self.id)
+                        Text(device.displayName ?? PeerText.shortID(device.id))
+                            .textStyle(device.displayName == nil ? Self.id : Self.name)
                             .foregroundStyle(Theme.text)
                         if device.isThisDevice {
                             Text("This Apple TV")

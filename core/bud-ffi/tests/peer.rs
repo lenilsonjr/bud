@@ -1,7 +1,7 @@
 //! The peer surface, called the way Swift calls it: two vaults in one process pair with a ticket
 //! and sync over the loopback interface, with the relay off.
 
-use bud_ffi::{open_vault, start_node, PeerNode, RelaySetting, Vault, VaultError};
+use bud_ffi::{open_vault, start_node, start_node_as, PeerNode, RelaySetting, Vault, VaultError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -200,4 +200,42 @@ fn a_stopped_node_refuses_every_call() {
     assert!(a.node.state().is_err());
     // The vault itself still works.
     assert_eq!(a.vault.snapshot().unwrap().len(), 1);
+}
+
+#[test]
+fn a_node_started_as_a_device_is_seen_as_one_and_can_be_relabelled() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Newsletter.md"), "A note.\n").unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = open_vault(
+        dir.path().to_str().unwrap().to_string(),
+        index.path().join("index.db").to_str().unwrap().to_string(),
+    )
+    .unwrap();
+    let a = start_node_as(
+        Arc::clone(&vault),
+        RelaySetting::Off,
+        Some("mac".to_string()),
+        Some("Study".to_string()),
+    )
+    .unwrap();
+    let b = side(&[], RelaySetting::Off);
+    a.sync_now().unwrap();
+    b.node.accept_ticket(a.ticket(true).unwrap()).unwrap();
+    b.node.sync_now().unwrap();
+    let seen = &b.node.peers().unwrap()[0];
+    assert_eq!(seen.kind.as_deref(), Some("mac"));
+    assert_eq!(seen.name.as_deref(), Some("Study"));
+    assert_eq!(seen.label, None);
+    b.node
+        .rename_peer(seen.id.clone(), Some("Desk".to_string()))
+        .unwrap();
+    assert_eq!(b.node.peers().unwrap()[0].label.as_deref(), Some("Desk"));
+    b.node.rename_peer(seen.id.clone(), None).unwrap();
+    assert_eq!(b.node.peers().unwrap()[0].label, None);
+    // b said nothing about itself; a still syncs with it and sees no kind.
+    let seen_by_a = &a.peers().unwrap()[0];
+    assert_eq!(seen_by_a.kind, None);
+    drop(b);
+    a.stop();
 }
