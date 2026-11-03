@@ -72,6 +72,7 @@ public struct SettingsView: View {
                 switch modal {
                 case .showTicket: TicketSheet(devices: devices, close: { local = nil })
                 case .joinVault: JoinSheet(devices: devices, close: { local = nil })
+                case .addNearby: NearbySheet(devices: devices, close: { local = nil })
                 case let .removeDevice(id):
                     RemoveDeviceDialog(devices: devices, id: id, close: { local = nil }, present: { local = $0 })
                 case .rotateKey: RotateKeyDialog(devices: devices, close: { local = nil })

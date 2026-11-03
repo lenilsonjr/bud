@@ -102,6 +102,7 @@ struct DevicesSection: View {
         let others = !DevicesText.isEmpty(devices.devices)
         if stacked {
             VStack(spacing: 8) {
+                if Self.canScan { nearbyButton.frame(maxWidth: .infinity) }
                 ticketButton.frame(maxWidth: .infinity)
                 joinButton.frame(maxWidth: .infinity)
                 if others { rotateButton.frame(maxWidth: .infinity) }
@@ -140,6 +141,23 @@ struct DevicesSection: View {
                 .frame(maxWidth: stacked ? .infinity : nil)
         }
         .buttonStyle(.budGhost)
+    }
+
+    /// Whether this device can scan another's code: iPhone and iPad with a camera.
+    static var canScan: Bool {
+        #if os(iOS)
+        return TicketScanner.isAvailable
+        #else
+        return false
+        #endif
+    }
+
+    /// Add a device nearby (G19): scan the code an Apple TV or another device without the vault shows.
+    private var nearbyButton: some View {
+        Button { present(.addNearby) } label: {
+            BudButtonLabel(title: NearbyText.title, systemImage: "viewfinder").lineLimit(1).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.budPrimary)
     }
 
     private var ticketButton: some View {
