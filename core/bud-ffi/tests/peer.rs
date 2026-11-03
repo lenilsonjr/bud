@@ -1,8 +1,11 @@
 //! The peer surface, called the way Swift calls it: two vaults in one process pair with a ticket
 //! and sync over the loopback interface, with the relay off.
 
-use bud_ffi::{open_vault, start_node, start_node_as, PeerNode, RelaySetting, Vault, VaultError};
-use std::sync::Arc;
+use bud_ffi::{
+    open_vault, start_node, start_node_as, PeerEvent, PeerListener, PeerNode, RelaySetting, Vault,
+    VaultError,
+};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 struct Side {
@@ -238,4 +241,56 @@ fn a_node_started_as_a_device_is_seen_as_one_and_can_be_relabelled() {
     assert_eq!(seen_by_a.kind, None);
     drop(b);
     a.stop();
+}
+
+#[derive(Clone, Default)]
+struct Heard(Arc<Mutex<Vec<PeerEvent>>>);
+
+impl PeerListener for Heard {
+    fn event(&self, event: PeerEvent) {
+        self.0.lock().unwrap().push(event);
+    }
+}
+
+#[test]
+fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
+    let a = side(
+        &[
+            ("Newsletter.md", "A note.\n"),
+            ("Gift ideas.md", "Candles.\n"),
+        ],
+        RelaySetting::Off,
+    );
+    let b = side(&[], RelaySetting::Off);
+    a.node.sync_now().unwrap();
+    let heard_by_a = Heard::default();
+    let heard_by_b = Heard::default();
+    a.node.listen(Box::new(heard_by_a.clone())).unwrap();
+    b.node.listen(Box::new(heard_by_b.clone())).unwrap();
+    b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
+    b.node.sync_now().unwrap();
+    let b_id = b.node.id().unwrap();
+    assert_eq!(
+        heard_by_a.0.lock().unwrap().clone(),
+        vec![
+            PeerEvent::TicketRedeemed { by: b_id.clone() },
+            PeerEvent::PeerJoined { id: b_id },
+        ]
+    );
+    assert_eq!(
+        heard_by_b.0.lock().unwrap().clone(),
+        vec![
+            PeerEvent::FetchProgress {
+                received: 0,
+                total: Some(2),
+            },
+            PeerEvent::FetchProgress {
+                received: 2,
+                total: Some(2),
+            },
+        ]
+    );
+    // A stopped node tells no one anything more, and refuses a new listener.
+    a.node.stop();
+    assert!(a.node.listen(Box::new(Heard::default())).is_err());
 }

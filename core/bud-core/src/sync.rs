@@ -79,6 +79,11 @@ impl Updates {
     pub fn is_empty(&self) -> bool {
         self.tree.is_none() && self.docs.is_empty()
     }
+
+    /// How many documents these updates carry, whole or as operations.
+    pub fn doc_count(&self) -> usize {
+        self.docs.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -138,6 +138,41 @@ pub struct RotateReport {
     pub missed: Vec<String>,
 }
 
+/// How one peer fared in a key rotation: it confirmed the hand over, or the hand over did not
+/// come back and a probe said whether it holds the new key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationOutcome {
+    Confirmed,
+    Probed { holds_key: bool },
+}
+
+/// What a node tells its listeners as it goes, for the screens that show pairing and syncing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NodeEvent {
+    /// A node redeemed a ticket this vault issued, in its first session.
+    TicketRedeemed { by: String },
+    /// A node this vault did not know is now a peer.
+    PeerJoined { id: String },
+    /// One peer's part of a key rotation, as it happens.
+    KeyRotation {
+        id: String,
+        outcome: RotationOutcome,
+    },
+    /// The rotation is over; the same report [`Node::rotate_key`] returns.
+    RotationDone(RotateReport),
+    /// A first fetch from a peer: how many documents arrived, and how many buds the peer holds
+    /// when it said.
+    FetchProgress {
+        received: usize,
+        total: Option<usize>,
+    },
+}
+
+/// Told each [`NodeEvent`] as it happens, from the node's own threads.
+pub trait NodeListener: Send + Sync + 'static {
+    fn event(&self, event: NodeEvent);
+}
+
 /// A QR code as a square of modules, row by row; `true` is dark.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Qr {
@@ -606,26 +641,59 @@ fn context(from: Side) -> Vec<u8> {
     aad
 }
 
-/// A message as the bytes of a frame, with the sender's identity after it when there is one. An
+/// What a node says about itself after a message: who it is, and with a Reply how many buds it
+/// holds, so a first fetch can show its size before it ends.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Aside {
+    kind: Option<String>,
+    name: Option<String>,
+    buds: Option<u64>,
+}
+
+impl Aside {
+    fn new(identity: &Identity, buds: Option<usize>) -> Aside {
+        Aside {
+            kind: identity.kind.clone(),
+            name: identity.name.clone(),
+            buds: buds.map(|n| n as u64),
+        }
+    }
+
+    fn identity(&self) -> Identity {
+        Identity {
+            kind: self.kind.clone(),
+            name: self.name.clone(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.kind.is_none() && self.name.is_none() && self.buds.is_none()
+    }
+}
+
+/// A message as the bytes of a frame, with the sender's aside after it when there is one. An
 /// older build reads the message and ignores the rest; a newer one reads both.
-fn encode(message: &Message, identity: &Identity) -> Result<Vec<u8>> {
+fn encode(message: &Message, aside: &Aside) -> Result<Vec<u8>> {
     let mut plain = postcard::to_stdvec(message).map_err(peer_error)?;
-    if !identity.is_empty() {
-        plain.extend(postcard::to_stdvec(identity).map_err(peer_error)?);
+    if !aside.is_empty() {
+        plain.extend(postcard::to_stdvec(aside).map_err(peer_error)?);
     }
     Ok(plain)
 }
 
-/// The message of a frame, and the identity after it when the sender put one there. A trailer
-/// that does not read as one is treated as none: it is only words about the peer.
-fn decode(plain: &[u8]) -> Result<(Message, Identity)> {
+/// The message of a frame, and the aside after it when the sender put one there. A build that
+/// sent the identity alone still reads; a trailer that reads as neither is treated as none, since
+/// it is only words about the peer.
+fn decode(plain: &[u8]) -> Result<(Message, Aside)> {
     let (message, rest) = postcard::take_from_bytes::<Message>(plain).map_err(peer_error)?;
-    let identity = if rest.is_empty() {
-        Identity::default()
+    let aside = if rest.is_empty() {
+        Aside::default()
     } else {
-        postcard::from_bytes::<Identity>(rest).unwrap_or_default()
+        postcard::from_bytes::<Aside>(rest)
+            .or_else(|_| postcard::from_bytes::<Identity>(rest).map(|id| Aside::new(&id, None)))
+            .unwrap_or_default()
     };
-    Ok((message, identity))
+    Ok((message, aside))
 }
 
 async fn send_message(
@@ -634,17 +702,17 @@ async fn send_message(
     from: Side,
     message: &Message,
 ) -> Result<()> {
-    send_with_identity(send, key, from, message, &Identity::default()).await
+    send_with_aside(send, key, from, message, &Aside::default()).await
 }
 
-async fn send_with_identity(
+async fn send_with_aside(
     send: &mut iroh::endpoint::SendStream,
     key: &[u8; 32],
     from: Side,
     message: &Message,
-    identity: &Identity,
+    aside: &Aside,
 ) -> Result<()> {
-    let plain = encode(message, identity)?;
+    let plain = encode(message, aside)?;
     let sealed = seal(key, from, &plain)?;
     let len = u32::try_from(sealed.len()).map_err(peer_error)?;
     send.write_all(&len.to_be_bytes())
@@ -661,16 +729,16 @@ async fn read_message(
     from: Side,
     max: usize,
 ) -> Result<Message> {
-    Ok(read_with_identity(recv, key, from, max).await?.0)
+    Ok(read_with_aside(recv, key, from, max).await?.0)
 }
 
-/// Read one message and the identity its sender put after it, if any.
-async fn read_with_identity(
+/// Read one message and the aside its sender put after it, if any.
+async fn read_with_aside(
     recv: &mut iroh::endpoint::RecvStream,
     key: &[u8; 32],
     from: Side,
     max: usize,
-) -> Result<(Message, Identity)> {
+) -> Result<(Message, Aside)> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(peer_error)?;
     let len = u32::from_be_bytes(len) as usize;
@@ -760,6 +828,8 @@ struct Shared {
     dropped_acks: AtomicUsize,
     /// What this node tells its peers it is.
     identity: Identity,
+    /// Who hears what happens.
+    listeners: Mutex<Vec<Box<dyn NodeListener>>>,
 }
 
 /// Counts a running session for as long as it lives.
@@ -794,6 +864,12 @@ impl Shared {
 
     fn lost(&self, id: &str) {
         lock(&self.connected).remove(id);
+    }
+
+    fn emit(&self, event: NodeEvent) {
+        for listener in lock(&self.listeners).iter() {
+            listener.event(event.clone());
+        }
     }
 
     /// Look at the folder, then sync with every peer. An error only when no peer could be synced.
@@ -859,21 +935,33 @@ impl Shared {
             let vault = self.vault();
             (vault.heads()?, vault.pending_ticket(&peer.id)?)
         };
-        send_with_identity(
+        let first = ticket.is_some();
+        send_with_aside(
             &mut send,
             &key,
             Side::Dialer,
             &Message::Hello { heads, ticket },
-            &self.identity,
+            &Aside::new(&self.identity, None),
         )
         .await?;
         let (Message::Reply { updates, heads }, theirs) =
-            read_with_identity(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
+            read_with_aside(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
         else {
             return Err(peer_error("a peer answered out of turn"));
         };
-        self.vault().note_identity(&peer.id, &theirs)?;
+        self.vault().note_identity(&peer.id, &theirs.identity())?;
+        let total = theirs.buds.map(|n| n as usize);
+        if first {
+            // The first fetch: its size before anything is applied, then what arrived.
+            self.emit(NodeEvent::FetchProgress { received: 0, total });
+        }
         let report = self.vault().apply_updates(&updates)?;
+        if first {
+            self.emit(NodeEvent::FetchProgress {
+                received: updates.doc_count(),
+                total,
+            });
+        }
         let mine = self.vault().updates_for(&heads)?;
         send_message(&mut send, &key, Side::Dialer, &Message::Final(mine)).await?;
         let Message::Done = read_message(&mut recv, &key, Side::Answerer, MAX_FRAME).await? else {
@@ -939,12 +1027,19 @@ impl Shared {
                 .await
                 .map_err(|_| peer_error("a peer did not answer"))
                 .and_then(|done| done);
-            let took = match handed {
-                Ok(()) => true,
-                Err(_) => tokio::time::timeout(SESSION_TIMEOUT, self.holds_key(peer, &new))
-                    .await
-                    .is_ok_and(|probe| probe.is_ok()),
+            let outcome = match handed {
+                Ok(()) => RotationOutcome::Confirmed,
+                Err(_) => RotationOutcome::Probed {
+                    holds_key: tokio::time::timeout(SESSION_TIMEOUT, self.holds_key(peer, &new))
+                        .await
+                        .is_ok_and(|probe| probe.is_ok()),
+                },
             };
+            self.emit(NodeEvent::KeyRotation {
+                id: peer.id.clone(),
+                outcome,
+            });
+            let took = !matches!(outcome, RotationOutcome::Probed { holds_key: false });
             if took {
                 report.reached += 1;
             } else {
@@ -957,6 +1052,8 @@ impl Shared {
         for id in &report.missed {
             vault.mark_missed(id)?;
         }
+        drop(vault);
+        self.emit(NodeEvent::RotationDone(report.clone()));
         Ok(report)
     }
 
@@ -974,9 +1071,9 @@ impl Shared {
         }
         let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.accept_bi().await.map_err(peer_error)?;
-        let first = read_with_identity(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
-        let (theirs, ticket, identity) = match first {
-            Ok((Message::Hello { heads, ticket }, identity)) => (heads, ticket, identity),
+        let first = read_with_aside(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
+        let (theirs, ticket, aside) = match first {
+            Ok((Message::Hello { heads, ticket }, aside)) => (heads, ticket, aside),
             Ok((Message::Rotate(new), _)) => {
                 // Only a peer this vault knows may change its key.
                 if !self.vault().is_peer(&remote_text)? {
@@ -1021,22 +1118,34 @@ impl Shared {
                 connection.close(1u32.into(), b"not paired");
                 return Err(peer_error("a peer has no ticket to redeem"));
             }
+            self.emit(NodeEvent::TicketRedeemed {
+                by: remote_text.clone(),
+            });
         }
-        self.vault().remember_peer(&remote_text, &self.relay, &[])?;
-        self.vault().note_identity(&remote_text, &identity)?;
-        let (updates, heads) = {
+        if self.vault().remember_peer(&remote_text, &self.relay, &[])? {
+            self.emit(NodeEvent::PeerJoined {
+                id: remote_text.clone(),
+            });
+        }
+        self.vault()
+            .note_identity(&remote_text, &aside.identity())?;
+        let (updates, heads, buds) = {
             // Edits made in the folder since the last look go out with this answer.
             let mut vault = self.vault();
             vault.rescan()?;
             vault.sync()?;
-            (vault.updates_for(&theirs)?, vault.heads()?)
+            (
+                vault.updates_for(&theirs)?,
+                vault.heads()?,
+                vault.bud_count()?,
+            )
         };
-        send_with_identity(
+        send_with_aside(
             &mut send,
             &key,
             Side::Answerer,
             &Message::Reply { updates, heads },
-            &self.identity,
+            &Aside::new(&self.identity, Some(buds)),
         )
         .await?;
         let Message::Final(updates) =
@@ -1090,6 +1199,7 @@ impl Node {
             ticket_lifetime_ms: AtomicU64::new(TICKET_LIFETIME.as_millis() as u64),
             dropped_acks: AtomicUsize::new(0),
             identity: options.identity,
+            listeners: Mutex::new(Vec::new()),
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
@@ -1234,6 +1344,11 @@ impl Node {
         self.shared.vault().peer_list()
     }
 
+    /// Hear every [`NodeEvent`] from now on, on the node's own threads, until the node closes.
+    pub fn listen(&self, listener: Box<dyn NodeListener>) {
+        lock(&self.shared.listeners).push(listener);
+    }
+
     /// Give a peer a label of this vault's own, shown instead of the name it sends; none or an
     /// empty one takes it away. An error for a node this vault does not know.
     pub fn rename_peer(&self, id: &str, label: Option<&str>) -> Result<()> {
@@ -1318,21 +1433,29 @@ mod tests {
             ticket: None,
         };
         let who = Identity::new("tv", "Living room");
-        let with = encode(&hello, &who).unwrap();
-        let without = encode(&hello, &Identity::default()).unwrap();
+        let aside = Aside::new(&who, Some(1380));
+        let with = encode(&hello, &aside).unwrap();
+        let without = encode(&hello, &Aside::default()).unwrap();
         assert!(with.len() > without.len());
         // A newer build reads both halves.
-        let (message, identity) = decode(&with).unwrap();
+        let (message, read) = decode(&with).unwrap();
         assert!(matches!(message, Message::Hello { .. }));
-        assert_eq!(identity, who);
-        // A frame from a build that says nothing reads as no identity.
-        assert_eq!(decode(&without).unwrap().1, Identity::default());
+        assert_eq!(read, aside);
+        assert_eq!(read.identity(), who);
+        // A frame from a build that says nothing reads as no aside.
+        assert_eq!(decode(&without).unwrap().1, Aside::default());
         // An older build reads the message alone and ignores the trailer.
         let old: Message = postcard::from_bytes(&with).unwrap();
         assert!(matches!(old, Message::Hello { .. }));
-        // A trailer that is not an identity is treated as none, not as an error.
+        // A build that sent the identity alone, before the bud count, still reads.
+        let mut identity_only = postcard::to_stdvec(&hello).unwrap();
+        identity_only.extend(postcard::to_stdvec(&who).unwrap());
+        let read = decode(&identity_only).unwrap().1;
+        assert_eq!(read.identity(), who);
+        assert_eq!(read.buds, None);
+        // A trailer that is neither is treated as none, not as an error.
         let mut odd = without.clone();
         odd.extend_from_slice(&[0xff, 0xff, 0xff]);
-        assert_eq!(decode(&odd).unwrap().1, Identity::default());
+        assert_eq!(decode(&odd).unwrap().1, Aside::default());
     }
 }
