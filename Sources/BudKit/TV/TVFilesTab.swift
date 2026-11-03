@@ -7,11 +7,14 @@ import SwiftUI
 /// out, page by page, then to the pages column, then back to Canvas.
 struct TVFilesTab: View {
     @ObservedObject var store: BudStore
+    /// Whether a screen sits over the tab; when it goes, the focus returns to where it was.
+    let covered: Bool
     let onLeave: () -> Void
     let onOpen: (UUID) -> Void
     @State private var page: TVFilesPage = .inbox
     @State private var inside: [UUID] = []
     @State private var adding: TVAddTarget? = nil
+    @State private var remembered: Focus? = nil
     @FocusState private var focused: Focus?
 
     enum Focus: Hashable {
@@ -45,8 +48,15 @@ struct TVFilesTab: View {
         .onChange(of: page) { _, _ in inside = [] }
         .onAppear { focused = .page(page) }
         .onChange(of: focused) { old, new in
-            // Left from the rows lands on the chosen page, not on whichever page sits level with the row.
-            if case .row = old, case let .page(landed) = new, landed != page { focused = .page(page) }
+            // Left from the rows, or the focus coming back from a screen, lands on the chosen
+            // page, not on whichever page sits level with where it came from.
+            if case let .page(landed) = new, landed != page {
+                if case .page = old {} else { focused = .page(page) }
+            }
+            if let new { remembered = new }
+        }
+        .onChange(of: covered) { _, now in
+            if !now, let remembered { focused = remembered }
         }
         .onChange(of: rowIDs) { old, new in keepFocus(from: old, to: new) }
     }
@@ -215,6 +225,8 @@ struct TVBudRow: View {
                 if let label = TVFilesText.label(row.tag) {
                     Text(label)
                         .textStyle(Self.tag)
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(due ? Theme.pistil : Theme.text2)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)

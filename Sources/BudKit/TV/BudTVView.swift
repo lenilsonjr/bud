@@ -51,7 +51,7 @@ struct TVShell: View {
                     .ignoresSafeArea()
                     .overlay(alignment: .top) { trail }
             case .files:
-                TVFilesTab(store: store, onLeave: { tab = .canvas }, onOpen: open)
+                TVFilesTab(store: store, covered: reading != nil, onLeave: { tab = .canvas }, onOpen: open)
             case .devices:
                 TVDevicesTab(devices: devices, onJoin: { joining = true })
                     // Menu steps out, as on the canvas: back to Canvas rather than out of the app.
