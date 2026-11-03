@@ -102,7 +102,7 @@ struct DevicesSection: View {
         let others = !DevicesText.isEmpty(devices.devices)
         if stacked {
             VStack(spacing: 8) {
-                if Self.canScan { nearbyButton.frame(maxWidth: .infinity) }
+                if Self.canScan || NearbySheet.touring { nearbyButton.frame(maxWidth: .infinity) }
                 ticketButton.frame(maxWidth: .infinity)
                 joinButton.frame(maxWidth: .infinity)
                 if others { rotateButton.frame(maxWidth: .infinity) }

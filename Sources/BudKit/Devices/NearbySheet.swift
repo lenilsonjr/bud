@@ -48,6 +48,11 @@ struct NearbySheet: View {
     @State private var scanning = false
     @State private var cameraDenied = false
 
+    /// A launch argument for a tour over memory, where the simulator has no camera: the sheet
+    /// reads a code the memory peers make, as if it had scanned one.
+    static let tourArgument = "-bud-nearby"
+    static var touring: Bool { ProcessInfo.processInfo.arguments.contains(tourArgument) }
+
     var body: some View {
         NearbySheetBody(
             phase: devices.requestPhase,
@@ -61,6 +66,13 @@ struct NearbySheet: View {
     }
 
     private func openCamera() async {
+        if Self.touring && !DevicesSection.canScan {
+            await devices.openRequest()
+            let code = devices.currentRequest?.code
+            devices.closeRequest()
+            if let code { await devices.readRequest(code) }
+            return
+        }
         #if os(iOS)
         guard TicketScanner.isAvailable else { return }
         if await TicketScanner.authorize() {
