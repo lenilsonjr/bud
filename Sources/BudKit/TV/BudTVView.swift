@@ -229,13 +229,13 @@ struct TVCanvas: View {
             guard id != store.center else { return }
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
         } else if store.tree.bud(id)?.isTodo == true {
-            store.toggle(id)
+            store.tvTick(id)
         }
     }
 
     private func toggleFocused() {
-        guard let id = focused, store.tree.bud(id)?.isTodo == true else { return }
-        store.toggle(id)
+        guard let id = focused else { return }
+        store.tvTick(id)
     }
 
     private func stepOut() {
@@ -322,6 +322,16 @@ struct TVCardFace: View {
         if lit {
             RoundedRectangle(cornerRadius: radius).stroke(Theme.amethyst.opacity(0.6), lineWidth: 2)
         }
+    }
+}
+
+extension BudStore {
+    /// A tick from the remote: a done to-do reopens, an open one closes on its own, never the
+    /// branch under it. The TV has no Close branch dialog to ask with, so it takes the quiet
+    /// choice the Mac's dialog defaults to; the Undo lives in the toast where a host shows one.
+    func tvTick(_ id: UUID) {
+        guard let bud = tree.bud(id), bud.isTodo else { return }
+        if bud.isDone { toggle(id) } else { close(id, cascade: false) }
     }
 }
 

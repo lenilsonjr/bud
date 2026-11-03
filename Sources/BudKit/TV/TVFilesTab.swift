@@ -25,6 +25,7 @@ struct TVFilesTab: View {
 
     private var place: UUID { inside.last ?? rootID }
     private var rows: [TVFilesRow] { TVFilesText.rows(page, in: store.tree, inside: place) }
+    private var rowIDs: [UUID] { rows.map(\.id) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 80) {
@@ -42,6 +43,24 @@ struct TVFilesTab: View {
         .onExitCommand(perform: stepOut)
         .onPlayPauseCommand(perform: tickFocused)
         .onChange(of: page) { _, _ in inside = [] }
+        .onAppear { focused = .page(page) }
+        .onChange(of: focused) { old, new in
+            // Left from the rows lands on the chosen page, not on whichever page sits level with the row.
+            if case .row = old, case let .page(landed) = new, landed != page { focused = .page(page) }
+        }
+        .onChange(of: rowIDs) { old, new in keepFocus(from: old, to: new) }
+    }
+
+    /// The focus would drop to nothing when its row leaves (a tick, a walk in or out), so it moves
+    /// to the row that took its place, or the first; a focus on the pages column stays there.
+    private func keepFocus(from old: [UUID], to new: [UUID]) {
+        guard case let .row(id) = focused, !new.contains(id) else { return }
+        let index = old.firstIndex(of: id) ?? 0
+        if new.isEmpty {
+            focused = .page(page)
+        } else {
+            focused = .row(new[min(index, new.count - 1)])
+        }
     }
 
     /// The pages column: a glyph, the name, and the count the Mac sidebar shows.
@@ -102,14 +121,16 @@ struct TVFilesTab: View {
     }
 
     private func tickFocused() {
-        guard case let .row(id) = focused, store.tree.bud(id)?.isTodo == true else { return }
-        store.toggle(id)
+        guard case let .row(id) = focused else { return }
+        store.tvTick(id)
     }
 
-    /// Menu: out of the bud on show, then from the rows to the pages, then to Canvas.
+    /// Menu: out of the bud on show (the focus back on its row), then from the rows to the
+    /// pages, then to Canvas.
     private func stepOut() {
         if !inside.isEmpty {
-            inside.removeLast()
+            let left = inside.removeLast()
+            focused = .row(left)
         } else if case .row = focused {
             focused = .page(page)
         } else {
