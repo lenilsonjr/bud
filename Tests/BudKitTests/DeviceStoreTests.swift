@@ -322,6 +322,29 @@ extension DeviceStoreTests {
         XCTAssertEqual(store.requestPhase, .idle, "nothing to confirm without words")
     }
 
+    func testAReadOrConfirmationThatEndsAfterAResetIsDropped() async throws {
+        let (store, peers, _) = await make()
+        let request = try await peers.joinRequest()
+        await store.readRequest(request.code)
+        await peers.setAutoAnswer(nil)
+        let confirming = Task { await store.confirmRequest() }
+        await eventually { store.requestPhase == .confirming }
+        store.resetRequest()
+        // The memory TV puts the offer up a moment after the call reaches it.
+        var answered = false
+        for _ in 0..<400 where !answered {
+            do {
+                try await peers.answerJoin(keep: true)
+                answered = true
+            } catch {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+        }
+        XCTAssertTrue(answered)
+        await confirming.value
+        XCTAssertEqual(store.requestPhase, .idle, "the closed sheet's answer is not shown")
+    }
+
     func testAFailedRequestNamesWhy() async throws {
         let (store, peers, _) = await make()
         await store.readRequest("bud1 a ticket")

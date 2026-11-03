@@ -76,6 +76,9 @@ public final class DeviceStore: ObservableObject {
     private var renewingRequest: Task<Void, Never>?
     private var sheetOpen = false
     private var requestOpen = false
+    /// Counts the phone's scans: a read or confirmation that comes back after the sheet was reset
+    /// belongs to an old one and is dropped.
+    private var scan = 0
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
 
@@ -214,28 +217,36 @@ public final class DeviceStore: ObservableObject {
 
     /// On the device with the vault: reads the request the person scanned and puts its words up.
     public func readRequest(_ code: String) async {
+        let mine = scan
         requestPhase = .reading
+        let phase: RequestPhase
         do {
-            requestPhase = .words(try await peers.readRequest(code), code: code)
+            phase = .words(try await peers.readRequest(code), code: code)
         } catch {
-            requestPhase = .failed(RequestError(error))
+            phase = .failed(RequestError(error))
         }
+        if scan == mine { requestPhase = phase }
     }
 
     /// The person confirmed the words match: brings the key over to the device that asked.
     public func confirmRequest() async {
         guard case let .words(_, code) = requestPhase else { return }
+        let mine = scan
         requestPhase = .confirming
         do {
             let device = try await peers.confirmRequest(code)
-            requestPhase = .confirmed(device)
+            if scan == mine { requestPhase = .confirmed(device) }
             await refresh()
         } catch {
-            requestPhase = .failed(RequestError(error))
+            if scan == mine { requestPhase = .failed(RequestError(error)) }
         }
     }
 
-    public func resetRequest() { requestPhase = .idle }
+    /// Back to nothing scanned; a read or confirmation still running is dropped when it ends.
+    public func resetRequest() {
+        scan += 1
+        requestPhase = .idle
+    }
 
     // MARK: Join
 

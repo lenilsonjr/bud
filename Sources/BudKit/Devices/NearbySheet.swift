@@ -49,9 +49,15 @@ struct NearbySheet: View {
     @State private var cameraDenied = false
 
     /// A launch argument for a tour over memory, where the simulator has no camera: the sheet
-    /// reads a code the memory peers make, as if it had scanned one.
+    /// reads a code the memory peers make, as if it had scanned one. Debug builds only.
     static let tourArgument = "-bud-nearby"
-    static var touring: Bool { ProcessInfo.processInfo.arguments.contains(tourArgument) }
+    static var touring: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains(tourArgument)
+        #else
+        return false
+        #endif
+    }
 
     var body: some View {
         NearbySheetBody(
@@ -62,7 +68,14 @@ struct NearbySheet: View {
             onScanAgain: { devices.resetRequest(); scanning = true },
             onClose: { devices.resetRequest(); close() },
             scanner: { AnyView(scanner) })
-        .task { await openCamera() }
+        // The key cannot be called back once Add is pressed: the sheet stays until the other
+        // device answers.
+        .interactiveDismissDisabled(devices.requestPhase == .confirming)
+        .task {
+            devices.resetRequest()
+            await openCamera()
+        }
+        .onDisappear { devices.resetRequest() }
     }
 
     private func openCamera() async {
@@ -153,7 +166,7 @@ struct NearbySheetBody: View {
 
     private var head: some View {
         ZStack {
-            if !done {
+            if !done && phase != .confirming {
                 HStack {
                     Button("Cancel", action: onClose)
                         .buttonStyle(.plain)
@@ -166,6 +179,7 @@ struct NearbySheetBody: View {
             Text(NearbyText.title)
                 .textStyle(Self.barTitle)
                 .foregroundStyle(Theme.text)
+                .accessibilityAddTraits(.isHeader)
         }
         .padding(.bottom, 4)
     }
@@ -281,6 +295,7 @@ struct NearbySheetBody: View {
             }
             .frame(width: 64, height: 64)
             .padding(.top, 24)
+            .accessibilityHidden(true)
             Text(NearbyText.addedTitle)
                 .textStyle(Self.title)
                 .foregroundStyle(Theme.text)
