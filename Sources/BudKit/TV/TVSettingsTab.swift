@@ -92,9 +92,10 @@ struct TVSettingsTab: View {
         .padding(.horizontal, 160)
         .padding(.bottom, 90)
         .task { await devices.refresh() }
-        // A key on offer takes focus, so Select answers it at once.
-        .onChange(of: devices.offer) { _, offer in
-            if offer != nil { focused = "join" }
+        // A key on offer takes focus, so Select answers it at once; once answered, focus stays on
+        // the column, so another try needs no step back to it.
+        .onChange(of: devices.offer) { _, _ in
+            focused = "join"
         }
         .fullScreenCover(isPresented: $startingOver) {
             TVFreshStartScreen(close: { startingOver = false }, perform: { sample in
