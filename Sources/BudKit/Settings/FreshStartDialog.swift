@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Settings › Start over: a dialog that erases every bud on this device and starts again. Two
 /// choices, empty or the sample world; the destructive button says what it does. `perform` runs
-/// the reset where the store lives, so the same dialog serves the modal host and the Mac's
-/// Settings window.
+/// the reset where the store lives and takes the dialog away with it, so the same dialog serves
+/// the modal host and the Mac's Settings window; `close` is Cancel alone.
 struct FreshStartDialog: View {
     let close: () -> Void
     let perform: (_ sample: Bool) -> Void
@@ -26,7 +26,6 @@ struct FreshStartDialog: View {
                     .keyboardShortcut(.cancelAction)
                 Button {
                     perform(sample)
-                    close()
                 } label: {
                     BudButtonLabel(title: "Erase and start over")
                 }

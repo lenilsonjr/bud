@@ -79,6 +79,7 @@ public struct SettingsView: View {
                     // The Mac's Settings window has no store; the root view performs the request on its own.
                     FreshStartDialog(close: { local = nil }, perform: { sample in
                         NotificationCenter.default.post(name: BudStore.freshStartRequested, object: nil, userInfo: ["sample": sample])
+                        local = nil
                     })
                 default: EmptyView()
                 }
@@ -102,6 +103,7 @@ public struct SettingsView: View {
             Text(caption)
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
