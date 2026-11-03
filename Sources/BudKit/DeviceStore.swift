@@ -190,6 +190,12 @@ public final class DeviceStore: ObservableObject {
     }
 
     /// Makes a new key and sends it to the devices that remain; `rotation` follows each one.
+    /// Gives a device a label of this vault's own; nil or empty takes it away.
+    public func rename(_ id: String, label: String?) async {
+        try? await peers.rename(id, label: label)
+        await refresh()
+    }
+
     public func rotateKey() async {
         let total = devices.filter { !$0.isThisDevice }.count
         rotation = RotationProgress(total: total)

@@ -92,3 +92,15 @@ CREATE TABLE IF NOT EXISTS peer_seen (
     node TEXT PRIMARY KEY NOT NULL,
     seen INTEGER NOT NULL
 );
+-- What each peer said it is in its last session: its kind (mac, iphone, ipad, tv) and the name
+-- its system gives it. Either may be missing from a build that does not send them.
+CREATE TABLE IF NOT EXISTS peer_identity (
+    node TEXT PRIMARY KEY NOT NULL,
+    kind TEXT,
+    name TEXT
+);
+-- The label this vault gave a peer, kept apart from the name the peer sends.
+CREATE TABLE IF NOT EXISTS peer_label (
+    node  TEXT PRIMARY KEY NOT NULL,
+    label TEXT NOT NULL
+);

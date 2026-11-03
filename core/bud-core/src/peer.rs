@@ -203,6 +203,34 @@ pub struct PeerInfo {
     /// The last key rotation could not move this peer: it holds the old key and is turned away
     /// until it pairs again.
     pub missed: bool,
+    /// What the peer said it is in its last session: `mac`, `iphone`, `ipad` or `tv`; none from
+    /// a build that does not say.
+    pub kind: Option<String>,
+    /// The name the peer's system gives it, as the peer sent it.
+    pub name: Option<String>,
+    /// The label this vault gave the peer, preferred over `name` when shown.
+    pub label: Option<String>,
+}
+
+/// What a node says it is in the first message of a session: its kind and its system name.
+/// Both are optional, so a build that says nothing still syncs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Identity {
+    pub kind: Option<String>,
+    pub name: Option<String>,
+}
+
+impl Identity {
+    pub fn new(kind: impl Into<String>, name: impl Into<String>) -> Identity {
+        Identity {
+            kind: Some(kind.into()),
+            name: Some(name.into()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.kind.is_none() && self.name.is_none()
+    }
 }
 
 /// What a node is doing: whether a sync is running, how many peers it reached on their last
@@ -221,6 +249,8 @@ pub struct NodeOptions {
     /// How often to look at the folder and sync with every peer; none leaves it to
     /// [`Node::sync_now`].
     pub interval: Option<Duration>,
+    /// What this node tells its peers it is.
+    pub identity: Identity,
 }
 
 impl NodeOptions {
@@ -228,7 +258,13 @@ impl NodeOptions {
         NodeOptions {
             relay,
             interval: Some(DEFAULT_INTERVAL),
+            identity: Identity::default(),
         }
+    }
+
+    pub fn with_identity(mut self, identity: Identity) -> NodeOptions {
+        self.identity = identity;
+        self
     }
 }
 
@@ -290,12 +326,53 @@ impl Vault {
         Ok(changed == 1)
     }
 
+    /// Keep what a peer said it is. A field it left out keeps the last value it sent.
+    fn note_identity(&self, id: &str, identity: &Identity) -> Result<()> {
+        if identity.is_empty() {
+            return Ok(());
+        }
+        lock(&self.conn).execute(
+            "INSERT INTO peer_identity (node, kind, name) VALUES (?1, ?2, ?3)
+             ON CONFLICT(node) DO UPDATE SET
+                 kind = COALESCE(excluded.kind, kind),
+                 name = COALESCE(excluded.name, name)",
+            params![id, identity.kind, identity.name],
+        )?;
+        Ok(())
+    }
+
+    /// Give a peer a label of this vault's own, or take it away with none or an empty one.
+    fn label_peer(&self, id: &str, label: Option<&str>) -> Result<()> {
+        let conn = lock(&self.conn);
+        let known: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM peers WHERE node = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        if !known {
+            return Err(Error::Invalid(format!("peer: no peer {id}")));
+        }
+        match label.map(str::trim).filter(|l| !l.is_empty()) {
+            Some(label) => conn.execute(
+                "INSERT INTO peer_label (node, label) VALUES (?1, ?2)
+                 ON CONFLICT(node) DO UPDATE SET label = excluded.label",
+                params![id, label],
+            )?,
+            None => conn.execute("DELETE FROM peer_label WHERE node = ?1", params![id])?,
+        };
+        Ok(())
+    }
+
     fn peer_list(&self) -> Result<Vec<PeerInfo>> {
         let conn = lock(&self.conn);
         let mut stmt = conn.prepare(
-            "SELECT peers.node, relay, addrs, seen, peer_missed.node IS NOT NULL FROM peers
+            "SELECT peers.node, relay, addrs, seen, peer_missed.node IS NOT NULL,
+                    peer_identity.kind, peer_identity.name, peer_label.label
+             FROM peers
              LEFT JOIN peer_seen ON peer_seen.node = peers.node
              LEFT JOIN peer_missed ON peer_missed.node = peers.node
+             LEFT JOIN peer_identity ON peer_identity.node = peers.node
+             LEFT JOIN peer_label ON peer_label.node = peers.node
              ORDER BY added, peers.node",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -305,17 +382,23 @@ impl Vault {
                 r.get::<_, String>(2)?,
                 r.get::<_, Option<i64>>(3)?,
                 r.get::<_, bool>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, Option<String>>(6)?,
+                r.get::<_, Option<String>>(7)?,
             ))
         })?;
         let mut peers = Vec::new();
         for row in rows {
-            let (id, relay, addrs, last_seen, missed) = row?;
+            let (id, relay, addrs, last_seen, missed, kind, name, label) = row?;
             peers.push(PeerInfo {
                 id,
                 relay: Relay::from_text(&relay),
                 addrs: addrs.lines().filter_map(|a| a.parse().ok()).collect(),
                 last_seen,
                 missed,
+                kind,
+                name,
+                label,
             });
         }
         Ok(peers)
@@ -341,6 +424,8 @@ impl Vault {
         conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_ticket WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_missed WHERE node = ?1", params![id])?;
+        conn.execute("DELETE FROM peer_identity WHERE node = ?1", params![id])?;
+        conn.execute("DELETE FROM peer_label WHERE node = ?1", params![id])?;
         match conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? {
             0 => Err(Error::Invalid(format!("peer: no peer {id}"))),
             _ => {
@@ -521,13 +606,45 @@ fn context(from: Side) -> Vec<u8> {
     aad
 }
 
+/// A message as the bytes of a frame, with the sender's identity after it when there is one. An
+/// older build reads the message and ignores the rest; a newer one reads both.
+fn encode(message: &Message, identity: &Identity) -> Result<Vec<u8>> {
+    let mut plain = postcard::to_stdvec(message).map_err(peer_error)?;
+    if !identity.is_empty() {
+        plain.extend(postcard::to_stdvec(identity).map_err(peer_error)?);
+    }
+    Ok(plain)
+}
+
+/// The message of a frame, and the identity after it when the sender put one there. A trailer
+/// that does not read as one is treated as none: it is only words about the peer.
+fn decode(plain: &[u8]) -> Result<(Message, Identity)> {
+    let (message, rest) = postcard::take_from_bytes::<Message>(plain).map_err(peer_error)?;
+    let identity = if rest.is_empty() {
+        Identity::default()
+    } else {
+        postcard::from_bytes::<Identity>(rest).unwrap_or_default()
+    };
+    Ok((message, identity))
+}
+
 async fn send_message(
     send: &mut iroh::endpoint::SendStream,
     key: &[u8; 32],
     from: Side,
     message: &Message,
 ) -> Result<()> {
-    let plain = postcard::to_stdvec(message).map_err(peer_error)?;
+    send_with_identity(send, key, from, message, &Identity::default()).await
+}
+
+async fn send_with_identity(
+    send: &mut iroh::endpoint::SendStream,
+    key: &[u8; 32],
+    from: Side,
+    message: &Message,
+    identity: &Identity,
+) -> Result<()> {
+    let plain = encode(message, identity)?;
     let sealed = seal(key, from, &plain)?;
     let len = u32::try_from(sealed.len()).map_err(peer_error)?;
     send.write_all(&len.to_be_bytes())
@@ -544,6 +661,16 @@ async fn read_message(
     from: Side,
     max: usize,
 ) -> Result<Message> {
+    Ok(read_with_identity(recv, key, from, max).await?.0)
+}
+
+/// Read one message and the identity its sender put after it, if any.
+async fn read_with_identity(
+    recv: &mut iroh::endpoint::RecvStream,
+    key: &[u8; 32],
+    from: Side,
+    max: usize,
+) -> Result<(Message, Identity)> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(peer_error)?;
     let len = u32::from_be_bytes(len) as usize;
@@ -559,7 +686,7 @@ async fn read_message(
             .map_err(peer_error)?;
         sealed.extend_from_slice(&chunk[..want]);
     }
-    postcard::from_bytes(&open(key, from, &sealed)?).map_err(peer_error)
+    decode(&open(key, from, &sealed)?)
 }
 
 /// The node key, read from `path`, or made and written there for the first time.
@@ -631,6 +758,8 @@ struct Shared {
     ticket_lifetime_ms: AtomicU64,
     /// How many confirmations of a new key to withhold; only tests make it more than zero.
     dropped_acks: AtomicUsize,
+    /// What this node tells its peers it is.
+    identity: Identity,
 }
 
 /// Counts a running session for as long as it lives.
@@ -730,18 +859,20 @@ impl Shared {
             let vault = self.vault();
             (vault.heads()?, vault.pending_ticket(&peer.id)?)
         };
-        send_message(
+        send_with_identity(
             &mut send,
             &key,
             Side::Dialer,
             &Message::Hello { heads, ticket },
+            &self.identity,
         )
         .await?;
-        let Message::Reply { updates, heads } =
-            read_message(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
+        let (Message::Reply { updates, heads }, theirs) =
+            read_with_identity(&mut recv, &key, Side::Answerer, MAX_FRAME).await?
         else {
             return Err(peer_error("a peer answered out of turn"));
         };
+        self.vault().note_identity(&peer.id, &theirs)?;
         let report = self.vault().apply_updates(&updates)?;
         let mine = self.vault().updates_for(&heads)?;
         send_message(&mut send, &key, Side::Dialer, &Message::Final(mine)).await?;
@@ -843,10 +974,10 @@ impl Shared {
         }
         let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.accept_bi().await.map_err(peer_error)?;
-        let first = read_message(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
-        let (theirs, ticket) = match first {
-            Ok(Message::Hello { heads, ticket }) => (heads, ticket),
-            Ok(Message::Rotate(new)) => {
+        let first = read_with_identity(&mut recv, &key, Side::Dialer, MAX_HELLO).await;
+        let (theirs, ticket, identity) = match first {
+            Ok((Message::Hello { heads, ticket }, identity)) => (heads, ticket, identity),
+            Ok((Message::Rotate(new), _)) => {
                 // Only a peer this vault knows may change its key.
                 if !self.vault().is_peer(&remote_text)? {
                     connection.close(1u32.into(), b"not paired");
@@ -864,7 +995,7 @@ impl Shared {
                 let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
                 return Ok(());
             }
-            Ok(Message::Probe) => {
+            Ok((Message::Probe, _)) => {
                 if !self.vault().is_peer(&remote_text)? {
                     connection.close(1u32.into(), b"not paired");
                     return Err(peer_error("a stranger sent a probe"));
@@ -892,6 +1023,7 @@ impl Shared {
             }
         }
         self.vault().remember_peer(&remote_text, &self.relay, &[])?;
+        self.vault().note_identity(&remote_text, &identity)?;
         let (updates, heads) = {
             // Edits made in the folder since the last look go out with this answer.
             let mut vault = self.vault();
@@ -899,11 +1031,12 @@ impl Shared {
             vault.sync()?;
             (vault.updates_for(&theirs)?, vault.heads()?)
         };
-        send_message(
+        send_with_identity(
             &mut send,
             &key,
             Side::Answerer,
             &Message::Reply { updates, heads },
+            &self.identity,
         )
         .await?;
         let Message::Final(updates) =
@@ -956,6 +1089,7 @@ impl Node {
             active: AtomicUsize::new(0),
             ticket_lifetime_ms: AtomicU64::new(TICKET_LIFETIME.as_millis() as u64),
             dropped_acks: AtomicUsize::new(0),
+            identity: options.identity,
         });
         let accepting = Arc::clone(&shared);
         runtime.spawn(async move {
@@ -1068,6 +1202,9 @@ impl Node {
             addrs: ticket.addrs.clone(),
             last_seen: None,
             missed: false,
+            kind: None,
+            name: None,
+            label: None,
         };
         let vault = self.shared.vault();
         if vault.peer_list()?.iter().any(|known| known.id == peer.id) {
@@ -1095,6 +1232,12 @@ impl Node {
 
     pub fn peers(&self) -> Result<Vec<PeerInfo>> {
         self.shared.vault().peer_list()
+    }
+
+    /// Give a peer a label of this vault's own, shown instead of the name it sends; none or an
+    /// empty one takes it away. An error for a node this vault does not know.
+    pub fn rename_peer(&self, id: &str, label: Option<&str>) -> Result<()> {
+        self.shared.vault().label_peer(id, label)
     }
 
     /// Forget a peer by its id. It is no longer synced with and is refused from now on, even when
@@ -1166,5 +1309,30 @@ mod tests {
             sealed,
             "a fresh nonce each time"
         );
+    }
+
+    #[test]
+    fn a_frame_carries_the_identity_after_the_message_and_reads_without_it() {
+        let hello = Message::Hello {
+            heads: Heads::default(),
+            ticket: None,
+        };
+        let who = Identity::new("tv", "Living room");
+        let with = encode(&hello, &who).unwrap();
+        let without = encode(&hello, &Identity::default()).unwrap();
+        assert!(with.len() > without.len());
+        // A newer build reads both halves.
+        let (message, identity) = decode(&with).unwrap();
+        assert!(matches!(message, Message::Hello { .. }));
+        assert_eq!(identity, who);
+        // A frame from a build that says nothing reads as no identity.
+        assert_eq!(decode(&without).unwrap().1, Identity::default());
+        // An older build reads the message alone and ignores the trailer.
+        let old: Message = postcard::from_bytes(&with).unwrap();
+        assert!(matches!(old, Message::Hello { .. }));
+        // A trailer that is not an identity is treated as none, not as an error.
+        let mut odd = without.clone();
+        odd.extend_from_slice(&[0xff, 0xff, 0xff]);
+        assert_eq!(decode(&odd).unwrap().1, Identity::default());
     }
 }

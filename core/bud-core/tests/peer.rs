@@ -3,7 +3,7 @@
 
 mod common;
 
-use bud_core::{Node, NodeOptions, Relay, Ticket, Vault};
+use bud_core::{Identity, Node, NodeOptions, Relay, Ticket, Vault};
 use common::{copy_dir, fingerprint, fixture};
 use pretty_assertions::assert_eq;
 use std::path::{Path, PathBuf};
@@ -19,6 +19,10 @@ struct Peer {
 
 impl Peer {
     fn new(seed: Option<&Path>, interval: Option<Duration>) -> Peer {
+        Peer::new_as(seed, interval, Identity::default())
+    }
+
+    fn new_as(seed: Option<&Path>, interval: Option<Duration>, identity: Identity) -> Peer {
         let dir = tempfile::tempdir().unwrap();
         if let Some(seed) = seed {
             copy_dir(seed, dir.path());
@@ -29,6 +33,30 @@ impl Peer {
         let options = NodeOptions {
             relay: Relay::Off,
             interval,
+            identity,
+        };
+        let node = Node::start_with(Arc::clone(&vault), options).unwrap();
+        Peer {
+            vault,
+            dir,
+            index,
+            node,
+        }
+    }
+
+    /// The same vault and index under a node that says something else about itself.
+    fn restart_as(self, identity: Identity) -> Peer {
+        let Peer {
+            vault,
+            dir,
+            index,
+            node,
+        } = self;
+        drop(node);
+        let options = NodeOptions {
+            relay: Relay::Off,
+            interval: None,
+            identity,
         };
         let node = Node::start_with(Arc::clone(&vault), options).unwrap();
         Peer {
@@ -139,6 +167,7 @@ fn a_node_keeps_its_key_next_to_the_index() {
             NodeOptions {
                 relay: Relay::Off,
                 interval: None,
+                identity: Identity::default(),
             },
         )
         .unwrap()
@@ -526,4 +555,86 @@ fn a_stranger_with_an_oversized_or_silent_frame_is_dropped() {
         1,
         "the stranger was not remembered"
     );
+}
+
+#[test]
+fn a_pair_sees_each_others_kind_and_name_after_the_first_session() {
+    let a = Peer::new_as(Some(&fixture()), None, Identity::new("mac", "Study"));
+    let b = Peer::new_as(None, None, Identity::new("tv", "Living room"));
+    a.node.sync_now().unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    let accepted = b.node.accept_ticket(&ticket).unwrap();
+    assert_eq!(
+        (accepted.kind, accepted.name),
+        (None, None),
+        "a ticket says nothing"
+    );
+    b.node.sync_now().unwrap();
+    let seen_by_b = &b.node.peers().unwrap()[0];
+    assert_eq!(seen_by_b.kind.as_deref(), Some("mac"));
+    assert_eq!(seen_by_b.name.as_deref(), Some("Study"));
+    assert_eq!(seen_by_b.label, None);
+    let seen_by_a = &a.node.peers().unwrap()[0];
+    assert_eq!(seen_by_a.kind.as_deref(), Some("tv"));
+    assert_eq!(seen_by_a.name.as_deref(), Some("Living room"));
+}
+
+#[test]
+fn a_label_sticks_and_survives_the_peers_own_name_changing() {
+    let a = Peer::new_as(Some(&fixture()), None, Identity::new("mac", "Study"));
+    let b = Peer::new_as(None, None, Identity::new("tv", "Living room"));
+    a.node.sync_now().unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
+    b.node.sync_now().unwrap();
+    let b_id = b.node.id();
+    a.node
+        .rename_peer(&b_id, Some("  The big screen "))
+        .unwrap();
+    assert_eq!(
+        a.node.peers().unwrap()[0].label.as_deref(),
+        Some("The big screen"),
+        "trimmed"
+    );
+    let b = b.restart_as(Identity::new("tv", "Bedroom"));
+    b.node.sync_now().unwrap();
+    let seen = &a.node.peers().unwrap()[0];
+    assert_eq!(
+        seen.name.as_deref(),
+        Some("Bedroom"),
+        "the name follows the peer"
+    );
+    assert_eq!(
+        seen.label.as_deref(),
+        Some("The big screen"),
+        "the label is this vault's"
+    );
+    a.node.rename_peer(&b_id, Some("")).unwrap();
+    assert_eq!(
+        a.node.peers().unwrap()[0].label,
+        None,
+        "an empty label takes it away"
+    );
+    assert!(a.node.rename_peer("not-a-peer", Some("x")).is_err());
+    a.node.rename_peer(&b_id, Some("Screen")).unwrap();
+    a.node.forget_peer(&b_id).unwrap();
+    assert!(a.node.peers().unwrap().is_empty());
+}
+
+#[test]
+fn a_node_that_says_nothing_about_itself_still_syncs() {
+    let a = Peer::new_as(Some(&fixture()), None, Identity::new("mac", "Study"));
+    let b = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
+    b.node.sync_now().unwrap();
+    assert_eq!(b.read("Gift ideas.md"), a.read("Gift ideas.md"));
+    let seen_by_a = &a.node.peers().unwrap()[0];
+    assert_eq!(
+        (seen_by_a.kind.as_deref(), seen_by_a.name.as_deref()),
+        (None, None)
+    );
+    let seen_by_b = &b.node.peers().unwrap()[0];
+    assert_eq!(seen_by_b.kind.as_deref(), Some("mac"));
 }

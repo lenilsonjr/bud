@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use peer::{Node, NodeOptions, NodeState, PeerInfo, Qr, Relay, RotateReport, Ticket};
+pub use peer::{Identity, Node, NodeOptions, NodeState, PeerInfo, Qr, Relay, RotateReport, Ticket};
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};
 pub use watch::{VaultListener, Watch};
