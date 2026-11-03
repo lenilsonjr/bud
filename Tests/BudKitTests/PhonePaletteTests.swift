@@ -17,8 +17,20 @@ final class PhonePaletteTests: XCTestCase {
         _ = pull.offset(0)
         XCTAssertTrue(pull.offset(80))
         XCTAssertFalse(pull.offset(80))
+        XCTAssertFalse(pull.offset(30), "easing back most of the way is not a rest")
+        XCTAssertFalse(pull.offset(100))
         XCTAssertFalse(pull.offset(0), "resting arms it")
         XCTAssertTrue(pull.offset(100))
+    }
+
+    func testAFirstReadingBeforeTheLayoutSettledStillLetsALaterPullOpenIt() {
+        var pull = PhonePalette.Pull()
+        _ = pull.offset(0)
+        XCTAssertFalse(pull.offset(13.3), "the navigator settles with its padding")
+        XCTAssertFalse(pull.offset(60))
+        XCTAssertTrue(pull.offset(94))
+        XCTAssertFalse(pull.offset(13.3), "back at its true rest, within the slack")
+        XCTAssertTrue(pull.offset(100), "so the next pull opens it")
     }
 
     func testScrollingUpThroughTheTreeNeverOpensIt() {

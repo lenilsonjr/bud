@@ -16,10 +16,15 @@ struct Sidebar: View {
         ScrollViewReader { proxy in
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 2) {
-                    // The probe: a first child of no height that reports the top edge as the
-                    // navigator scrolls. A reader in the content's background reports only once.
+                    // The probe: a first child of no height whose own frame is watched, since a
+                    // preference does not leave a scrolling ScrollView. On a phone, a pull down on
+                    // the navigator opens Go anywhere, as the third frame.
                     GeometryReader { geo in
-                        Color.clear.preference(key: TopEdgeKey.self, value: geo.frame(in: .named(Self.space)).minY)
+                        let top = geo.frame(in: .named(Self.space)).minY
+                        Color.clear.onChange(of: top, initial: true) { _, now in
+                            guard compact, pull.offset(now) else { return }
+                            goAnywhere()
+                        }
                     }
                     .frame(height: 0)
                     eyebrow("Places")
@@ -54,11 +59,6 @@ struct Sidebar: View {
                 .padding(.vertical, 12)
             }
             .coordinateSpace(name: Self.space)
-            // On a phone, a pull down on the navigator opens Go anywhere, as the third frame.
-            .onPreferenceChange(TopEdgeKey.self) { y in
-                guard compact, pull.offset(y) else { return }
-                goAnywhere()
-            }
             .onAppear { reveal(store.center, proxy: proxy) }
             .onChange(of: store.center) { _, now in reveal(now, proxy: proxy) }
         }
@@ -70,13 +70,6 @@ struct Sidebar: View {
         expanded.formUnion(store.tree.ancestors(of: id))
         if store.tree.hasChildren(id) { expanded.insert(id) }
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
-    }
-
-    /// Where the navigator's content begins, in the navigator's own space: above zero while it is
-    /// pulled down.
-    private struct TopEdgeKey: PreferenceKey {
-        static let defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
     }
 
     private func toggle(_ id: UUID) {
