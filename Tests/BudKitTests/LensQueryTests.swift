@@ -78,4 +78,18 @@ final class LensQueryTests: XCTestCase {
         let captured = t.capture("Call back", source: "mac")
         XCTAssertFalse(LensQuery().hits(t, on: day).contains { $0.id == captured.id })
     }
+
+    func testUnderALensHitsAreFullPathsHalfAndTheRestFadeBelowAnyDim() {
+        XCTAssertEqual(lensLevel(0.35, match: nil, lensOn: false), 0.35, "No lens: as before")
+        XCTAssertEqual(lensLevel(0.35, match: .hit, lensOn: true), 1)
+        XCTAssertEqual(lensLevel(1, match: .path, lensOn: true), 0.55)
+        XCTAssertLessThan(lensLevel(1, match: nil, lensOn: true), lightLevel(role: .deep, lifted: false))
+    }
+
+    func testTheCanvasPresetsHaveDistinctNamesAndQuestions() {
+        let presets = LensQuery.canvasPresets
+        XCTAssertEqual(Set(presets.map(\.name)).count, presets.count)
+        XCTAssertEqual(Set(presets.map(\.query)).count, presets.count)
+        XCTAssertFalse(presets.contains { $0.query.isEmpty })
+    }
 }

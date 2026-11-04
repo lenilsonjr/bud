@@ -144,5 +144,17 @@ final class PlaceStoreTests: XCTestCase {
         XCTAssertTrue(store.tree.trashed.isEmpty)
         XCTAssertNil(store.toasts.current, "Deleting for good is not undoable by toast")
     }
+
+    func testTheCanvasLensFollowsTheTreeAndClearsToNothing() throws {
+        let store = BudStore(fileURL: nil)
+        XCTAssertTrue(store.canvasLight.isEmpty)
+        store.canvasLens = .todos
+        let open = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.state == .open })
+        XCTAssertEqual(store.canvasLight[open.id], .hit)
+        store.close(open.id, cascade: true)
+        XCTAssertNotEqual(store.canvasLight[open.id], .hit, "A closed to-do leaves the lens at once")
+        store.canvasLens = nil
+        XCTAssertTrue(store.canvasLight.isEmpty)
+    }
 }
 #endif

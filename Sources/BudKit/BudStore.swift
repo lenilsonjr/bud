@@ -50,6 +50,12 @@ public final class BudStore: ObservableObject {
     @Published public var lens: Lens? = nil {
         didSet { if lens != nil { place = nil } }
     }
+    /// The question the canvas is asked: its hits stay lit and the rest fades. Nil for none.
+    @Published public var canvasLens: LensQuery? = nil {
+        didSet { if canvasLens != oldValue { relight() } }
+    }
+    /// How each bud stands under the canvas lens, worked out once per change of tree or lens.
+    @Published public private(set) var canvasLight: [UUID: LensQuery.Match] = [:]
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
     /// Whether Files shows its sidebar; follows the window shape until the bar button decides.
@@ -513,6 +519,11 @@ public final class BudStore: ObservableObject {
 
     private func relayout() {
         layout = LayoutEngine.layout(of: tree, center: center)
+        relight()
+    }
+
+    private func relight() {
+        canvasLight = canvasLens?.light(tree) ?? [:]
     }
 }
 #endif

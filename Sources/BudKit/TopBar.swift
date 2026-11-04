@@ -47,7 +47,10 @@ struct TopBar: View {
                 SyncDot(devices: store.devices)
                 #endif
                 goAnywhere
-                if store.surface == .canvas { zoom }
+                if store.surface == .canvas {
+                    lensMenu
+                    zoom
+                }
                 Button(action: onAdd) {
                     BudButtonLabel(title: "Capture", systemImage: "plus")
                 }
@@ -231,6 +234,46 @@ struct TopBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// Ask the canvas a question: the hits stay lit, the path to them half lit, the rest fades.
+    private var lensMenu: some View {
+        let active = LensQuery.canvasPresets.first { $0.query == store.canvasLens }
+        return Menu {
+            ForEach(LensQuery.canvasPresets, id: \.name) { preset in
+                Toggle(preset.name, isOn: Binding(
+                    get: { store.canvasLens == preset.query },
+                    set: { on in withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = on ? preset.query : nil } }
+                ))
+            }
+            if store.canvasLens != nil {
+                Divider()
+                Button("Show everything") {
+                    withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = nil }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: active == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                    .foregroundStyle(active == nil ? Theme.text2 : Theme.leaf)
+                if let active {
+                    Text(active.name)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.text)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Light up what matches")
+        .accessibilityLabel(active.map { "Lens: \($0.name)" } ?? "Lens")
+        .accessibilityIdentifier("canvas-lens")
     }
 
     private var zoom: some View {

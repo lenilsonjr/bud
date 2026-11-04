@@ -173,7 +173,11 @@ public struct OrbitCanvas: View {
                         store: store,
                         role: placed.role,
                         lit: lit == id || swapOver == id,
-                        light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
+                        light: lensLevel(
+                            lightLevel(role: placed.role, lifted: lifted.contains(id)),
+                            match: store.canvasLight[id],
+                            lensOn: store.canvasLens != nil
+                        ),
                         onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                         onOpen: { open(id) },
                         onAdd: { store.modal = .adding(under: id) },

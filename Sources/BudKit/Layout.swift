@@ -20,6 +20,18 @@ public func lightLevel(role: CardRole, lifted: Bool) -> Double {
     }
 }
 
+/// How bright a card is under a lens: a hit in full light, a card on the way to one at half,
+/// everything else faded further than an ordinary dim card, so the question reads at a glance.
+/// No lens leaves the card as it was.
+public func lensLevel(_ base: Double, match: LensQuery.Match?, lensOn: Bool) -> Double {
+    guard lensOn else { return base }
+    switch match {
+    case .hit: return 1
+    case .path: return 0.55
+    case nil: return 0.15
+    }
+}
+
 public struct Placed: Equatable {
     public var id: UUID
     public var position: CGPoint
