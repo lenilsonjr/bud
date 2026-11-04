@@ -14,7 +14,34 @@ permissions:
   contents: read
 
 jobs:
+  # The Rust core (ADR-003), built once for every Apple slice and handed to the app builds:
+  # build/BudCoreFFI.xcframework and build/BudCore/BudCore.swift from scripts/build-core.sh.
+  core:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      # tvOS is a tier 3 target: its slices need nightly with the standard library from source.
+      - name: Install nightly Rust for tvOS
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: Install stable Rust for macOS and iOS
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the core
+        run: scripts/build-core.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ github.sha }}
+          path: build/
+          if-no-files-found: error
+          retention-days: 7
+
   build:
+    needs: core
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +59,11 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+      - name: Fetch the core
+        uses: actions/download-artifact@v4
+        with:
+          name: core-${{ github.sha }}
+          path: build/
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
