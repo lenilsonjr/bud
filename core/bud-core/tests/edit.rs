@@ -381,7 +381,7 @@ fn set_state_and_set_pinned_write_the_file_and_never_cascade() {
         ("Parent.md", "---\nstate: open\n---\nP\n"),
         ("Parent/Kid.md", "---\nstate: open\n---\nK\n"),
     ]);
-    vault.set_state("Parent.md", State::Done).unwrap();
+    vault.set_state("Parent.md", Some(State::Done)).unwrap();
     assert_eq!(read(dir.path(), "Parent.md"), "---\nstate: done\n---\nP\n");
     assert_eq!(
         vault.bud("Parent.md").unwrap().unwrap().state,
@@ -394,7 +394,7 @@ fn set_state_and_set_pinned_write_the_file_and_never_cascade() {
         "---\nstate: open\n---\nK\n"
     );
 
-    vault.set_state("Parent.md", State::Open).unwrap();
+    vault.set_state("Parent.md", Some(State::Open)).unwrap();
     vault.set_pinned("Parent.md", true).unwrap();
     assert_eq!(
         read(dir.path(), "Parent.md"),
@@ -404,6 +404,97 @@ fn set_state_and_set_pinned_write_the_file_and_never_cascade() {
     vault.set_pinned("Parent.md", false).unwrap();
     assert!(!vault.bud("Parent.md").unwrap().unwrap().pinned);
     assert_eq!(read(dir.path(), "Parent.md"), "---\nstate: open\n---\nP\n");
+}
+
+#[test]
+fn set_state_none_makes_a_note() {
+    let (mut vault, dir, _index) =
+        vault_with(&[("Send.md", "---\nstate: done\npinned: true\n---\nS\n")]);
+    vault.set_state("Send.md", None).unwrap();
+    assert_eq!(read(dir.path(), "Send.md"), "---\npinned: true\n---\nS\n");
+    let bud = vault.bud("Send.md").unwrap().unwrap();
+    assert_eq!(bud.kind, Kind::Note);
+    assert_eq!(bud.state, None);
+    assert_matches_rescan(&mut vault);
+}
+
+#[test]
+fn set_when_and_set_due_write_the_file_and_clear_with_none() {
+    let (mut vault, dir, _index) = vault_with(&[("Draft issue.md", "---\nstate: open\n---\nD\n")]);
+    vault
+        .set_when("Draft issue.md", Some("2026-11-02"))
+        .unwrap();
+    vault.set_due("Draft issue.md", Some("2026-11-05")).unwrap();
+    assert_eq!(
+        read(dir.path(), "Draft issue.md"),
+        "---\nstate: open\nwhen: 2026-11-02\ndue: 2026-11-05\n---\nD\n"
+    );
+    let bud = vault.bud("Draft issue.md").unwrap().unwrap();
+    assert_eq!(bud.when.as_deref(), Some("2026-11-02"));
+    assert_eq!(bud.due.as_deref(), Some("2026-11-05"));
+    assert_eq!(bud.state, Some(State::Open));
+
+    vault.set_when("Draft issue.md", None).unwrap();
+    vault.set_due("Draft issue.md", None).unwrap();
+    assert_eq!(
+        read(dir.path(), "Draft issue.md"),
+        "---\nstate: open\n---\nD\n"
+    );
+    let bud = vault.bud("Draft issue.md").unwrap().unwrap();
+    assert_eq!((bud.when, bud.due), (None, None));
+    assert!(matches!(
+        vault.set_due("Nothing.md", Some("2026-11-05")).unwrap_err(),
+        Error::NoSuchBud(_)
+    ));
+    assert_matches_rescan(&mut vault);
+}
+
+#[test]
+fn delete_forever_removes_the_file_the_folder_and_the_rows() {
+    let (mut vault, dir, _index) = vault_with(&TREE);
+    vault.trash("Launch/Name.md").unwrap();
+    vault.delete_forever(".trash/Launch/Name.md").unwrap();
+    assert!(!dir.path().join(".trash/Launch/Name.md").exists());
+    assert!(!dir.path().join(".trash/Launch").exists());
+    let paths: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
+    assert_eq!(paths, ["Other.md", "Launch.md"]);
+    assert_matches_rescan(&mut vault);
+}
+
+#[test]
+fn delete_forever_refuses_a_bud_outside_the_trash() {
+    let (mut vault, dir, _index) = vault_with(&TREE);
+    let before = rows(&vault);
+    assert!(matches!(
+        vault.delete_forever("Launch.md").unwrap_err(),
+        Error::Invalid(_)
+    ));
+    assert!(matches!(
+        vault.delete_forever(".trash").unwrap_err(),
+        Error::Invalid(_)
+    ));
+    assert!(matches!(
+        vault.delete_forever(".trash/Nothing.md").unwrap_err(),
+        Error::NoSuchBud(_)
+    ));
+    assert!(dir.path().join("Launch/Name/Shortlist.md").is_file());
+    assert_eq!(rows(&vault), before);
+}
+
+#[test]
+fn empty_trash_removes_every_trashed_bud() {
+    let (mut vault, dir, _index) = vault_with(&TREE);
+    vault.trash("Launch/Name.md").unwrap();
+    vault.trash("Other.md").unwrap();
+    vault.empty_trash().unwrap();
+    assert!(vault.roots(Place::Trash).unwrap().is_empty());
+    let paths: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
+    assert_eq!(paths, ["Launch.md"]);
+    let left: Vec<_> = std::fs::read_dir(dir.path().join(".trash"))
+        .unwrap()
+        .collect();
+    assert!(left.is_empty());
+    assert_matches_rescan(&mut vault);
 }
 
 fn set_mode(path: &Path, mode: u32) {

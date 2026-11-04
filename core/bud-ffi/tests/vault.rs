@@ -109,7 +109,9 @@ fn edits_change_the_file_and_the_index() {
     f.vault
         .set_body(path.clone(), "Three options.\n".into())
         .unwrap();
-    f.vault.set_state(path.clone(), BudState::Done).unwrap();
+    f.vault
+        .set_state(path.clone(), Some(BudState::Done))
+        .unwrap();
     f.vault.set_pinned(path.clone(), true).unwrap();
     let bud = f.vault.bud(path.clone()).unwrap().unwrap();
     assert_eq!(bud.state, Some(BudState::Done));
@@ -136,6 +138,50 @@ fn trash_and_restore_round_trip() {
     assert_eq!(trashed.place, BudPlace::Trash);
     let back = f.vault.restore(".trash/Newsletter/Send.md".into()).unwrap();
     assert_eq!(back, "Newsletter/Send.md");
+}
+
+#[test]
+fn when_due_and_deleting_from_the_trash() {
+    let f = newsletter();
+    let path = "Newsletter/Draft issue.md".to_string();
+    f.vault
+        .set_when(path.clone(), Some("2026-11-02".into()))
+        .unwrap();
+    f.vault.set_due(path.clone(), None).unwrap();
+    f.vault.set_state(path.clone(), None).unwrap();
+    let bud = f.vault.bud(path.clone()).unwrap().unwrap();
+    assert_eq!(bud.when.as_deref(), Some("2026-11-02"));
+    assert_eq!(bud.due, None);
+    assert_eq!((bud.kind, bud.state), (BudKind::Note, None));
+
+    assert!(matches!(
+        f.vault.delete_forever(path.clone()).unwrap_err(),
+        VaultError::Invalid { .. }
+    ));
+    f.vault.trash(path).unwrap();
+    f.vault.trash("Newsletter/Send.md".into()).unwrap();
+    f.vault
+        .delete_forever(".trash/Newsletter/Draft issue.md".into())
+        .unwrap();
+    assert!(!f
+        .dir
+        .path()
+        .join(".trash/Newsletter/Draft issue.md")
+        .exists());
+    assert!(f
+        .vault
+        .bud(".trash/Newsletter/Send.md".into())
+        .unwrap()
+        .is_some());
+    f.vault.empty_trash().unwrap();
+    let left: Vec<String> = f
+        .vault
+        .snapshot()
+        .unwrap()
+        .into_iter()
+        .map(|b| b.path)
+        .collect();
+    assert_eq!(left, ["Newsletter.md"]);
 }
 
 #[test]

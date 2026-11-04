@@ -105,10 +105,10 @@ fn a_bud_moved_on_one_while_its_parent_is_trashed_on_the_other_keeps_the_move() 
 fn a_to_do_done_on_one_and_reopened_on_the_other_after_ends_open() {
     let (mut a, mut b) = pair();
     let path = "Launch the newsletter/Set up the sender.md";
-    a.vault.set_state(path, State::Done).unwrap();
+    a.vault.set_state(path, Some(State::Done)).unwrap();
     converge(&mut a, &mut b);
     assert!(b.read(path).contains("state: done"));
-    b.vault.set_state(path, State::Open).unwrap();
+    b.vault.set_state(path, Some(State::Open)).unwrap();
     converge(&mut a, &mut b);
     assert!(a.read(path).contains("state: open"), "the later state wins");
     assert!(b.read(path).contains("state: open"));
