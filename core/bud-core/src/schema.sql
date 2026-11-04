@@ -50,15 +50,18 @@ CREATE TRIGGER IF NOT EXISTS links_delete AFTER DELETE ON buds BEGIN
     DELETE FROM links WHERE source = old.rowid;
 END;
 
--- Each tag a bud carries, once, under its rowid like its links; origin is `frontmatter` or
--- `body` (tags module).
+-- Each tag a bud carries, once, under its rowid like its links. `key` is the tag in lower case
+-- (any script), so spellings of one tag meet; origin is `frontmatter` or `body`, and position
+-- the order the file gives them in (tags module).
 CREATE TABLE IF NOT EXISTS bud_tags (
-    source INTEGER NOT NULL,
-    tag    TEXT NOT NULL COLLATE NOCASE,
-    origin TEXT NOT NULL,
-    UNIQUE (source, tag)
+    source   INTEGER NOT NULL,
+    key      TEXT NOT NULL,
+    tag      TEXT NOT NULL,
+    origin   TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    UNIQUE (source, key)
 );
-CREATE INDEX IF NOT EXISTS bud_tags_tag ON bud_tags(tag);
+CREATE INDEX IF NOT EXISTS bud_tags_key ON bud_tags(key);
 CREATE TRIGGER IF NOT EXISTS bud_tags_delete AFTER DELETE ON buds BEGIN
     DELETE FROM bud_tags WHERE source = old.rowid;
 END;

@@ -1,6 +1,7 @@
 //! Tags: the `tags` key of a bud's frontmatter and the `#tags` in its prose. The index keeps each
 //! tag a bud carries once, under the bud's row like its links, with where it was written. Tags
-//! compare without case: `#Home` and `#home` are one tag, shown as it was first written.
+//! compare without case, accented letters included: `#Home` and `#home` are one tag, shown the
+//! way most buds write it.
 //!
 //! The frontmatter key stays the file's own text (an unknown key to [`crate::Properties`]), so
 //! reading tags never rewrites a file.
@@ -36,13 +37,17 @@ fn tag_char(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '/')
 }
 
-/// A tag as written, without a leading `#` and trailing `/`; none when it is empty, all digits
-/// (`#1` is not a tag) or holds anything a tag cannot.
+/// A tag as written, without a leading `#` and trailing `/`; none when it holds no letter (`#1`
+/// and `#-` are not tags) or anything a tag cannot.
 fn clean(raw: &str) -> Option<String> {
     let tag = raw.trim().trim_start_matches('#').trim_end_matches('/');
-    let ok =
-        !tag.is_empty() && tag.chars().all(tag_char) && !tag.chars().all(|c| c.is_ascii_digit());
+    let ok = tag.chars().all(tag_char) && tag.chars().any(char::is_alphabetic);
     ok.then(|| tag.to_string())
+}
+
+/// What two spellings of one tag share.
+fn key(tag: &str) -> String {
+    tag.to_lowercase()
 }
 
 /// The tags of a frontmatter block: `tags: [a, b]`, a list under the key, or one string of tags
@@ -66,8 +71,8 @@ pub(crate) fn from_frontmatter(yaml: &str) -> Vec<String> {
     words.iter().filter_map(|w| clean(w)).collect()
 }
 
-/// The `#tags` in a body's prose: a `#` at the start of a line or after a space or an opening
-/// bracket, then tag characters. A heading's `# ` is not a tag, nor is a `#` inside a word or a
+/// The `#tags` in a body's prose: a `#` at the start of a line or after a space or a comma, then
+/// tag characters. A heading's `# ` is not a tag, nor is a `#` inside a word or a
 /// link (`page#part`, `[[Note#Part]]`), nor anything in code.
 pub(crate) fn from_body(body: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -75,8 +80,7 @@ pub(crate) fn from_body(body: &str) -> Vec<String> {
         let mut previous: Option<char> = None;
         let mut chars = line.char_indices().peekable();
         while let Some((i, c)) = chars.next() {
-            let starts =
-                c == '#' && previous.is_none_or(|p| p.is_whitespace() || matches!(p, '(' | ','));
+            let starts = c == '#' && previous.is_none_or(|p| p.is_whitespace() || p == ',');
             if starts {
                 let rest = &line[i + 1..];
                 let len = rest.find(|c: char| !tag_char(c)).unwrap_or(rest.len());
@@ -105,36 +109,60 @@ pub(crate) fn retag(conn: &Connection, path: &str, yaml: Option<&str>, body: &st
     )?;
     conn.execute("DELETE FROM bud_tags WHERE source = ?1", params![row])?;
     let mut insert = conn.prepare_cached(
-        "INSERT OR IGNORE INTO bud_tags (source, tag, origin) VALUES (?1, ?2, ?3)",
+        "INSERT OR IGNORE INTO bud_tags (source, key, tag, origin, position)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
     let front = yaml.map(from_frontmatter).unwrap_or_default();
-    for tag in front {
-        insert.execute(params![row, tag, TagOrigin::Frontmatter.as_str()])?;
-    }
-    for tag in from_body(body) {
-        insert.execute(params![row, tag, TagOrigin::Body.as_str()])?;
+    let found = front
+        .into_iter()
+        .map(|tag| (tag, TagOrigin::Frontmatter))
+        .chain(
+            from_body(body)
+                .into_iter()
+                .map(|tag| (tag, TagOrigin::Body)),
+        );
+    for (position, (tag, origin)) in found.enumerate() {
+        insert.execute(params![
+            row,
+            key(&tag),
+            tag,
+            origin.as_str(),
+            position as i64
+        ])?;
     }
     Ok(())
 }
 
 impl Vault {
-    /// Every tag outside the Trash with the number of buds that carry it, most used first.
+    /// Every tag outside the Trash with the number of buds that carry it, most used first, each
+    /// shown the way most of its buds write it (the first in order on a tie).
     pub fn tags(&self) -> Result<Vec<TagCount>> {
         let conn = lock(&self.conn);
         let mut stmt = conn.prepare(
-            "SELECT min(bud_tags.tag), count(DISTINCT bud_tags.source) FROM bud_tags
+            "SELECT bud_tags.key, bud_tags.tag, count(*) FROM bud_tags
              JOIN buds ON buds.rowid = bud_tags.source WHERE buds.place != 'trash'
-             GROUP BY bud_tags.tag COLLATE NOCASE
-             ORDER BY count(DISTINCT bud_tags.source) DESC, min(bud_tags.tag) COLLATE NOCASE",
+             GROUP BY bud_tags.key, bud_tags.tag ORDER BY bud_tags.key, count(*) DESC, bud_tags.tag",
         )?;
-        let rows = stmt.query_map([], |r| {
-            let buds: i64 = r.get(1)?;
-            Ok(TagCount {
-                tag: r.get(0)?,
-                buds: usize::try_from(buds).unwrap_or(0),
-            })
-        })?;
-        Ok(rows.collect::<std::result::Result<_, _>>()?)
+        let rows: Vec<(String, String, i64)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        let mut out: Vec<TagCount> = Vec::new();
+        let mut last_key: Option<String> = None;
+        for (key, tag, buds) in rows {
+            let buds = usize::try_from(buds).unwrap_or(0);
+            match out.last_mut() {
+                // Spellings of one key come together, the most used first: it names the tag.
+                Some(last) if last_key.as_deref() == Some(key.as_str()) => last.buds += buds,
+                _ => out.push(TagCount { tag, buds }),
+            }
+            last_key = Some(key);
+        }
+        out.sort_by(|a, b| {
+            b.buds
+                .cmp(&a.buds)
+                .then_with(|| a.tag.to_lowercase().cmp(&b.tag.to_lowercase()))
+        });
+        Ok(out)
     }
 
     /// The tags of the bud at `path`, in the order the file gives them.
@@ -142,7 +170,7 @@ impl Vault {
         let conn = lock(&self.conn);
         let mut stmt = conn.prepare(
             "SELECT bud_tags.tag FROM bud_tags JOIN buds ON buds.rowid = bud_tags.source
-             WHERE buds.path = ?1 ORDER BY bud_tags.rowid",
+             WHERE buds.path = ?1 ORDER BY bud_tags.position",
         )?;
         let rows = stmt.query_map(params![path], |r| r.get(0))?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
@@ -156,9 +184,9 @@ impl Vault {
         let conn = lock(&self.conn);
         let mut stmt = conn.prepare(&format!(
             "{SELECT} WHERE place != 'trash' AND rowid IN
-             (SELECT source FROM bud_tags WHERE tag = ?1 COLLATE NOCASE) ORDER BY path"
+             (SELECT source FROM bud_tags WHERE key = ?1) ORDER BY path"
         ))?;
-        let rows = stmt.query_map(params![tag], read_bud)?;
+        let rows = stmt.query_map(params![key(&tag)], read_bud)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 }
@@ -182,12 +210,12 @@ mod tests {
             ["home", "work", "errands"]
         );
         assert!(from_frontmatter("title: no tags\n").is_empty());
-        assert!(from_frontmatter("tags: [has space, ok]\n").len() == 1);
+        assert_eq!(from_frontmatter("tags: [has space, ok]\n"), ["ok"]);
     }
 
     #[test]
     fn body_tags_start_a_word_and_stay_out_of_code_and_headings() {
-        let body = "# Heading\n## Another\nBuy #milk and (#eggs), not page#part or #1.\n`#code` then #après-ski #a/b/\n```\n#fenced\n```\n[[Note#Part]] #end";
+        let body = "# Heading\n## Another\nBuy #milk, #eggs, not page#part, [see](#setup), #- or #1.\n`#code` then #après-ski #a/b/\n```\n#fenced\n```\n[[Note#Part]] #end";
         assert_eq!(from_body(body), ["milk", "eggs", "après-ski", "a/b", "end"]);
     }
 }
