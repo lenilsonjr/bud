@@ -281,8 +281,8 @@ public struct OrbitCanvas: View {
         withAnimation(.easeOut(duration: 0.2)) { opened = nil }
     }
 
-    /// N: a new bud under the lit card, or under the center when nothing is lit. The hub is not
-    /// a place to plant under: there N captures.
+    /// N: a new bud under the lit card, or under the center when nothing is lit; on the hub it
+    /// plants at the top level.
     private func addUnderTheLitCard() {
         store.modal = .adding(under: litCard(in: store.layout, viewport: viewport) ?? store.center)
     }

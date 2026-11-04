@@ -1,6 +1,6 @@
 import Foundation
 
-/// Where a quick line lands: in the Inbox only from the capture button and its shortcut; an add
+/// Where a quick line lands: in the Inbox only from the Capture button and the ⌥Space panel; an add
 /// on the canvas plants under the bud on screen, and on Everything at the top level, so it shows
 /// in the orbit. The same rule on every platform.
 public enum PlantTarget: Equatable, Sendable {
