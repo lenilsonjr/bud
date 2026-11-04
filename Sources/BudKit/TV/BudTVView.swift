@@ -370,8 +370,8 @@ struct TVAddTarget: Identifiable {
     let id: UUID
 }
 
-/// One line of text from the TV keyboard or dictation: under the bud on screen, or in the Inbox
-/// when the screen shows Everything. Return plants, Menu cancels.
+/// One line of text from the TV keyboard or dictation: in the Inbox from the Capture button, under
+/// the bud the person added on otherwise. Return plants, Menu cancels.
 struct TVCaptureSheet: View {
     @ObservedObject var store: BudStore
     /// The Inbox from the Capture button, or under the bud the person added on.

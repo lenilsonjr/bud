@@ -51,7 +51,7 @@ struct CardView: View {
             Text("\(store.tree.children(of: rootID).count) threads")
                 .textRole(.caption)
                 .foregroundStyle(Theme.hubMeta)
-            Button("Capture", action: onAdd)
+            Button("Add", action: onAdd)
                 .buttonStyle(.plain)
                 .textRole(.label)
                 .foregroundStyle(Theme.hubAccent)
@@ -64,7 +64,7 @@ struct CardView: View {
     }
 
     /// Inside a thread the thread is the hub (A2): its box in the corner when it is a to-do, the
-    /// title in the display face, what it holds, and Enrich where Everything has Capture.
+    /// title in the display face, what it holds, and Enrich where Everything has Add.
     private func threadHub(_ bud: Bud) -> some View {
         let style = CardStyle.hub(lit: lit)
         return VStack(spacing: 6) {

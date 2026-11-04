@@ -44,12 +44,9 @@ enum Modal: Hashable, Identifiable {
     }
 
     /// An add on the canvas plants where it was asked, the hub included: only the capture button
-    /// and its shortcut send a line to the Inbox.
+    /// and the ⌥Space panel send a line to the Inbox.
     static func adding(under id: UUID) -> Modal {
-        switch PlantTarget.forCenter(id) {
-        case .inbox: return .capture
-        case .under(let parent): return .add(parent: parent)
-        }
+        .add(parent: id)
     }
 }
 

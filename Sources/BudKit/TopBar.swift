@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// One bar across the top of the window: the mark, Canvas | Files, where you are, the next
-/// step, Go anywhere, the zoom and Add here. On the Mac it leaves room for the window controls
+/// step, Go anywhere, the zoom and Capture. On the Mac it leaves room for the window controls
 /// and drags the window.
 struct TopBar: View {
     @ObservedObject var store: BudStore
@@ -39,7 +39,7 @@ struct TopBar: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Add here")
+                .help("Capture")
             } else {
                 if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
                 #if os(macOS)
@@ -48,7 +48,7 @@ struct TopBar: View {
                 goAnywhere
                 if store.surface == .canvas { zoom }
                 Button(action: onAdd) {
-                    BudButtonLabel(title: "Add here", systemImage: "plus")
+                    BudButtonLabel(title: "Capture", systemImage: "plus")
                 }
                 .buttonStyle(.budSecondary)
             }

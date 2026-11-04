@@ -75,6 +75,17 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.inbox().last?.text, "Buy stamps")
     }
 
+    func testABudPlantedOnEverythingIsATopLevelFileNotAnInboxOne() async throws {
+        let (store, vault) = await loaded()
+        let bud = try XCTUnwrap(store.plant("A new thread", todo: false, at: PlantTarget.forCenter(rootID)))
+        await store.settle()
+        let record = try await vault.snapshot().first { $0.path == bud.id.uuidString }
+        XCTAssertNotNil(record)
+        XCTAssertNil(record?.parent, "Everything is the top level")
+        XCTAssertNotEqual(record?.place, .inbox)
+        XCTAssertTrue(store.tree.children(of: rootID).contains { $0.id == bud.id })
+    }
+
     func testEditingTickingAndPinningReachTheVault() async throws {
         let (store, vault) = await loaded()
         let verify = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Verify the address" })
