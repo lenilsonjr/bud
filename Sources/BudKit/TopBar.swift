@@ -24,6 +24,7 @@ struct TopBar: View {
             Spacer(minLength: 8)
             if compact {
                 if let step = store.nextStep { bullseye(step.bud) }
+                if store.surface == .canvas { lensMenu }
                 Button(action: onSearch) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Theme.text2)
@@ -277,7 +278,8 @@ struct TopBar: View {
         HStack(spacing: 6) {
             Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                 .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
-            if let active = activeLens {
+            // On a narrow bar the filled glyph alone says a lens is on.
+            if !compact, let active = activeLens {
                 Text(active.name)
                     .textRole(.label)
                     .foregroundStyle(Theme.text)
