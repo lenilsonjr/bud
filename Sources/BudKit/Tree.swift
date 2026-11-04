@@ -305,6 +305,15 @@ public struct Tree: Codable, Equatable, Sendable {
         return true
     }
 
+    /// The sibling `offset` places away in the order: -1 the one before, 1 the one after. Nil at
+    /// either end, and for the root and the Inbox.
+    public func sibling(of id: UUID, offset: Int) -> UUID? {
+        guard let parent = bud(id)?.parent else { return nil }
+        let ids = children(of: parent).map(\.id)
+        guard let i = ids.firstIndex(of: id), ids.indices.contains(i + offset) else { return nil }
+        return ids[i + offset]
+    }
+
     /// Sets the order of a parent's children to the order of `ids`; children not named keep
     /// their places after them.
     public mutating func reorder(_ ids: [UUID], under parent: UUID) {

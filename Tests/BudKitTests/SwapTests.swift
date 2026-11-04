@@ -28,6 +28,16 @@ final class SwapTests: XCTestCase {
         XCTAssertEqual(t.children(of: rootID).map(\.id), Array(before.reversed()))
     }
 
+    func testASiblingIsTheOneBeforeOrAfterAndNilAtTheEnds() {
+        let t = Tree.seed()
+        let threads = t.children(of: rootID).map(\.id)
+        XCTAssertNil(t.sibling(of: threads[0], offset: -1))
+        XCTAssertEqual(t.sibling(of: threads[0], offset: 1), threads[1])
+        XCTAssertEqual(t.sibling(of: threads[1], offset: -1), threads[0])
+        XCTAssertNil(t.sibling(of: threads[threads.count - 1], offset: 1))
+        XCTAssertNil(t.sibling(of: rootID, offset: 1))
+    }
+
     func testReorderIgnoresBudsThatAreNotChildrenOfTheParent() {
         var t = Tree.seed()
         let threads = t.children(of: rootID).map(\.id)

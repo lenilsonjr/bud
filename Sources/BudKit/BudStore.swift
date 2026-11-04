@@ -388,6 +388,13 @@ public final class BudStore: ObservableObject {
         return true
     }
 
+    /// Trades places with the sibling before (-1) or after (1): the reorder that needs no drag.
+    @discardableResult
+    public func shift(_ id: UUID, by offset: Int) -> Bool {
+        guard let other = tree.sibling(of: id, offset: offset) else { return false }
+        return swap(id, other)
+    }
+
     private func trade(_ a: UUID, _ b: UUID) -> Bool {
         var traded = false
         commit { traded = $0.swap(a, b) }
