@@ -468,12 +468,13 @@ fn delete_forever_that_fails_halfway_can_be_retried() {
     vault.trash("Launch.md").unwrap();
     let locked = dir.path().join(".trash/Launch/Name");
     set_mode(&locked, 0o555);
-    let enforced = std::fs::write(locked.join(".probe"), "x").is_err();
-    let first = vault.delete_forever(".trash/Launch.md");
-    set_mode(&locked, 0o755);
-    if !enforced {
+    // Root ignores permission bits: nothing would fail halfway.
+    if std::fs::write(locked.join(".probe"), "x").is_ok() {
+        set_mode(&locked, 0o755);
         return;
     }
+    let first = vault.delete_forever(".trash/Launch.md");
+    set_mode(&locked, 0o755);
     assert!(matches!(first.unwrap_err(), Error::Io(_)));
     assert!(!dir.path().join(".trash/Launch.md").exists());
     let left: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
