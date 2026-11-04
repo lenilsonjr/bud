@@ -76,7 +76,7 @@ struct InlineAddBar: View {
             if bar.canNest {
                 icon("arrow.turn.down.right", label: "Add inside the last one", help: "Add inside the last one (Tab)", id: "inline-add-nest", action: onNest)
             }
-            icon("xmark", label: "Close", help: "Close (Esc)", id: "inline-add-close", action: onClose)
+            icon("xmark", label: "Done adding", help: "Done adding (Esc)", id: "inline-add-close", action: onClose)
         }
         .padding(.horizontal, 8)
         .frame(width: Self.width, height: 40)
