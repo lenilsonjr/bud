@@ -937,9 +937,13 @@ impl Vault {
                 bud = self.bud(&path)?.ok_or(Error::NoSuchBud(path.clone()))?;
             }
             if let Some(name) = tree.name(node).filter(|name| *name != bud.title) {
-                path = self.rename(&path, &name)?;
-                report.moved += 1;
-                bud = self.bud(&path)?.ok_or(Error::NoSuchBud(path.clone()))?;
+                // A title that makes the same file name leaves the file where it is.
+                let renamed = self.rename(&path, &name)?;
+                if renamed != path {
+                    path = renamed;
+                    report.moved += 1;
+                    bud = self.bud(&path)?.ok_or(Error::NoSuchBud(path.clone()))?;
+                }
             }
             let parent = match tree.parent(node) {
                 Some(parent) => {

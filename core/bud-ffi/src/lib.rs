@@ -287,8 +287,8 @@ pub enum PeerEvent {
     /// A first fetch from a peer: how many documents arrived, and how many buds the peer holds
     /// when it said.
     FetchProgress { received: u64, total: Option<u64> },
-    /// Changes from peers were applied and changed buds here, files the watcher does not report:
-    /// what they did. Reload what is on show.
+    /// A peer's changes were applied here in one session and changed buds, in files the watcher
+    /// does not report: what they did. Told as soon as they are applied.
     SyncFinished { summary: SyncSummary },
 }
 
@@ -335,7 +335,9 @@ impl From<bud_core::NodeEvent> for PeerEvent {
     }
 }
 
-/// Told each [`PeerEvent`] as it happens, on the node's own threads.
+/// Told each [`PeerEvent`] as it happens, on the node's own threads or the thread of a call such
+/// as `sync_now`, while the node holds its locks: a listener hands the event to another queue
+/// and never calls the `PeerNode` synchronously, or it waits forever.
 #[uniffi::export(callback_interface)]
 pub trait PeerListener: Send + Sync {
     fn event(&self, event: PeerEvent);
@@ -454,7 +456,8 @@ impl PeerNode {
         self.with(|node| node.allow_peer(&id))
     }
 
-    /// Hear every [`PeerEvent`] from now on, until the node stops.
+    /// Hear every [`PeerEvent`] from now on, until the node stops. The listener must not call
+    /// this node synchronously; see [`PeerListener`].
     pub fn listen(&self, listener: Box<dyn PeerListener>) -> Result<()> {
         self.with(|node| {
             node.listen(Box::new(ForwardEvents(listener)));
