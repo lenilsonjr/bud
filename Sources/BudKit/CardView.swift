@@ -106,7 +106,7 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
-        .accessibilityValue(bud.isDone ? "Done" : "")
+        .accessibilityValue(spokenValue(done: bud.isDone, match: store.canvasLight[id], lensOn: store.canvasLens != nil))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
@@ -153,7 +153,7 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
-        .accessibilityValue(bud.isDone ? "Done" : "")
+        .accessibilityValue(spokenValue(done: bud.isDone, match: store.canvasLight[id], lensOn: store.canvasLens != nil))
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
