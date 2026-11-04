@@ -86,10 +86,10 @@ struct BudShiftItems: View {
 
     var body: some View {
         if store.tree.sibling(of: id, offset: -1) != nil {
-            Button("Move earlier", systemImage: "arrow.uturn.backward") { store.shift(id, by: -1) }
+            Button("Move earlier", systemImage: "arrow.backward") { store.shift(id, by: -1) }
         }
         if store.tree.sibling(of: id, offset: 1) != nil {
-            Button("Move later", systemImage: "arrow.uturn.forward") { store.shift(id, by: 1) }
+            Button("Move later", systemImage: "arrow.forward") { store.shift(id, by: 1) }
         }
     }
 }

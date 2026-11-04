@@ -102,7 +102,7 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertFalse(store.swap(threads[0], threads[0]))
     }
 
-    func testMovingDownTradesPlacesWithTheNextSiblingAndStopsAtTheEnd() async throws {
+    func testMovingLaterTradesPlacesWithTheNextSiblingAndStopsAtTheEnd() async throws {
         let (store, vault) = await loaded()
         let threads = store.tree.children(of: rootID).map(\.id)
         XCTAssertTrue(store.shift(threads[0], by: 1))
