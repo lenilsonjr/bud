@@ -7,7 +7,7 @@
 //! any case, then to the bud at that path, with or without `.md`. More than one bud at the first
 //! rank that has any, or none at all, leaves the link unresolved. Trash is never a target.
 
-use crate::{lock, Result, Vault};
+use crate::{lock, prose, Result, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 
@@ -29,75 +29,27 @@ pub struct Link {
 /// spans lines.
 pub(crate) fn parse(body: &str) -> Vec<(String, Option<String>, usize)> {
     let mut out = Vec::new();
-    // The fence that is open: its character and the length of its run.
-    let mut fence: Option<(u8, usize)> = None;
-    let mut offset = 0;
-    for line in body.split_inclusive('\n') {
-        let start = offset;
-        offset += line.len();
-        let trimmed = line.trim_start().trim_end_matches(['\n', '\r']);
-        let run = |c: u8| trimmed.bytes().take_while(|&b| b == c).count();
-        if let Some((c, len)) = fence {
-            // A fence closes on a run of its character at least as long, with nothing after it.
-            if run(c) >= len && trimmed.trim_start_matches(c as char).trim().is_empty() {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some(c) = b"`~".iter().copied().find(|&c| run(c) >= 3) {
-            fence = Some((c, run(c)));
-            continue;
-        }
+    for (start, line) in prose::lines(body) {
         let bytes = line.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            match bytes[i] {
-                b'`' => {
-                    // A code span runs to the next run of exactly as many backticks; without one
-                    // the backticks are plain text.
-                    let n = bytes[i..].iter().take_while(|&&b| b == b'`').count();
-                    i += n;
-                    if let Some(close) = closing_run(&bytes[i..], n) {
-                        i += close + n;
-                    }
-                    continue;
-                }
-                b'[' if bytes.get(i + 1) == Some(&b'[') => {
-                    if let Some(len) = line[i + 2..].find("]]") {
-                        let inner = &line[i + 2..i + 2 + len];
-                        if !inner.contains(['[', ']']) {
-                            let embed = i > 0 && bytes[i - 1] == b'!';
-                            if let (false, Some((target, label))) = (embed, split(inner)) {
-                                out.push((target, label, start + i));
-                            }
-                            i += len + 4;
-                            continue;
+            if bytes[i] == b'[' && bytes.get(i + 1) == Some(&b'[') {
+                if let Some(len) = line[i + 2..].find("]]") {
+                    let inner = &line[i + 2..i + 2 + len];
+                    if !inner.contains(['[', ']']) {
+                        let embed = i > 0 && bytes[i - 1] == b'!';
+                        if let (false, Some((target, label))) = (embed, split(inner)) {
+                            out.push((target, label, start + i));
                         }
+                        i += len + 4;
+                        continue;
                     }
                 }
-                _ => {}
             }
             i += 1;
         }
     }
     out
-}
-
-/// Where a run of exactly `n` backticks starts in `bytes`.
-fn closing_run(bytes: &[u8], n: usize) -> Option<usize> {
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
-            let len = bytes[i..].iter().take_while(|&&b| b == b'`').count();
-            if len == n {
-                return Some(i);
-            }
-            i += len;
-        } else {
-            i += 1;
-        }
-    }
-    None
 }
 
 /// `Target#heading|label` as its target and label; none when the target is empty.

@@ -114,6 +114,13 @@ pub struct LinkRecord {
     pub to: Option<String>,
 }
 
+/// A tag and how many buds carry it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TagCountRecord {
+    pub tag: String,
+    pub buds: u64,
+}
+
 /// What is under a bud: every descendant, and the open to-dos among them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct CountsRecord {
@@ -670,6 +677,34 @@ impl Vault {
         Ok(self
             .core()
             .unresolved_links()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// Every tag with the number of buds that carry it, most used first.
+    pub fn tags(&self) -> Result<Vec<TagCountRecord>> {
+        Ok(self
+            .core()
+            .tags()?
+            .into_iter()
+            .map(|t| TagCountRecord {
+                tag: t.tag,
+                buds: t.buds as u64,
+            })
+            .collect())
+    }
+
+    /// The tags of the bud at `path`, in the order the file gives them.
+    pub fn tags_of(&self, path: String) -> Result<Vec<String>> {
+        Ok(self.core().tags_of(&path)?)
+    }
+
+    /// The buds that carry `tag`, in any case.
+    pub fn tagged(&self, tag: String) -> Result<Vec<BudRecord>> {
+        Ok(self
+            .core()
+            .tagged(&tag)?
             .into_iter()
             .map(Into::into)
             .collect())

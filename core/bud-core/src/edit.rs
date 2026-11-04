@@ -8,7 +8,7 @@
 use crate::frontmatter;
 use crate::lock;
 use crate::scan;
-use crate::{insert_row, links, Error, Kind, Placement, Properties, Result, State, Vault};
+use crate::{insert_row, links, tags, Error, Kind, Placement, Properties, Result, State, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -139,7 +139,7 @@ fn ensure_folders(root: &Path, conn: &Connection, dir: &str) -> Result<()> {
             place: scan::place_of(Path::new(&acc)),
             mtime: mtime_of(&root.join(&acc)),
         };
-        insert_row(conn, &row, &Properties::default(), "")?;
+        insert_row(conn, &row, &Properties::default(), None, "")?;
     }
     Ok(())
 }
@@ -188,7 +188,7 @@ impl Vault {
         let mut conn = lock(&self.conn);
         let tx = conn.transaction()?;
         ensure_folders(&self.root, &tx, &dir)?;
-        insert_row(&tx, &row, &props, "")?;
+        insert_row(&tx, &row, &props, None, "")?;
         tx.commit()?;
         Ok(path)
     }
@@ -205,7 +205,7 @@ impl Vault {
         }
         let absolute = self.root.join(&path);
         let old = std::fs::read_to_string(&absolute)?;
-        let (_, body) = frontmatter::split(&old);
+        let (yaml, body) = frontmatter::split(&old);
         let head = &old[..old.len() - body.len()];
         write_atomic(&absolute, &format!("{head}{text}"))?;
         let mtime = mtime_of(&absolute);
@@ -217,6 +217,7 @@ impl Vault {
             params![text, mtime, path],
         )?;
         links::relink(&tx, &path, text)?;
+        tags::retag(&tx, &path, yaml, text)?;
         tx.commit()?;
         Ok(())
     }

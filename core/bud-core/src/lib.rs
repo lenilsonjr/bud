@@ -10,9 +10,11 @@ mod edit;
 mod frontmatter;
 mod links;
 mod peer;
+mod prose;
 mod query;
 mod scan;
 mod sync;
+mod tags;
 mod watch;
 mod words;
 
@@ -34,10 +36,11 @@ pub use peer::{
 };
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};
+pub use tags::{TagCount, TagOrigin};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -213,7 +216,7 @@ impl Vault {
         if version != SCHEMA_VERSION {
             // Issued tickets are short-lived, so an older shape of their table is dropped too.
             conn.execute_batch(
-                "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts; DROP TABLE IF EXISTS links;
+                "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS bud_tags;
                  DROP TABLE IF EXISTS tickets_issued;",
             )?;
         }
@@ -315,7 +318,7 @@ impl Vault {
         }
         edit::write_atomic(&absolute, &written)?;
         let mtime = edit::mtime_of(&absolute);
-        let (_, body) = frontmatter::split(&written);
+        let (yaml, body) = frontmatter::split(&written);
         let row = Placement {
             path: &file_path,
             parent: bud.parent.as_deref(),
@@ -333,7 +336,7 @@ impl Vault {
                 params![file_path, path],
             )?;
         }
-        insert_row(&tx, &row, props, body)?;
+        insert_row(&tx, &row, props, yaml, body)?;
         tx.commit()?;
         Ok(())
     }
@@ -388,16 +391,13 @@ impl Vault {
 
 /// Read the file behind `item` (a folder has none) and write its row.
 fn index_found(conn: &Connection, item: &scan::Found) -> Result<()> {
-    let (props, body) = if item.is_folder {
-        (Properties::default(), String::new())
+    let text = if item.is_folder {
+        String::new()
     } else {
-        let text = std::fs::read_to_string(&item.absolute)?;
-        let (yaml, body) = frontmatter::split(&text);
-        (
-            yaml.map(frontmatter::parse).unwrap_or_default(),
-            body.to_string(),
-        )
+        std::fs::read_to_string(&item.absolute)?
     };
+    let (yaml, body) = frontmatter::split(&text);
+    let props = yaml.map(frontmatter::parse).unwrap_or_default();
     let row = Placement {
         path: &item.path,
         parent: item.parent.as_deref(),
@@ -405,7 +405,7 @@ fn index_found(conn: &Connection, item: &scan::Found) -> Result<()> {
         place: item.place,
         mtime: item.mtime,
     };
-    insert_row(conn, &row, &props, &body)
+    insert_row(conn, &row, &props, yaml, body)
 }
 
 /// The parts of a row that come from the folder rather than from the file's frontmatter.
@@ -421,6 +421,7 @@ fn insert_row(
     conn: &Connection,
     row: &Placement<'_>,
     props: &Properties,
+    yaml: Option<&str>,
     body: &str,
 ) -> Result<()> {
     let kind = if props.state.is_some() {
@@ -454,7 +455,8 @@ fn insert_row(
             row.place.as_str(),
         ],
     )?;
-    links::relink(conn, row.path, body)
+    links::relink(conn, row.path, body)?;
+    tags::retag(conn, row.path, yaml, body)
 }
 
 pub(crate) const SELECT: &str ="SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";

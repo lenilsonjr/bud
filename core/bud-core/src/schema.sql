@@ -50,6 +50,19 @@ CREATE TRIGGER IF NOT EXISTS links_delete AFTER DELETE ON buds BEGIN
     DELETE FROM links WHERE source = old.rowid;
 END;
 
+-- Each tag a bud carries, once, under its rowid like its links; origin is `frontmatter` or
+-- `body` (tags module).
+CREATE TABLE IF NOT EXISTS bud_tags (
+    source INTEGER NOT NULL,
+    tag    TEXT NOT NULL COLLATE NOCASE,
+    origin TEXT NOT NULL,
+    UNIQUE (source, tag)
+);
+CREATE INDEX IF NOT EXISTS bud_tags_tag ON bud_tags(tag);
+CREATE TRIGGER IF NOT EXISTS bud_tags_delete AFTER DELETE ON buds BEGIN
+    DELETE FROM bud_tags WHERE source = old.rowid;
+END;
+
 -- One CRDT document per bud (sync module). Unlike `buds` this is not derived from the folder:
 -- the document bytes carry history, so a schema change never drops these tables. `known_text` is
 -- the last full file text the document knew; a file that differs from it was edited outside.
