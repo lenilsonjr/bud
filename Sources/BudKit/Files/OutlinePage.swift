@@ -112,10 +112,10 @@ struct OutlinePage: View {
         HStack(spacing: 8) {
             Image(systemName: "plus")
                 .foregroundStyle(Theme.text3)
-            TextField(id == rootID ? "Capture a line…" : "Enrich \(store.tree.title(of: id))…", text: $enrich)
+            TextField("Enrich \(store.tree.title(of: id))…", text: $enrich)
                 .textFieldStyle(.plain)
                 .onSubmit {
-                    if id == rootID { store.capture(enrich) } else { store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id) }
+                    store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id)
                     enrich = ""
                 }
         }

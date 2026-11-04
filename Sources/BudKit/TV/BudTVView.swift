@@ -66,7 +66,7 @@ struct TVShell: View {
         .background(Theme.window.ignoresSafeArea())
         .textRole(.body)
         .foregroundStyle(Theme.text)
-        .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, parent: store.center) }
+        .sheet(isPresented: $capturing) { TVCaptureSheet(store: store, target: .inbox) }
         .fullScreenCover(isPresented: $joining) { TVJoinModal(devices: devices, close: { joining = false }) }
         .fullScreenCover(isPresented: $fetching) { fetchScreen }
         .fullScreenCover(item: $reading) { target in TVReadScreen(store: store, start: target.id, close: { reading = nil }) }
@@ -374,12 +374,20 @@ struct TVAddTarget: Identifiable {
 /// when the screen shows Everything. Return plants, Menu cancels.
 struct TVCaptureSheet: View {
     @ObservedObject var store: BudStore
-    let parent: UUID
+    /// The Inbox from the Capture button, or under the bud the person added on.
+    let target: PlantTarget
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var todo = true
 
-    private var target: PlantTarget { PlantTarget.forCenter(parent) }
+    init(store: BudStore, target: PlantTarget) {
+        self.store = store
+        self.target = target
+    }
+
+    init(store: BudStore, parent: UUID) {
+        self.init(store: store, target: PlantTarget.forCenter(parent))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {

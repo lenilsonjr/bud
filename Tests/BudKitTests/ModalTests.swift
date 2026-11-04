@@ -2,8 +2,8 @@ import XCTest
 @testable import BudKit
 
 final class ModalTests: XCTestCase {
-    func testAddingUnderTheHubCapturesInstead() {
-        XCTAssertEqual(Modal.adding(under: rootID), .capture)
+    func testAddingUnderTheHubPlantsOnTheCanvas() {
+        XCTAssertEqual(Modal.adding(under: rootID), .add(parent: rootID))
         let other = UUID()
         XCTAssertEqual(Modal.adding(under: other), .add(parent: other))
     }
