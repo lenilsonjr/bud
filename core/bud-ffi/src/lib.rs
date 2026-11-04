@@ -287,6 +287,9 @@ pub enum PeerEvent {
     /// A first fetch from a peer: how many documents arrived, and how many buds the peer holds
     /// when it said.
     FetchProgress { received: u64, total: Option<u64> },
+    /// Changes from peers were applied and changed buds here, files the watcher does not report:
+    /// what they did. Reload what is on show.
+    SyncFinished { summary: SyncSummary },
 }
 
 impl From<bud_core::NodeEvent> for PeerEvent {
@@ -324,6 +327,9 @@ impl From<bud_core::NodeEvent> for PeerEvent {
             NodeEvent::FetchProgress { received, total } => PeerEvent::FetchProgress {
                 received: received as u64,
                 total: total.map(|n| n as u64),
+            },
+            NodeEvent::SyncFinished(report) => PeerEvent::SyncFinished {
+                summary: report.into(),
             },
         }
     }
@@ -441,6 +447,11 @@ impl PeerNode {
 
     pub fn forget_peer(&self, id: String) -> Result<()> {
         self.with(|node| node.forget_peer(&id))
+    }
+
+    /// Lift the refusal of a node this vault removed, so it can redeem a new ticket.
+    pub fn allow_peer(&self, id: String) -> Result<()> {
+        self.with(|node| node.allow_peer(&id))
     }
 
     /// Hear every [`PeerEvent`] from now on, until the node stops.

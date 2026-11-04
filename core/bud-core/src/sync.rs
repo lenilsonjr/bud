@@ -59,6 +59,11 @@ impl SyncReport {
         self.moved += other.moved;
         self.ops += other.ops;
     }
+
+    /// Whether the sync made, changed, wrote or moved a bud on this device, not only operations.
+    pub fn changed(&self) -> bool {
+        self.created + self.updated + self.written + self.moved > 0
+    }
 }
 
 /// How far each document of a replica has come: version vectors, encoded.

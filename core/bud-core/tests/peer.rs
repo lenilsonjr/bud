@@ -271,6 +271,49 @@ fn an_edit_made_on_the_second_vault_reaches_the_first() {
 }
 
 #[test]
+fn the_side_that_takes_an_edit_hears_the_sync_finish() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let heard_by_a = Recorder::listening(&a.node);
+    let heard_by_b = Recorder::listening(&b.node);
+    let finished = |heard: &Recorder| {
+        heard
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                NodeEvent::SyncFinished(report) => Some(report),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    // Nothing to take, nothing told.
+    b.node.sync_now().unwrap();
+    assert_eq!(heard_by_a.events(), vec![]);
+    assert_eq!(heard_by_b.events(), vec![]);
+
+    // b takes a's edit in the answer to its own dial.
+    let name = "Gift ideas.md";
+    let edited = format!("{}A scarf.\n", a.read(name).unwrap());
+    a.write(name, &edited);
+    let report = b.node.sync_now().unwrap();
+    assert_eq!(b.read(name), Some(edited));
+    assert_eq!(finished(&heard_by_b), vec![report]);
+    assert!(report.written > 0, "{report:?}");
+    assert_eq!(finished(&heard_by_a), vec![]);
+
+    // a takes b's edit in a session it answers.
+    let edited = format!("{}And gloves.\n", b.read(name).unwrap());
+    b.write(name, &edited);
+    b.node.sync_now().unwrap();
+    eventually("a hears the sync finish", || {
+        finished(&heard_by_a).len() == 1
+    });
+    assert_eq!(a.read(name), Some(edited));
+    assert!(finished(&heard_by_a)[0].written > 0);
+    assert_eq!(finished(&heard_by_b).len(), 1);
+}
+
+#[test]
 fn a_vault_syncs_on_its_own_while_it_runs() {
     let (a, b) = paired(Some(Duration::from_millis(300)));
     eventually("the folder arrives", || b.read("Gift ideas.md").is_some());
@@ -474,7 +517,7 @@ fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_f
         .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
         .unwrap();
     assert_eq!(heard_by_a.events(), vec![], "nothing happens until b dials");
-    b.node.sync_now().unwrap();
+    let fetched = b.node.sync_now().unwrap();
     // a hears the ticket go, and the new peer, before its answer leaves.
     assert_eq!(
         heard_by_a.events(),
@@ -500,10 +543,12 @@ fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_f
             total: Some(total),
         }
     );
-    assert_eq!(events.len(), 2);
-    // A later sync is not a first fetch and says nothing.
+    // Then the sync is over, with what it made.
+    assert_eq!(events[2], NodeEvent::SyncFinished(fetched));
+    assert_eq!(events.len(), 3);
+    // A later sync is not a first fetch and brings nothing, so it says nothing.
     b.node.sync_now().unwrap();
-    assert_eq!(heard_by_b.events().len(), 2);
+    assert_eq!(heard_by_b.events().len(), 3);
     assert_eq!(heard_by_a.events().len(), 2);
 }
 
@@ -842,10 +887,10 @@ fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the
         vec![NodeEvent::PeerJoined { id: t.node.id() }]
     );
     // The TV holds the vault key now and syncs as any peer does; its first sync is a first
-    // fetch, told with the size of the vault.
+    // fetch, told with the size of the vault, then what it made.
     assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
     assert_eq!(t.node.peers().unwrap()[0].id, a.node.id());
-    t.node.sync_now().unwrap();
+    let fetched = t.node.sync_now().unwrap();
     assert!(t.read("Gift ideas.md").is_some(), "the vault came over");
     let total = a.vault.lock().unwrap().bud_count().unwrap();
     assert_eq!(
@@ -859,12 +904,13 @@ fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the
                 received: total,
                 total: Some(total),
             },
+            NodeEvent::SyncFinished(fetched),
         ]
     );
     t.node.sync_now().unwrap();
     assert_eq!(
         heard_by_t.events().len(),
-        4,
+        5,
         "a later sync is not a first fetch"
     );
     let edited = format!("{}Candles.\n", a.read("Gift ideas.md").unwrap());
