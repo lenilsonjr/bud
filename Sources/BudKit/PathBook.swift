@@ -34,10 +34,20 @@ public struct PathBook: Sendable, Equatable {
         }
     }
 
-    /// Keeps exactly the buds a snapshot holds, each under its id.
+    /// Keeps exactly the buds a snapshot holds, each under its id. The buds the book followed
+    /// come first: a new file at a path one of them left gets an id of its own, not theirs.
     public mutating func keep(_ records: [BudRecord]) {
         var book = PathBook()
-        for record in records { book.learn(id(for: record.path), at: record.path) }
+        var taken = Set<UUID>()
+        for record in records {
+            guard let id = ids[record.path] else { continue }
+            book.learn(id, at: record.path)
+            taken.insert(id)
+        }
+        for record in records where ids[record.path] == nil {
+            let derived = Bud.id(forPath: record.path)
+            book.learn(taken.contains(derived) ? UUID() : derived, at: record.path)
+        }
         self = book
     }
 

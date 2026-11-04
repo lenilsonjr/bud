@@ -86,6 +86,19 @@ final class PathBookTests: XCTestCase {
         XCTAssertEqual(records[4].parent, ".trash/Old", "a folder trashed on purpose stays a bud")
     }
 
+    func testANewFileWhereAMovedBudWasGetsAnIdOfItsOwn() {
+        var book = PathBook()
+        let kitchen = Bud.id(forPath: "Kitchen.md")
+        book.keep([BudRecord(path: "Kitchen.md", title: "Kitchen")])
+        book.move(from: "Kitchen.md", to: "Pantry.md")
+        book.keep([
+            BudRecord(path: "Kitchen.md", title: "Kitchen"),
+            BudRecord(path: "Pantry.md", title: "Pantry"),
+        ])
+        XCTAssertEqual(book.id(for: "Pantry.md"), kitchen, "the moved bud keeps its id")
+        XCTAssertNotEqual(book.id(for: "Kitchen.md"), kitchen, "the newcomer does not take it")
+    }
+
     func testATreeFromRecordsUsesTheBookForIds() {
         var book = book()
         book.move(from: "Kitchen.md", to: "Pantry.md")
