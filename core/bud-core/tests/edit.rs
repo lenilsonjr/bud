@@ -66,6 +66,27 @@ fn sanitizes_file_names() {
 }
 
 #[test]
+fn cuts_a_long_title_to_a_name_the_file_system_takes() {
+    let fits = "a".repeat(244);
+    assert_eq!(sanitize_filename(&fits), fits);
+    assert_eq!(sanitize_filename(&"a".repeat(300)), fits);
+    // Never inside a character, and not ending in a space or a dot.
+    assert_eq!(sanitize_filename(&"é".repeat(200)), "é".repeat(122));
+    let cut = sanitize_filename(&format!("{}. .{}", "a".repeat(241), "b".repeat(20)));
+    assert_eq!(cut, "a".repeat(241));
+    // The longest name still takes a number, the extension and the dots of a file written first.
+    let (mut vault, dir, _index) = vault_with(&[]);
+    let title = "ü".repeat(400);
+    let first = vault.create(None, &title, Kind::Note, None).unwrap();
+    let second = vault.create(None, &title, Kind::Note, None).unwrap();
+    assert!(dir.path().join(&first).is_file());
+    assert!(dir.path().join(&second).is_file());
+    assert!(second.len() <= 255, "{}", second.len());
+    let renamed = vault.rename(&first, &"x".repeat(400)).unwrap();
+    assert!(dir.path().join(&renamed).is_file());
+}
+
+#[test]
 fn creates_at_the_root_with_created_and_an_empty_body() {
     let (mut vault, dir, _index) = vault_with(&[]);
     let path = vault.create(None, "Gift ideas", Kind::Note, None).unwrap();

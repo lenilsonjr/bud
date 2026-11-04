@@ -17,8 +17,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TRASH: &str = ".trash";
 
+/// The longest file name, in bytes, less room for a taken name's " 99", the ".md" and the dot and
+/// ".tmp" of the file [`write_atomic`] writes first.
+const MAX_NAME: usize = 255 - ". 99.md.tmp".len();
+
 /// A title as a file name: `/ \ : * ? " < > |`, control characters and leading dots become a
-/// space, then the ends are trimmed. Nothing left means "Untitled".
+/// space, then the ends are trimmed. A name too long for the file system is cut on a character
+/// boundary and loses the spaces and dots it then ends with. Nothing left means "Untitled".
 pub fn sanitize_filename(title: &str) -> String {
     let replaced: String = title
         .chars()
@@ -37,6 +42,13 @@ pub fn sanitize_filename(title: &str) -> String {
             break;
         }
         name = next;
+    }
+    if name.len() > MAX_NAME {
+        let mut end = MAX_NAME;
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name = name[..end].trim_end_matches([' ', '.']);
     }
     if name.is_empty() {
         "Untitled".to_string()
