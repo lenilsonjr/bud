@@ -210,11 +210,12 @@ impl Vault {
         write_atomic(&absolute, &format!("{head}{text}"))?;
         let mtime = mtime_of(&absolute);
         lock(&self.written).insert(path.clone(), mtime);
-        lock(&self.conn).execute(
+        let conn = lock(&self.conn);
+        conn.execute(
             "UPDATE buds SET body = ?1, mtime = ?2 WHERE path = ?3",
             params![text, mtime, path],
         )?;
-        Ok(())
+        crate::links::relink(&conn, &path, text)
     }
 
     /// Rename a bud: its file and its sibling folder together, and every descendant row follows.

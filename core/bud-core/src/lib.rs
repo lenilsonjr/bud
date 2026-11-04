@@ -8,6 +8,7 @@
 
 mod edit;
 mod frontmatter;
+mod links;
 mod peer;
 mod query;
 mod scan;
@@ -26,6 +27,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+pub use links::Link;
 pub use peer::{
     Identity, JoinRequest, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr,
     Relay, RotateReport, RotationOutcome, Ticket,
@@ -35,7 +37,7 @@ pub use sync::{Heads, SyncReport, Updates};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -211,7 +213,7 @@ impl Vault {
         if version != SCHEMA_VERSION {
             // Issued tickets are short-lived, so an older shape of their table is dropped too.
             conn.execute_batch(
-                "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts;
+                "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts; DROP TABLE IF EXISTS links;
                  DROP TABLE IF EXISTS tickets_issued;",
             )?;
         }
@@ -452,7 +454,7 @@ fn insert_row(
             row.place.as_str(),
         ],
     )?;
-    Ok(())
+    links::relink(conn, row.path, body)
 }
 
 pub(crate) const SELECT: &str ="SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";
