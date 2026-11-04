@@ -22,6 +22,11 @@ public struct BudTVView: View {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
     }
 
+    /// A store the caller already holds: the app's, over the vault on disk.
+    @MainActor public init(store: BudStore) {
+        _store = StateObject(wrappedValue: store)
+    }
+
     public var body: some View {
         TVShell(store: store)
     }

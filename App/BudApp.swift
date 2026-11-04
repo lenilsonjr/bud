@@ -10,13 +10,15 @@ struct BudApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(BudAppDelegate.self) private var delegate
     #endif
+    /// One store for every window, over the vault on disk.
+    @StateObject private var store = Launch.store()
 
     var body: some Scene {
         WindowGroup {
             #if os(tvOS)
-            BudTVView()
+            BudTVView(store: store)
             #else
-            BudRootView()
+            BudRootView(store: store)
             #endif
         }
         #if os(macOS)

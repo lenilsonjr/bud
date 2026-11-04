@@ -19,8 +19,8 @@ public struct BudRootView: View {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
     }
 
-    /// For previews and pictures: a store the caller already holds.
-    @MainActor init(store: BudStore) {
+    /// A store the caller already holds: the app's, over the vault on disk, or one for pictures.
+    @MainActor public init(store: BudStore) {
         _store = StateObject(wrappedValue: store)
     }
 
