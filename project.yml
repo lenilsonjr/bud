@@ -12,6 +12,9 @@ configFiles:
   Release: Config/BundleId.xcconfig
 # The app targets consume the local BudKit Swift package (Package.swift at the repo root) — the model,
 # layout, and SwiftUI views are shared verbatim, never copied.
+# Each app also compiles the Rust core's Swift bindings and links its XCFramework, both made by
+# scripts/build-core.sh into build/ (run it once before xcodegen; CI does). The bindings share
+# names with BudKit's types, which is why they are not a module of their own: see App/RustVault.swift.
 packages:
   BudKit:
     path: .
@@ -34,6 +37,7 @@ targets:
     sources:
       - App
       - Resources/Assets.xcassets
+      - build/BudCore/BudCore.swift
     settings:
       base:
         PRODUCT_NAME: Bud
@@ -41,6 +45,10 @@ targets:
     dependencies:
       - package: BudKit
         product: BudKit
+      - framework: build/BudCoreFFI.xcframework
+        embed: false
+      - sdk: SystemConfiguration.framework
+      - sdk: Security.framework
     info:
       path: Resources/Info-iOS.plist
       properties:
@@ -64,6 +72,10 @@ targets:
         # The join sheet scans a ticket's QR code; App Store Connect turns away a package that
         # links the camera without this purpose string (ITMS-90683).
         NSCameraUsageDescription: Bud uses the camera to scan the ticket shown by a device that already has the vault.
+        # The vault is a folder of Markdown files in Documents, shown in the Files app.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSLocalNetworkUsageDescription: Bud finds your other devices on this network to keep the vault in sync.
   Bud-macOS:
     type: application
     platform: macOS
@@ -71,12 +83,16 @@ targets:
     sources:
       - App
       - Resources/Assets.xcassets
+      - build/BudCore/BudCore.swift
     entitlements:
       path: Resources/Bud-macOS.entitlements
       properties:
-        # App Sandbox is mandatory for Mac App Store / TestFlight. Bud only touches its own container
-        # (Application Support), so no extra file entitlements are needed.
+        # App Sandbox is mandatory for Mac App Store / TestFlight. The vault lives in the app's own
+        # container, so no file entitlements are needed; syncing with the other devices needs the
+        # network both ways.
         com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
     settings:
       base:
         PRODUCT_NAME: Bud
@@ -84,6 +100,10 @@ targets:
     dependencies:
       - package: BudKit
         product: BudKit
+      - framework: build/BudCoreFFI.xcframework
+        embed: false
+      - sdk: SystemConfiguration.framework
+      - sdk: Security.framework
     info:
       path: Resources/Info-macOS.plist
       properties:
@@ -102,6 +122,7 @@ targets:
     sources:
       - App
       - Resources/Assets.xcassets
+      - build/BudCore/BudCore.swift
     settings:
       base:
         PRODUCT_NAME: Bud
@@ -109,6 +130,10 @@ targets:
     dependencies:
       - package: BudKit
         product: BudKit
+      - framework: build/BudCoreFFI.xcframework
+        embed: false
+      - sdk: SystemConfiguration.framework
+      - sdk: Security.framework
     info:
       path: Resources/Info-tvOS.plist
       properties:

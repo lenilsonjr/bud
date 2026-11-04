@@ -27,17 +27,20 @@ swift test                # model + layout tests (run on Linux too)
 cargo test --workspace    # the Rust core's tests
 ```
 
-For the real apps, generate the Xcode project (needs [XcodeGen](https://github.com/yonaskolb/XcodeGen)):
+For the real apps, build the Rust core, then generate the Xcode project (needs rustup and
+[XcodeGen](https://github.com/yonaskolb/XcodeGen)):
 
 ```sh
+scripts/build-core.sh     # build/BudCoreFFI.xcframework and the Swift bindings
 xcodegen generate
 open Bud.xcodeproj         # schemes: "Bud iOS", "Bud macOS"
 ```
 
 `Bud.xcodeproj` is derived from `project.yml` and git-ignored. Both app targets depend on the local
 `BudKit` package and share one `@main` entry (`App/BudApp.swift`); the model, layout, and views are
-`BudKit`'s, never copied. Requires macOS 14 / iOS 17 (Swift 5.9+). Data is saved to
-`~/Library/Application Support/Bud/buds.json`; delete it to get the seed world back.
+`BudKit`'s, never copied. Requires macOS 14 / iOS 17 (Swift 5.9+). The apps keep the vault, a
+folder of Markdown files, in their `Documents/Bud` (the Apple TV's in Caches), with the index beside
+the app's support files. `swift run BudMac` still saves to `buds.json` in Application Support.
 
 Touch: drag to move, pinch to zoom, tap a card with children to center it, tap a leaf to edit, the
 trail at the top steps back out. On iPad and Mac the light follows the pointer.
