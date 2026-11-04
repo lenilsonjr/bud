@@ -304,13 +304,15 @@ pub enum NodeEvent {
         received: usize,
         total: Option<usize>,
     },
-    /// Changes from peers were applied here: what they did, for a session this node answered or
-    /// for every session of a sync it dialed. Only when buds changed; the files are written by
-    /// the vault, so the watcher does not report them.
+    /// A peer's changes were applied here in one session, dialed or answered: what they did. Only
+    /// when buds changed; the files are written by the vault, so the watcher does not report
+    /// them. Told as soon as they are applied, so a session that fails after still tells it.
     SyncFinished(SyncReport),
 }
 
-/// Told each [`NodeEvent`] as it happens, from the node's own threads.
+/// Told each [`NodeEvent`] as it happens, from the node's own threads or the thread of a call
+/// such as [`Node::sync_now`], while the node holds its locks: a listener hands the event on and
+/// does not call the node itself.
 pub trait NodeListener: Send + Sync + 'static {
     fn event(&self, event: NodeEvent);
 }
@@ -978,6 +980,9 @@ struct Shared {
     ticket_lifetime_ms: AtomicU64,
     /// How many confirmations of a new key to withhold; only tests make it more than zero.
     dropped_acks: AtomicUsize,
+    /// How many sessions this node answers to end after applying the dialer's changes, without
+    /// confirming them; only tests make it more than zero.
+    dropped_dones: AtomicUsize,
     /// What this node tells its peers it is.
     identity: Identity,
     /// Who hears what happens.
@@ -1120,12 +1125,10 @@ impl Shared {
         let peers = self.vault().peer_list()?;
         let mut failure = None;
         let mut reached = false;
-        let mut received = SyncReport::default();
         for peer in &peers {
             match tokio::time::timeout(SESSION_TIMEOUT, self.exchange(peer)).await {
                 Ok(Ok(done)) => {
                     report.add(done);
-                    received.add(done);
                     reached = true;
                     self.reached(&peer.id);
                 }
@@ -1138,9 +1141,6 @@ impl Shared {
                     failure = failure.or(Some(peer_error("a peer did not answer")));
                 }
             }
-        }
-        if received.changed() {
-            self.emit(NodeEvent::SyncFinished(received));
         }
         match failure {
             Some(err) if !reached => Err(err),
@@ -1205,6 +1205,9 @@ impl Shared {
                 received: updates.doc_count(),
                 total,
             });
+        }
+        if report.changed() {
+            self.emit(NodeEvent::SyncFinished(report));
         }
         let mine = self.vault().updates_for(&heads)?;
         send_message(&mut send, &key, Side::Dialer, &Message::Final(mine)).await?;
@@ -1490,12 +1493,17 @@ impl Shared {
             return Err(peer_error("a peer sent out of turn"));
         };
         let report = self.vault().apply_updates(&updates)?;
-        send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
-        send.finish().map_err(peer_error)?;
-        self.reached(&id_text(&remote));
         if report.changed() {
             self.emit(NodeEvent::SyncFinished(report));
         }
+        if self.dropped_dones.load(Ordering::SeqCst) > 0 {
+            self.dropped_dones.fetch_sub(1, Ordering::SeqCst);
+            connection.close(1u32.into(), b"dropped");
+            return Ok(());
+        }
+        send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
+        send.finish().map_err(peer_error)?;
+        self.reached(&id_text(&remote));
         let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
         Ok(())
     }
@@ -1537,6 +1545,7 @@ impl Node {
             active: AtomicUsize::new(0),
             ticket_lifetime_ms: AtomicU64::new(TICKET_LIFETIME.as_millis() as u64),
             dropped_acks: AtomicUsize::new(0),
+            dropped_dones: AtomicUsize::new(0),
             identity: options.identity,
             listeners: Mutex::new(Vec::new()),
             request: Mutex::new(None),
@@ -1610,6 +1619,13 @@ impl Node {
     #[doc(hidden)]
     pub fn drop_next_key_acks(&self, count: usize) {
         self.shared.dropped_acks.store(count, Ordering::SeqCst);
+    }
+
+    /// End the next `count` sessions this node answers once the dialer's changes are applied,
+    /// before confirming them. For tests of a session lost at its end.
+    #[doc(hidden)]
+    pub fn drop_next_dones(&self, count: usize) {
+        self.shared.dropped_dones.store(count, Ordering::SeqCst);
     }
 
     /// The same ticket with the addresses this node listens on, loopback included. Longer, for a

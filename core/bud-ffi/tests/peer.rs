@@ -283,7 +283,7 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
     a.node.listen(Box::new(heard_by_a.clone())).unwrap();
     b.node.listen(Box::new(heard_by_b.clone())).unwrap();
     b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
-    let summary = b.node.sync_now().unwrap();
+    b.node.sync_now().unwrap();
     let b_id = b.node.id().unwrap();
     assert_eq!(
         heard_by_a.0.lock().unwrap().clone(),
@@ -293,8 +293,8 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
         ]
     );
     assert_eq!(
-        heard_by_b.0.lock().unwrap().clone(),
-        vec![
+        heard_by_b.0.lock().unwrap()[..2],
+        [
             PeerEvent::FetchProgress {
                 received: 0,
                 total: Some(2),
@@ -303,9 +303,14 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
                 received: 2,
                 total: Some(2),
             },
-            PeerEvent::SyncFinished { summary },
         ]
     );
+    // Then what the fetch made.
+    assert!(matches!(
+        heard_by_b.0.lock().unwrap().get(2),
+        Some(PeerEvent::SyncFinished { summary }) if summary.created > 0
+    ));
+    assert_eq!(heard_by_b.0.lock().unwrap().len(), 3);
     // A stopped node tells no one anything more, and refuses a new listener.
     a.node.stop();
     assert!(a.node.listen(Box::new(Heard::default())).is_err());

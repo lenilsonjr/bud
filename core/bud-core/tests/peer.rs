@@ -295,10 +295,11 @@ fn the_side_that_takes_an_edit_hears_the_sync_finish() {
     let name = "Gift ideas.md";
     let edited = format!("{}A scarf.\n", a.read(name).unwrap());
     a.write(name, &edited);
-    let report = b.node.sync_now().unwrap();
+    b.node.sync_now().unwrap();
     assert_eq!(b.read(name), Some(edited));
-    assert_eq!(finished(&heard_by_b), vec![report]);
-    assert!(report.written > 0, "{report:?}");
+    let told = finished(&heard_by_b);
+    assert_eq!(told.len(), 1);
+    assert!(told[0].changed() && told[0].written > 0, "{told:?}");
     assert_eq!(finished(&heard_by_a), vec![]);
 
     // a takes b's edit in a session it answers.
@@ -311,6 +312,26 @@ fn the_side_that_takes_an_edit_hears_the_sync_finish() {
     assert_eq!(a.read(name), Some(edited));
     assert!(finished(&heard_by_a)[0].written > 0);
     assert_eq!(finished(&heard_by_b).len(), 1);
+}
+
+#[test]
+fn a_session_lost_after_its_changes_are_applied_still_tells_the_sync_finish() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let heard_by_a = Recorder::listening(&a.node);
+    let name = "Gift ideas.md";
+    let edited = format!("{}A scarf.\n", b.read(name).unwrap());
+    b.write(name, &edited);
+    // a takes b's edit and ends the session without confirming it, so b's sync fails.
+    a.node.drop_next_dones(1);
+    assert!(b.node.sync_now().is_err());
+    eventually("a hears the sync finish", || {
+        heard_by_a
+            .events()
+            .iter()
+            .any(|event| matches!(event, NodeEvent::SyncFinished(report) if report.changed()))
+    });
+    assert_eq!(a.read(name), Some(edited));
 }
 
 #[test]
@@ -517,7 +538,7 @@ fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_f
         .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
         .unwrap();
     assert_eq!(heard_by_a.events(), vec![], "nothing happens until b dials");
-    let fetched = b.node.sync_now().unwrap();
+    b.node.sync_now().unwrap();
     // a hears the ticket go, and the new peer, before its answer leaves.
     assert_eq!(
         heard_by_a.events(),
@@ -544,7 +565,10 @@ fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_f
         }
     );
     // Then the sync is over, with what it made.
-    assert_eq!(events[2], NodeEvent::SyncFinished(fetched));
+    assert!(
+        matches!(&events[2], NodeEvent::SyncFinished(report) if report.created > 0),
+        "{events:?}"
+    );
     assert_eq!(events.len(), 3);
     // A later sync is not a first fetch and brings nothing, so it says nothing.
     b.node.sync_now().unwrap();
@@ -890,11 +914,11 @@ fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the
     // fetch, told with the size of the vault, then what it made.
     assert_eq!(t.node.ticket().unwrap().key, a.node.ticket().unwrap().key);
     assert_eq!(t.node.peers().unwrap()[0].id, a.node.id());
-    let fetched = t.node.sync_now().unwrap();
+    t.node.sync_now().unwrap();
     assert!(t.read("Gift ideas.md").is_some(), "the vault came over");
     let total = a.vault.lock().unwrap().bud_count().unwrap();
     assert_eq!(
-        heard_by_t.events()[2..],
+        heard_by_t.events()[2..4],
         [
             NodeEvent::FetchProgress {
                 received: 0,
@@ -904,8 +928,10 @@ fn the_phone_brings_the_key_to_a_tv_that_showed_a_request_and_the_tv_fetches_the
                 received: total,
                 total: Some(total),
             },
-            NodeEvent::SyncFinished(fetched),
         ]
+    );
+    assert!(
+        matches!(&heard_by_t.events()[4], NodeEvent::SyncFinished(report) if report.created > 0)
     );
     t.node.sync_now().unwrap();
     assert_eq!(
