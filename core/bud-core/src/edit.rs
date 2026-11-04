@@ -8,7 +8,7 @@
 use crate::frontmatter;
 use crate::lock;
 use crate::scan;
-use crate::{insert_row, Error, Kind, Placement, Properties, Result, State, Vault};
+use crate::{insert_row, links, Error, Kind, Placement, Properties, Result, State, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -210,12 +210,15 @@ impl Vault {
         write_atomic(&absolute, &format!("{head}{text}"))?;
         let mtime = mtime_of(&absolute);
         lock(&self.written).insert(path.clone(), mtime);
-        let conn = lock(&self.conn);
-        conn.execute(
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE buds SET body = ?1, mtime = ?2 WHERE path = ?3",
             params![text, mtime, path],
         )?;
-        crate::links::relink(&conn, &path, text)
+        links::relink(&tx, &path, text)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Rename a bud: its file and its sibling folder together, and every descendant row follows.
