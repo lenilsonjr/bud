@@ -56,30 +56,39 @@ final class RustVault: BudKit.Vault {
     func deleteForever(_ path: String) async throws { try core.deleteForever(path: path) }
 
     /// Trashes everything, empties the Trash, and plants the records again, parents first.
+    /// Empties the Trash first, so trashing a bud cannot meet a name the Trash already holds.
     func reset(to records: [BudKit.BudRecord]) async throws -> [String: String] {
+        try core.emptyTrash()
         for bud in try core.snapshot() where bud.parent == nil && bud.place != .trash {
             try core.trash(path: bud.path)
         }
         try core.emptyTrash()
-        return try plant(records)
+        return plant(records)
     }
 
-    /// Writes records as new files, parents first, the Trash left out. Returns the path each
-    /// record's bud has now, by the record's path.
+    /// Writes records as new files, parents first, the Trash left out. A bud the Inbox held,
+    /// whether a capture or under one, stays in the Inbox. A bud that will not plant is left out
+    /// and what was under it goes to the top level, so one bad title loses one bud. Returns the
+    /// path each planted bud has now, by its record's path.
     @discardableResult
-    func plant(_ records: [BudKit.BudRecord]) throws -> [String: String] {
+    func plant(_ records: [BudKit.BudRecord]) -> [String: String] {
         var planted: [String: String] = [:]
         for record in records where record.place != .trash {
-            let parent = record.place == .inbox && record.parent == nil ? inboxPath : record.parent.flatMap { planted[$0] }
-            let path = try core.create(
-                parent: parent, title: record.title, kind: record.kind == .todo ? .todo : .note, source: record.source
-            )
-            planted[record.path] = path
-            if let state = record.state { try core.setState(path: path, state: Self.state(state)) }
-            if let when = record.when { try core.setWhen(path: path, when: Self.day(when)) }
-            if let due = record.due { try core.setDue(path: path, due: Self.day(due)) }
-            if record.pinned { try core.setPinned(path: path, pinned: true) }
-            if !record.body.isEmpty { try core.setBody(path: path, text: record.body) }
+            let inInbox = record.parent == nil ? record.place == .inbox : record.parent == inboxID.uuidString
+            let parent = inInbox ? inboxPath : record.parent.flatMap { planted[$0] }
+            do {
+                let path = try core.create(
+                    parent: parent, title: record.title, kind: record.kind == .todo ? .todo : .note, source: record.source
+                )
+                planted[record.path] = path
+                if let state = record.state { try core.setState(path: path, state: Self.state(state)) }
+                if let when = record.when { try core.setWhen(path: path, when: Self.day(when)) }
+                if let due = record.due { try core.setDue(path: path, due: Self.day(due)) }
+                if record.pinned { try core.setPinned(path: path, pinned: true) }
+                if !record.body.isEmpty { try core.setBody(path: path, text: record.body) }
+            } catch {
+                NSLog("Bud: \(record.title) did not plant: \(error)")
+            }
         }
         return planted
     }

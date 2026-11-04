@@ -108,6 +108,8 @@ public final class BudStore: ObservableObject {
         self.center = rootID
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
         self.devices.onSyncFinished = { [weak self] summary in
+            // A sync writes the files itself, which the vault's watch does not report.
+            Task { @MainActor in await self?.reload() }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
         }
