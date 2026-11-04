@@ -293,6 +293,29 @@ public struct Tree: Codable, Equatable, Sendable {
         return bud
     }
 
+    /// Trades the places of two siblings. False, and nothing changes, when they are the same bud
+    /// or do not share a parent.
+    @discardableResult
+    public mutating func swap(_ a: UUID, _ b: UUID) -> Bool {
+        guard a != b, let i = buds.firstIndex(where: { $0.id == a }), let j = buds.firstIndex(where: { $0.id == b }),
+            buds[i].parent == buds[j].parent
+        else { return false }
+        let order = buds[i].order
+        buds[i].order = buds[j].order
+        buds[j].order = order
+        return true
+    }
+
+    /// Sets the order of a parent's children to the order of `ids`; children not named keep
+    /// their places after them.
+    public mutating func reorder(_ ids: [UUID], under parent: UUID) {
+        let rest = children(of: parent).map(\.id).filter { !ids.contains($0) }
+        for (index, id) in (ids + rest).enumerated() {
+            guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].parent == parent else { continue }
+            buds[i].order = Double(index + 1)
+        }
+    }
+
     /// Capture: one line, no place in mind. It lands in the Inbox as a note, after the last.
     @discardableResult
     public mutating func capture(_ line: String, source: String, created: Date = Date(), id: UUID = UUID()) -> Bud {

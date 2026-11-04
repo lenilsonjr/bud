@@ -379,6 +379,26 @@ public final class BudStore: ObservableObject {
     }
 
     /// Takes a bud and its branch away without a trace: no Trash, no toast.
+    /// Trades the places of two siblings in the orbit and offers to trade them back.
+    @discardableResult
+    public func swap(_ a: UUID, _ b: UUID) -> Bool {
+        guard trade(a, b) else { return false }
+        toasts.show(Undoable(message: "Swapped") { [weak self] in
+            Task { @MainActor in _ = self?.trade(a, b) }
+        })
+        return true
+    }
+
+    private func trade(_ a: UUID, _ b: UUID) -> Bool {
+        var traded = false
+        commit { traded = $0.swap(a, b) }
+        guard traded, let parent = tree.bud(a)?.parent else { return false }
+        let paths = tree.children(of: parent).map(\.id.uuidString)
+        let up = parent == inboxID ? inboxID.uuidString : parentPath(parent)
+        write { try await $0.reorder(paths, under: up) }
+        return true
+    }
+
     public func remove(_ id: UUID) {
         commit { $0.remove(id) }
         write { vault in

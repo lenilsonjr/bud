@@ -86,6 +86,22 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertTrue(store.tree.children(of: rootID).contains { $0.id == bud.id })
     }
 
+    func testASwapReachesTheVaultAndUndoTradesBack() async throws {
+        let (store, vault) = await loaded()
+        let threads = store.tree.children(of: rootID).map(\.id)
+        XCTAssertTrue(store.swap(threads[0], threads[1]))
+        await store.settle()
+        var top = try await vault.snapshot().filter { $0.parent == nil && $0.place == .everything }.map(\.path)
+        XCTAssertEqual(Array(top.prefix(2)), [threads[1].uuidString, threads[0].uuidString])
+        XCTAssertEqual(store.toasts.current?.action.message, "Swapped")
+        store.toasts.current?.action.undo?()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await store.settle()
+        top = try await vault.snapshot().filter { $0.parent == nil && $0.place == .everything }.map(\.path)
+        XCTAssertEqual(Array(top.prefix(2)), [threads[0].uuidString, threads[1].uuidString])
+        XCTAssertFalse(store.swap(threads[0], threads[0]))
+    }
+
     func testEditingTickingAndPinningReachTheVault() async throws {
         let (store, vault) = await loaded()
         let verify = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Verify the address" })

@@ -87,6 +87,12 @@ public actor MemoryVault: Vault {
         return path
     }
 
+    public func reorder(_ paths: [String], under parent: String?) async throws {
+        let ids = try paths.map(known)
+        tree.reorder(ids, under: try parentID(parent))
+        save()
+    }
+
     public func trash(_ path: String) async throws {
         let id = try known(path)
         tree.trash(id)
