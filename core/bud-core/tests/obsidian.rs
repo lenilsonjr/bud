@@ -144,6 +144,10 @@ fn frontmatter_with_tags_and_aliases_is_a_note_and_its_body_is_intact() {
     let (mut vault, _index) = open(&fixture());
     vault.rescan().unwrap();
     let reading = vault.bud("Reading list.md").unwrap().unwrap();
+    assert_eq!(
+        vault.tags_of("Reading list.md").unwrap(),
+        ["reading", "newsletter"]
+    );
     assert_eq!(reading.kind, Kind::Note);
     assert_eq!(reading.state, None);
     assert_eq!(

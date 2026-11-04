@@ -21,7 +21,8 @@ const WORLD: &[(&str, &str)] = &[
         "Groceries.md",
         "---\ntags: [home, errands]\n---\nMilk for the #Home fridge.\n",
     ),
-    ("Garden.md", "Prune the roses #home #garden/roses\n"),
+    ("Garden.md", "Prune the roses #home #garden/roses #Élan\n"),
+    ("Ski.md", "#élan again\n"),
     (
         "Work.md",
         "---\nstate: open\ntags: work\n---\nNothing else.\n",
@@ -43,6 +44,7 @@ fn tags_count_buds_once_in_any_case_and_leave_the_trash_out() {
         vault.tags().unwrap(),
         vec![
             count("home", 2),
+            count("Élan", 2),
             count("errands", 1),
             count("garden/roses", 1),
             count("work", 1)
@@ -68,6 +70,11 @@ fn tagged_finds_buds_in_any_case_and_with_a_hash() {
     };
     assert_eq!(paths("HOME"), ["Garden.md", "Groceries.md"]);
     assert_eq!(paths("#work"), ["Work.md"]);
+    assert_eq!(
+        paths("ÉLAN"),
+        ["Garden.md", "Ski.md"],
+        "accented letters fold too"
+    );
     assert!(paths("nothing").is_empty());
     assert!(paths("").is_empty());
 }
