@@ -24,6 +24,8 @@ public struct OrbitCanvas: View {
     @State private var animating = true
     @State private var dragging: UUID? = nil
     @State private var dragStart: CGPoint? = nil
+    /// The ring card the held card would swap with if let go now, lit as the target.
+    @State private var swapOver: UUID? = nil
     private static let space = "orbit"
 
     private let lampReach: CGFloat = 170
@@ -54,6 +56,7 @@ public struct OrbitCanvas: View {
             .onChange(of: gripped) { _, now in
                 // A cancelled drag never reaches onEnded; the grip letting go is the sure signal.
                 guard !now, let id = dragging else { return }
+                swapOver = nil
                 motion.sim.release(id)
                 dragging = nil
                 dragStart = nil
@@ -138,7 +141,7 @@ public struct OrbitCanvas: View {
                         id: id,
                         store: store,
                         role: placed.role,
-                        lit: lit == id,
+                        lit: lit == id || swapOver == id,
                         light: lightLevel(role: placed.role, lifted: lifted.contains(id)),
                         onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                         onOpen: { open(id) },
@@ -177,13 +180,13 @@ public struct OrbitCanvas: View {
                 }
                 guard let start = dragStart else { return }
                 motion.sim.hold(id, at: CGPoint(x: start.x + value.translation.width / scale, y: start.y + value.translation.height / scale))
+                swapOver = swapTarget(for: id)
                 animating = true
             }
             .onEnded { _ in
                 guard dragging == id else { return }
-                if let other = swapTarget(for: id) {
-                    withAnimation(.spring(duration: 0.5, bounce: 0.15)) { _ = store.swap(id, other) }
-                }
+                if let other = swapTarget(for: id) { store.swap(id, other) }
+                swapOver = nil
                 motion.sim.release(id)
                 dragging = nil
                 dragStart = nil
@@ -191,15 +194,15 @@ public struct OrbitCanvas: View {
             }
     }
 
-    /// The sibling whose slot the held card was let go on: within half a card of it. The hub and
-    /// the center never swap.
+    /// The sibling in the ring whose slot the held card is over: within half a card of it. Only
+    /// the ring swaps: its slots sit at even angles, so the two cards trade places exactly.
     private func swapTarget(for id: UUID) -> UUID? {
-        guard id != rootID, let placed = store.layout.cards[id], !placed.hub, placed.role != .center,
+        guard id != rootID, let placed = store.layout.cards[id], !placed.hub, placed.role == .ring,
             let held = motion.sim.positions[id], let parent = store.tree.parent(of: id)
         else { return nil }
         let size = Metrics.size(hub: false)
         return store.tree.children(of: parent).map(\.id).first { other in
-            guard other != id, let slot = store.layout.cards[other], !slot.hub, slot.role != .center else { return false }
+            guard other != id, let slot = store.layout.cards[other], !slot.hub, slot.role == .ring else { return false }
             return abs(held.x - slot.position.x) < size.width / 2 && abs(held.y - slot.position.y) < size.height / 2
         }
     }

@@ -297,12 +297,11 @@ public struct Tree: Codable, Equatable, Sendable {
     /// or do not share a parent.
     @discardableResult
     public mutating func swap(_ a: UUID, _ b: UUID) -> Bool {
-        guard a != b, let i = buds.firstIndex(where: { $0.id == a }), let j = buds.firstIndex(where: { $0.id == b }),
-            buds[i].parent == buds[j].parent
-        else { return false }
-        let order = buds[i].order
-        buds[i].order = buds[j].order
-        buds[j].order = order
+        guard a != b, let first = bud(a), let second = bud(b), first.parent == second.parent else { return false }
+        var ids = children(of: first.parent).map(\.id)
+        guard let i = ids.firstIndex(of: a), let j = ids.firstIndex(of: b) else { return false }
+        ids.swapAt(i, j)
+        reorder(ids, under: first.parent)
         return true
     }
 

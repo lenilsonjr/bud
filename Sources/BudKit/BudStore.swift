@@ -378,7 +378,6 @@ public final class BudStore: ObservableObject {
         write { try await $0.setPinned(id.uuidString, pinned) }
     }
 
-    /// Takes a bud and its branch away without a trace: no Trash, no toast.
     /// Trades the places of two siblings in the orbit and offers to trade them back.
     @discardableResult
     public func swap(_ a: UUID, _ b: UUID) -> Bool {
@@ -394,11 +393,12 @@ public final class BudStore: ObservableObject {
         commit { traded = $0.swap(a, b) }
         guard traded, let parent = tree.bud(a)?.parent else { return false }
         let paths = tree.children(of: parent).map(\.id.uuidString)
-        let up = parent == inboxID ? inboxID.uuidString : parentPath(parent)
+        let up = parentPath(parent)
         write { try await $0.reorder(paths, under: up) }
         return true
     }
 
+    /// Takes a bud and its branch away without a trace: no Trash, no toast.
     public func remove(_ id: UUID) {
         commit { $0.remove(id) }
         write { vault in

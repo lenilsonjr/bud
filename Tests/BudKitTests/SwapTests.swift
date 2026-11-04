@@ -18,6 +18,16 @@ final class SwapTests: XCTestCase {
         XCTAssertEqual(t.children(of: rootID).map(\.id), before)
     }
 
+    func testSiblingsWithTheSameOrderStillTradePlaces() {
+        var t = Tree()
+        let a = t.add("A", todo: false, under: rootID)
+        let b = t.add("B", todo: false, under: rootID)
+        for i in t.buds.indices { t.buds[i].order = 1 }
+        let before = t.children(of: rootID).map(\.id)
+        XCTAssertTrue(t.swap(a.id, b.id))
+        XCTAssertEqual(t.children(of: rootID).map(\.id), Array(before.reversed()))
+    }
+
     func testReorderSetsTheOrderAndKeepsTheRestAfter() {
         var t = Tree.seed()
         let threads = t.children(of: rootID).map(\.id)
