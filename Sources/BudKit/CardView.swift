@@ -97,6 +97,9 @@ struct CardView: View {
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.hub))
         .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
+        // One VoiceOver element per card: the tick and the + come along as its actions, and the
+        // moves land once, on the card.
+        .accessibilityElement(children: .combine)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
@@ -135,6 +138,9 @@ struct CardView: View {
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.card))
         .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         .onTapGesture(perform: onTap)
+        // One VoiceOver element per card: the tick and the + come along as its actions, and the
+        // moves land once, on the card.
+        .accessibilityElement(children: .combine)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
