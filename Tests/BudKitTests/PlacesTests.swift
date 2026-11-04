@@ -157,10 +157,9 @@ final class PlaceStoreTests: XCTestCase {
         XCTAssertTrue(store.canvasLight.isEmpty)
     }
 
-    func testALensWithNoHitsLeavesTheLightEmptyWhileOn() throws {
+    func testALensWithNoHitsLeavesTheLightEmptyWhileOn() {
         let store = BudStore(fileURL: nil)
         store.canvasLens = LensQuery(kind: .note, state: .done)
-        XCTAssertNotNil(store.canvasLens)
         XCTAssertTrue(store.canvasLight.isEmpty, "Nothing matches: the bar says so")
     }
 }

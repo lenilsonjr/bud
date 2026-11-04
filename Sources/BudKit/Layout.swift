@@ -41,7 +41,7 @@ public func spokenValue(done: Bool, match: LensQuery.Match?, lensOn: Bool) -> St
         switch match {
         case .hit: parts.append("Matches")
         case .path: parts.append("Holds a match")
-        case nil: parts.append("Faded")
+        case nil: parts.append("No match")
         }
     }
     return parts.joined(separator: ", ")
