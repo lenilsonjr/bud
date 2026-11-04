@@ -89,6 +89,7 @@ struct CardView: View {
             if bud.isTodo {
                 Button(action: onToggle) { KindMark(bud: bud, style: style) }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(bud.isDone ? "Reopen" : "Close")
                     .padding(12)
             }
         }
@@ -100,6 +101,8 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
@@ -109,8 +112,10 @@ struct CardView: View {
             if bud.isTodo {
                 Button(action: onToggle) { KindMark(bud: bud, style: style) }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(bud.isDone ? "Reopen" : "Close")
             } else {
                 KindMark(bud: bud, style: style)
+                    .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(bud.text)
@@ -130,6 +135,7 @@ struct CardView: View {
             .textRole(.label)
             .foregroundStyle(lit ? style.meta : Theme.text2)
             .help("Add inside")
+            .accessibilityLabel("Add inside")
         }
         .padding(10)
         .frame(width: Metrics.chip.width, height: Metrics.chip.height, alignment: .topLeading)
@@ -141,6 +147,8 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
