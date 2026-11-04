@@ -20,7 +20,7 @@ struct TopBar: View {
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
             Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
-            if compact { lastCrumb } else { breadcrumb.layoutPriority(1) }
+            if compact { lastCrumb.layoutPriority(1) } else { breadcrumb.layoutPriority(1) }
             Spacer(minLength: 8)
             if compact {
                 if let step = store.nextStep { bullseye(step.bud) }
@@ -275,21 +275,29 @@ struct TopBar: View {
         LensQuery.canvasPresets.first { $0.query == store.canvasLens }
     }
 
-    private var lensLabel: some View {
-        HStack(spacing: 6) {
-            Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
-            // On a narrow bar the filled glyph alone says a lens is on.
-            if !compact, let active = activeLens {
-                Text(store.canvasLight.isEmpty ? "No matches" : active.name)
-                    .textRole(.label)
-                    .foregroundStyle(Theme.text)
+    /// On a narrow bar a bare glyph like the search glass beside it, filled while a lens is on;
+    /// elsewhere a chip like the zoom with the lens's name.
+    @ViewBuilder private var lensLabel: some View {
+        let glyph = Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+            .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
+        if compact {
+            glyph
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        } else {
+            HStack(spacing: 6) {
+                glyph
+                if let active = activeLens {
+                    Text(store.canvasLight.isEmpty ? "No matches" : active.name)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.text)
+                }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
     }
 
     private var zoom: some View {
