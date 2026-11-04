@@ -249,3 +249,89 @@ fn a_file_that_goes_leaves_no_document() {
     replica.rescan_and_sync();
     assert_eq!(replica.vault.doc_id("Gift ideas.md").unwrap(), None);
 }
+
+/// Trash `path` on `a` and let `b` follow.
+fn trash_on_both(a: &mut Replica, b: &mut Replica, path: &str) -> String {
+    a.vault.trash(path).unwrap();
+    a.vault.sync().unwrap();
+    b.vault.merge_tree(&a.vault.tree_bytes().unwrap()).unwrap();
+    b.vault.sync().unwrap();
+    format!(".trash/{path}")
+}
+
+fn exchange(a: &mut Replica, b: &mut Replica) {
+    for _ in 0..2 {
+        let to_b = a.vault.updates_for(&b.vault.heads().unwrap()).unwrap();
+        b.vault.apply_updates(&to_b).unwrap();
+        b.vault.sync().unwrap();
+        let to_a = b.vault.updates_for(&a.vault.heads().unwrap()).unwrap();
+        a.vault.apply_updates(&to_a).unwrap();
+        a.vault.sync().unwrap();
+    }
+}
+
+#[test]
+fn deleting_forever_reaches_the_peer_and_nothing_comes_back() {
+    let (mut a, mut b) = pair();
+    let trashed = trash_on_both(&mut a, &mut b, "Gift ideas.md");
+    assert!(b.exists(&trashed));
+
+    a.vault.delete_forever(&trashed).unwrap();
+    a.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+
+    assert!(!b.exists(&trashed));
+    assert!(b.vault.bud(&trashed).unwrap().is_none());
+    assert_eq!(b.vault.doc_id(&trashed).unwrap(), None);
+    assert!(b.vault.restore(&trashed).is_err());
+    b.rescan_and_sync();
+    exchange(&mut a, &mut b);
+    for replica in [&a, &b] {
+        assert!(!replica.exists(&trashed) && !replica.exists("Gift ideas.md"));
+    }
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}
+
+#[test]
+fn deleting_forever_a_bud_with_children_reaches_the_peer() {
+    let (mut a, mut b) = pair();
+    let trashed = trash_on_both(&mut a, &mut b, "Launch the newsletter.md");
+    a.vault.delete_forever(&trashed).unwrap();
+    a.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+
+    for replica in [&a, &b] {
+        assert!(!replica.exists(".trash/Launch the newsletter.md"));
+        assert!(!replica.exists(".trash/Launch the newsletter"));
+        assert!(!replica.exists("Launch the newsletter.md"));
+        let left = replica.vault.all().unwrap();
+        assert!(left
+            .iter()
+            .all(|bud| !bud.path.contains("Launch the newsletter")));
+    }
+    assert_eq!(
+        b.vault
+            .doc_id(".trash/Launch the newsletter/Pick a name.md")
+            .unwrap(),
+        None
+    );
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}
+
+#[test]
+fn a_bud_restored_while_a_peer_deletes_it_forever_is_kept_under_a_new_identity() {
+    let (mut a, mut b) = pair();
+    let trashed = trash_on_both(&mut a, &mut b, "Gift ideas.md");
+    let old_id = b.vault.doc_id(&trashed).unwrap().unwrap();
+    a.vault.delete_forever(&trashed).unwrap();
+    a.vault.sync().unwrap();
+    b.vault.restore(&trashed).unwrap();
+    b.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+
+    let kept = b.vault.doc_id("Gift ideas.md").unwrap().unwrap();
+    assert_ne!(kept, old_id);
+    assert_eq!(a.vault.doc_id("Gift ideas.md").unwrap(), Some(kept));
+    assert_eq!(a.read("Gift ideas.md"), b.read("Gift ideas.md"));
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}

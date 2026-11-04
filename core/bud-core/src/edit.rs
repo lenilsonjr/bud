@@ -266,32 +266,60 @@ impl Vault {
 
     /// Remove a trashed bud for good: its file and its folder first, then its row and every row
     /// below it. A bud outside the trash is refused. Its document stays until the next sync, which
-    /// records the removal for the peers.
+    /// deletes it from the tree; a peer that merges that tree removes the bud from its own trash.
     pub fn delete_forever(&mut self, path: &str) -> Result<()> {
-        let dir = dir_of(path);
-        if !dir.starts_with(".trash/") {
+        if !dir_of(path).starts_with(".trash/") {
             return Err(Error::Invalid(format!("not in the trash: {path}")));
         }
         self.bud(path)?
             .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
+        self.purge(path)
+    }
+
+    /// Remove a bud's file, its folder and their rows. A file already gone counts as removed. When
+    /// the folder cannot be removed whole, the rows of what did go below it are dropped before the
+    /// error is returned, and the bud's own row stays, so a retry finds it and only what is left.
+    pub(crate) fn purge(&mut self, path: &str) -> Result<()> {
+        let dir = dir_of(path);
         if path.ends_with(".md") {
-            std::fs::remove_file(self.root.join(path))?;
+            match std::fs::remove_file(self.root.join(path)) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err.into()),
+                _ => {}
+            }
         }
         let folder = self.root.join(dir);
-        if folder.is_dir() {
-            std::fs::remove_dir_all(&folder)?;
-        }
+        let removed = if folder.is_dir() {
+            std::fs::remove_dir_all(&folder)
+        } else {
+            Ok(())
+        };
 
         {
             let mut conn = lock(&self.conn);
             let tx = conn.transaction()?;
-            tx.execute(
-                "DELETE FROM buds WHERE path = ?1 OR path = ?2
-                 OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
-                params![path, dir],
-            )?;
+            if removed.is_ok() {
+                tx.execute(
+                    "DELETE FROM buds WHERE path = ?1 OR path = ?2
+                     OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
+                    params![path, dir],
+                )?;
+            } else {
+                let rows: Vec<String> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT path FROM buds WHERE path = ?1 OR path = ?2
+                         OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
+                    )?;
+                    let found = stmt.query_map(params![path, dir], |r| r.get(0))?;
+                    found.collect::<std::result::Result<_, _>>()?
+                };
+                let gone = |row: &&String| row.as_str() != path && !self.root.join(row).exists();
+                for row in rows.iter().filter(gone) {
+                    tx.execute("DELETE FROM buds WHERE path = ?1", params![row])?;
+                }
+            }
             tx.commit()?;
         }
+        removed?;
         self.prune_trash(dir)
     }
 
@@ -332,17 +360,17 @@ impl Vault {
         self.set_properties(path, &props)
     }
 
-    /// Set `when` (`YYYY-MM-DD`) on one bud; none removes it.
+    /// Set `when` (`YYYY-MM-DD`) on one bud; none or an empty day removes it.
     pub fn set_when(&mut self, path: &str, when: Option<&str>) -> Result<()> {
         let mut props = self.properties_of(path)?;
-        props.when = when.map(str::to_string);
+        props.when = when.filter(|day| !day.is_empty()).map(str::to_string);
         self.set_properties(path, &props)
     }
 
-    /// Set `due` (`YYYY-MM-DD`) on one bud; none removes it.
+    /// Set `due` (`YYYY-MM-DD`) on one bud; none or an empty day removes it.
     pub fn set_due(&mut self, path: &str, due: Option<&str>) -> Result<()> {
         let mut props = self.properties_of(path)?;
-        props.due = due.map(str::to_string);
+        props.due = due.filter(|day| !day.is_empty()).map(str::to_string);
         self.set_properties(path, &props)
     }
 

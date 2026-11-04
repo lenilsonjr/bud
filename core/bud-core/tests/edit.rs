@@ -435,7 +435,7 @@ fn set_when_and_set_due_write_the_file_and_clear_with_none() {
     assert_eq!(bud.state, Some(State::Open));
 
     vault.set_when("Draft issue.md", None).unwrap();
-    vault.set_due("Draft issue.md", None).unwrap();
+    vault.set_due("Draft issue.md", Some("")).unwrap();
     assert_eq!(
         read(dir.path(), "Draft issue.md"),
         "---\nstate: open\n---\nD\n"
@@ -458,6 +458,39 @@ fn delete_forever_removes_the_file_the_folder_and_the_rows() {
     assert!(!dir.path().join(".trash/Launch").exists());
     let paths: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
     assert_eq!(paths, ["Other.md", "Launch.md"]);
+    assert_matches_rescan(&mut vault);
+}
+
+/// A folder that cannot go whole leaves the rows of what is left, and a retry finishes the job.
+#[test]
+fn delete_forever_that_fails_halfway_can_be_retried() {
+    let (mut vault, dir, _index) = vault_with(&TREE);
+    vault.trash("Launch.md").unwrap();
+    let locked = dir.path().join(".trash/Launch/Name");
+    set_mode(&locked, 0o555);
+    let enforced = std::fs::write(locked.join(".probe"), "x").is_err();
+    let first = vault.delete_forever(".trash/Launch.md");
+    set_mode(&locked, 0o755);
+    if !enforced {
+        return;
+    }
+    assert!(matches!(first.unwrap_err(), Error::Io(_)));
+    assert!(!dir.path().join(".trash/Launch.md").exists());
+    let left: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
+    assert!(left.contains(&".trash/Launch/Name/Shortlist.md".to_string()));
+    assert!(
+        left.contains(&".trash/Launch.md".to_string()),
+        "kept for the retry"
+    );
+    assert!(left
+        .iter()
+        .filter(|path| path.starts_with(".trash/Launch/"))
+        .all(|path| dir.path().join(path).exists()));
+
+    vault.delete_forever(".trash/Launch.md").unwrap();
+    let paths: Vec<String> = rows(&vault).into_iter().map(|b| b.path).collect();
+    assert_eq!(paths, ["Other.md"]);
+    assert!(!dir.path().join(".trash/Launch").exists());
     assert_matches_rescan(&mut vault);
 }
 
