@@ -9,6 +9,7 @@ struct TopBar: View {
     let onAdd: () -> Void
     let onSearch: () -> Void
     @Environment(\.compact) private var compact
+    @Environment(\.stillPicture) private var still
 
     var body: some View {
         HStack(spacing: compact ? 10 : 14) {
@@ -237,43 +238,55 @@ struct TopBar: View {
     }
 
     /// Ask the canvas a question: the hits stay lit, the path to them half lit, the rest fades.
-    private var lensMenu: some View {
-        let active = LensQuery.canvasPresets.first { $0.query == store.canvasLens }
-        return Menu {
-            ForEach(LensQuery.canvasPresets, id: \.name) { preset in
-                Toggle(preset.name, isOn: Binding(
-                    get: { store.canvasLens == preset.query },
-                    set: { on in withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = on ? preset.query : nil } }
-                ))
-            }
-            if store.canvasLens != nil {
-                Divider()
-                Button("Show everything") {
-                    withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = nil }
+    /// The picture renderer cannot draw a menu, so a still picture shows the label alone.
+    @ViewBuilder private var lensMenu: some View {
+        if still {
+            lensLabel
+        } else {
+            Menu {
+                ForEach(LensQuery.canvasPresets, id: \.name) { preset in
+                    Toggle(preset.name, isOn: Binding(
+                        get: { store.canvasLens == preset.query },
+                        set: { on in withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = on ? preset.query : nil } }
+                    ))
                 }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: active == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-                    .foregroundStyle(active == nil ? Theme.text2 : Theme.leaf)
-                if let active {
-                    Text(active.name)
-                        .textRole(.label)
-                        .foregroundStyle(Theme.text)
+                if store.canvasLens != nil {
+                    Divider()
+                    Button("Show everything") {
+                        withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = nil }
+                    }
                 }
+            } label: {
+                lensLabel
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Light up what matches")
+            .accessibilityLabel(activeLens.map { "Lens: \($0.name)" } ?? "Lens")
+            .accessibilityIdentifier("canvas-lens")
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Light up what matches")
-        .accessibilityLabel(active.map { "Lens: \($0.name)" } ?? "Lens")
-        .accessibilityIdentifier("canvas-lens")
+    }
+
+    private var activeLens: (name: String, query: LensQuery)? {
+        LensQuery.canvasPresets.first { $0.query == store.canvasLens }
+    }
+
+    private var lensLabel: some View {
+        HStack(spacing: 6) {
+            Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
+            if let active = activeLens {
+                Text(active.name)
+                    .textRole(.label)
+                    .foregroundStyle(Theme.text)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
     }
 
     private var zoom: some View {

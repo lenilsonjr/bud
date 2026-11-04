@@ -30,9 +30,10 @@ struct CardView: View {
     }
 
     /// The fill takes the full dim as a wash toward the canvas, so the card stays opaque and no
-    /// line shows through it; the words floor at 55% so a dimmed card still reads.
+    /// line shows through it; the words floor at 55% so a dimmed card still reads, and at 30%
+    /// on a card a lens faded below any dim, so the lens's answers stand out.
     private var fillLight: Double { lit ? 1 : light }
-    private var inkLight: Double { lit ? 1 : max(light, 0.55) }
+    private var inkLight: Double { lit ? 1 : max(light, light < 0.35 ? 0.3 : 0.55) }
 
     private func wash(_ radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius)
