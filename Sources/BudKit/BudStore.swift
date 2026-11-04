@@ -145,6 +145,7 @@ public final class BudStore: ObservableObject {
         tree = loaded
         if center != rootID, tree.bud(center) == nil { center = rootID }
         relayout()
+        relight()
     }
 
     /// Waits until every queued vault write is done and the tree has reloaded after it.
@@ -515,13 +516,14 @@ public final class BudStore: ObservableObject {
         change(&tree)
         if center != rootID, tree.bud(center) == nil { center = rootID }
         relayout()
+        relight()
     }
 
     private func relayout() {
         layout = LayoutEngine.layout(of: tree, center: center)
-        relight()
     }
 
+    /// The lens reads the tree alone, so a new center leaves it as it is.
     private func relight() {
         canvasLight = canvasLens?.light(tree) ?? [:]
     }

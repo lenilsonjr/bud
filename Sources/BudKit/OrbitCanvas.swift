@@ -164,7 +164,10 @@ public struct OrbitCanvas: View {
                     draftFor = litCard(in: store.layout, viewport: viewport)
                 }
             wash
-            EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
+            EdgesLayer(
+                layout: layout, scale: scale, lifted: Set(lifted),
+                lens: store.canvasLens == nil ? nil : store.canvasLight
+            ) { screenPoint($0, in: size) }
                 .allowsHitTesting(false)
             ForEach(layout.order, id: \.self) { id in
                 if let placed = layout.cards[id] {
