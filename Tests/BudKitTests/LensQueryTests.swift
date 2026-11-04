@@ -98,7 +98,7 @@ final class LensQueryTests: XCTestCase {
         XCTAssertEqual(spokenValue(done: true, match: nil, lensOn: false), "Done")
         XCTAssertEqual(spokenValue(done: false, match: .hit, lensOn: true), "Matches")
         XCTAssertEqual(spokenValue(done: true, match: .path, lensOn: true), "Done, Holds a match")
-        XCTAssertEqual(spokenValue(done: false, match: nil, lensOn: true), "Faded")
+        XCTAssertEqual(spokenValue(done: false, match: nil, lensOn: true), "No match")
     }
 
     func testALensThatFindsNothingLightsNothing() {
