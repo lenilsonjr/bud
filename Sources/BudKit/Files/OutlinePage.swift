@@ -92,12 +92,12 @@ struct OutlinePage: View {
         }
     }
 
-    /// Show closed and Enrich (Capture at Everything), beside the title or under it on a phone.
+    /// Show closed and Enrich (Add at Everything), beside the title or under it on a phone.
     @ViewBuilder private func headerButtons(_ id: UUID) -> some View {
         Button { showClosed.toggle() } label: { BudButtonLabel(title: "Show closed") }
             .buttonStyle(showClosed ? .budGhost : .budSecondary)
         Button { store.modal = .adding(under: id) } label: {
-            BudButtonLabel(title: id == rootID ? "Capture" : "Enrich", systemImage: "plus")
+            BudButtonLabel(title: id == rootID ? "Add" : "Enrich", systemImage: "plus")
         }
         .buttonStyle(.budPrimary)
     }
