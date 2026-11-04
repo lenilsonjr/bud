@@ -37,7 +37,7 @@ done
 
 # BUD_NIGHTLY picks a dated nightly (CI pins one); plain `nightly` otherwise.
 nightly="${BUD_NIGHTLY:-nightly}"
-if ! rustup toolchain list | grep -q "^$nightly"; then
+if ! rustup run "$nightly" rustc --version >/dev/null 2>&1; then
   rustup toolchain install "$nightly" --profile minimal
 fi
 if ! rustup component list --toolchain "$nightly" --installed | grep -q '^rust-src'; then
