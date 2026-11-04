@@ -11,10 +11,12 @@ final class LensQueryTests: XCTestCase {
         let planned = t.add("Planned note", todo: false, under: thread.id)
         t.setDue(due.id, day)
         t.setWhen(planned.id, day)
+        t.setPinned(planned.id, true)
 
         XCTAssertEqual(Set(LensQuery.todos.hits(t, on: day).map(\.id)),
                        Set(t.openTodos().flatMap(\.todos).map(\.id)))
         XCTAssertEqual(LensQuery.pinnedBuds.hits(t, on: day).map(\.id), t.pinned().map(\.id))
+        XCTAssertTrue(t.pinned().contains { $0.id == planned.id })
         let today = t.today(on: day)
         XCTAssertEqual(Set(LensQuery.today.hits(t, on: day).map(\.id)),
                        Set((today.due + today.scheduled).map(\.id)))

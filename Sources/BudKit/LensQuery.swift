@@ -36,11 +36,17 @@ public struct LensQuery: Hashable, Sendable {
 
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let holders = holdsOpen ? tree.holdersOfOpen() : []
+        return matches(bud, holders: holders, start: calendar.startOfDay(for: now))
+    }
+
+    /// The day's start and the buds holding an open to-do are worked out once per question, not
+    /// once per bud.
+    private func matches(_ bud: Bud, holders: Set<UUID>, start: Date) -> Bool {
         if let kind, (kind == .todo) != bud.isTodo { return false }
         if let state, bud.state != state { return false }
         if pinned && !bud.pinned { return false }
         if let day {
-            let start = calendar.startOfDay(for: now)
             switch day {
             case .today:
                 let end = start.addingTimeInterval(86_400)
@@ -51,7 +57,7 @@ public struct LensQuery: Hashable, Sendable {
                 if !(bud.state == .open && (bud.due.map { $0 < start } ?? false)) { return false }
             }
         }
-        if holdsOpen && tree.openCount(under: bud.id) == 0 { return false }
+        if holdsOpen && !holders.contains(bud.id) { return false }
         return true
     }
 
@@ -66,12 +72,14 @@ public struct LensQuery: Hashable, Sendable {
     /// The root, an ancestor of every bud, is on the path whenever anything hits.
     public func light(_ tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> [UUID: Match] {
         var out: [UUID: Match] = [:]
-        for bud in tree.walk(under: rootID) where matches(bud, in: tree, on: now, calendar: calendar) {
-            out[bud.id] = .hit
-        }
-        for id in Array(out.keys) {
-            for above in tree.ancestors(of: id) where out[above] == nil {
-                out[above] = .path
+        let hits = hits(tree, on: now, calendar: calendar)
+        for bud in hits { out[bud.id] = .hit }
+        // Climb from each hit until a bud already lit: everything above it is lit already.
+        for bud in hits {
+            var cursor = tree.parent(of: bud.id)
+            while let above = cursor, out[above] != .path {
+                if out[above] == nil { out[above] = .path }
+                cursor = tree.parent(of: above)
             }
         }
         return out
@@ -79,7 +87,22 @@ public struct LensQuery: Hashable, Sendable {
 
     /// The hits in reading order.
     public func hits(_ tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> [Bud] {
-        tree.walk(under: rootID).filter { matches($0, in: tree, on: now, calendar: calendar) }
+        let holders = holdsOpen ? tree.holdersOfOpen() : []
+        let start = calendar.startOfDay(for: now)
+        return tree.walk(under: rootID).filter { matches($0, holders: holders, start: start) }
+    }
+}
+
+extension Tree {
+    /// Every bud with an open to-do somewhere below it, found in one climb from each open to-do.
+    func holdersOfOpen() -> Set<UUID> {
+        var out: Set<UUID> = []
+        for bud in walk(under: rootID) where bud.state == .open {
+            for above in ancestors(of: bud.id) {
+                if !out.insert(above).inserted { break }
+            }
+        }
+        return out
     }
 }
 
