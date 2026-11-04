@@ -35,6 +35,21 @@ CREATE TRIGGER IF NOT EXISTS buds_fts_update AFTER UPDATE OF title, body ON buds
     INSERT INTO buds_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
 END;
 
+-- Every [[link]] written in a body, under the rowid of the bud it is written in: an upsert keeps
+-- the rowid, and so does a rename or a move, so the links follow their bud. The target is the
+-- text between the brackets, resolved when it is read (links module).
+CREATE TABLE IF NOT EXISTS links (
+    source   INTEGER NOT NULL,
+    target   TEXT NOT NULL,
+    label    TEXT,
+    position INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS links_source ON links(source);
+CREATE INDEX IF NOT EXISTS links_target ON links(target COLLATE NOCASE);
+CREATE TRIGGER IF NOT EXISTS links_delete AFTER DELETE ON buds BEGIN
+    DELETE FROM links WHERE source = old.rowid;
+END;
+
 -- One CRDT document per bud (sync module). Unlike `buds` this is not derived from the folder:
 -- the document bytes carry history, so a schema change never drops these tables. `known_text` is
 -- the last full file text the document knew; a file that differs from it was edited outside.

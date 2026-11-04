@@ -104,6 +104,16 @@ pub struct HitRecord {
     pub snippet: String,
 }
 
+/// A `[[link]]` written in a bud: the target as written, its label, and the bud it names when
+/// exactly one does.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LinkRecord {
+    pub from: String,
+    pub target: String,
+    pub label: Option<String>,
+    pub to: Option<String>,
+}
+
 /// What is under a bud: every descendant, and the open to-dos among them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct CountsRecord {
@@ -635,6 +645,36 @@ impl Vault {
             .collect())
     }
 
+    /// The links written in the bud at `path`, in order.
+    pub fn links(&self, path: String) -> Result<Vec<LinkRecord>> {
+        Ok(self
+            .core()
+            .links(&path)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// The links that name the bud at `path`.
+    pub fn backlinks(&self, path: String) -> Result<Vec<LinkRecord>> {
+        Ok(self
+            .core()
+            .backlinks(&path)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// Every link that names no bud, or more than one.
+    pub fn unresolved_links(&self) -> Result<Vec<LinkRecord>> {
+        Ok(self
+            .core()
+            .unresolved_links()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     /// Follow the folder and tell `listener` once per batch of outside changes.
     pub fn watch(&self, listener: Box<dyn VaultListener>) -> Result<Arc<VaultWatch>> {
         let watch = self.core().watch(Box::new(Forward(listener)))?;
@@ -724,6 +764,17 @@ impl From<bud_core::Row> for RowRecord {
         RowRecord {
             bud: row.bud.into(),
             trail: row.trail,
+        }
+    }
+}
+
+impl From<bud_core::Link> for LinkRecord {
+    fn from(link: bud_core::Link) -> Self {
+        LinkRecord {
+            from: link.from,
+            target: link.target,
+            label: link.label,
+            to: link.to,
         }
     }
 }
