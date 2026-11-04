@@ -112,7 +112,7 @@ struct OutlinePage: View {
         HStack(spacing: 8) {
             Image(systemName: "plus")
                 .foregroundStyle(Theme.text3)
-            TextField("Enrich \(store.tree.title(of: id))…", text: $enrich)
+            TextField(id == rootID ? "Add a thread…" : "Enrich \(store.tree.title(of: id))…", text: $enrich)
                 .textFieldStyle(.plain)
                 .onSubmit {
                     store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id)
