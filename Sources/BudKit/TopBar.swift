@@ -266,6 +266,7 @@ struct TopBar: View {
             .fixedSize()
             .help("Light up what matches")
             .accessibilityLabel(activeLens.map { "Lens: \($0.name)" } ?? "Lens")
+            .accessibilityValue(store.canvasLens != nil && store.canvasLight.isEmpty ? "No matches" : "")
             .accessibilityIdentifier("canvas-lens")
         }
     }
@@ -280,7 +281,7 @@ struct TopBar: View {
                 .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
             // On a narrow bar the filled glyph alone says a lens is on.
             if !compact, let active = activeLens {
-                Text(active.name)
+                Text(store.canvasLight.isEmpty ? "No matches" : active.name)
                     .textRole(.label)
                     .foregroundStyle(Theme.text)
             }

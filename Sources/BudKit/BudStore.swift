@@ -523,6 +523,11 @@ public final class BudStore: ObservableObject {
         layout = LayoutEngine.layout(of: tree, center: center)
     }
 
+    /// Asks the lens again without a change: the day it reads Today and Overdue against moved.
+    public func refreshLens() {
+        relight()
+    }
+
     /// The lens reads the tree alone, so a new center leaves it as it is.
     private func relight() {
         canvasLight = canvasLens?.light(tree) ?? [:]

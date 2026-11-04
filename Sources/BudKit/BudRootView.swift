@@ -1,8 +1,10 @@
 #if canImport(SwiftUI) && !os(tvOS)
+import Combine
 import SwiftUI
 
 /// The whole app: the bar across the top, the canvas or the files below it.
 public struct BudRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: BudStore
     @ObservedObject private var flags = Flags.shared
     @State private var searching = false
@@ -54,6 +56,13 @@ public struct BudRootView: View {
         .onDisappear { CaptureRelay.shared.stopListening() }
         .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
             store.freshStart(sample: note.userInfo?["sample"] as? Bool ?? false)
+        }
+        // Today and Overdue move at midnight, edits or not.
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            store.refreshLens()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.refreshLens() }
         }
     }
 
