@@ -35,14 +35,16 @@ for target in "${targets[@]}"; do
   cargo build -p bud-ffi --"$profile" --target "$target"
 done
 
-if ! rustup toolchain list | grep -q '^nightly'; then
-  rustup toolchain install nightly --profile minimal
+# BUD_NIGHTLY picks a dated nightly (CI pins one); plain `nightly` otherwise.
+nightly="${BUD_NIGHTLY:-nightly}"
+if ! rustup toolchain list | grep -q "^$nightly"; then
+  rustup toolchain install "$nightly" --profile minimal
 fi
-if ! rustup component list --toolchain nightly --installed | grep -q '^rust-src'; then
-  rustup component add rust-src --toolchain nightly
+if ! rustup component list --toolchain "$nightly" --installed | grep -q '^rust-src'; then
+  rustup component add rust-src --toolchain "$nightly"
 fi
 for target in "${tv_targets[@]}"; do
-  cargo +nightly build -p bud-ffi --"$profile" --target "$target" -Zbuild-std=std,panic_abort
+  cargo "+$nightly" build -p bud-ffi --"$profile" --target "$target" -Zbuild-std=std,panic_abort
 done
 
 out="$root/build"
