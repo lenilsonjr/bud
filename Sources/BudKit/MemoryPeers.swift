@@ -136,7 +136,8 @@ public actor MemoryPeers: Peers {
         counter += 1
         var random = Generator(seed: UInt64(counter) &* 0x9E37_79B9_7F4A_7C15)
         let text = "bud1" + random.token(PeerText.ticketLength - 4)
-        let qr = (0..<25).map { _ in (0..<25).map { _ in random.next() % 2 == 0 } }
+        let noise: [[Bool]] = (0..<25).map { _ in (0..<25).map { _ in random.next() % 2 == 0 } }
+        let qr: [[Bool]] = QRModules.encode(text) ?? noise
         let madeAt = clock()
         let expiresAt = madeAt.addingTimeInterval(lifetime)
         issued[text] = Issued(madeAt: madeAt, expiresAt: expiresAt)
@@ -163,7 +164,8 @@ public actor MemoryPeers: Peers {
         counter += 1
         var random = Generator(seed: UInt64(counter) &* 0xA076_1D64_78BD_642F)
         let code = PeerText.requestPrefix + random.token(175)
-        let qr = (0..<29).map { _ in (0..<29).map { _ in random.next() % 2 == 0 } }
+        let noise: [[Bool]] = (0..<29).map { _ in (0..<29).map { _ in random.next() % 2 == 0 } }
+        let qr: [[Bool]] = QRModules.encode(code) ?? noise
         let madeAt = clock()
         let expiresAt = madeAt.addingTimeInterval(lifetime)
         requests[code] = Issued(madeAt: madeAt, expiresAt: expiresAt)
