@@ -83,10 +83,13 @@ public struct OrbitCanvas: View {
         .focused($focused)
         .onAppear { focused = true }
         .onKeyPress(.escape) {
+            // A card open over the canvas takes Escape for itself.
+            guard store.modal == nil else { return .ignored }
             if opened != nil { close() } else { stepOut() }
             return .handled
         }
         .onKeyPress(.space) {
+            guard store.modal == nil else { return .ignored }
             guard let lit = litCard(in: store.layout, viewport: viewport) else { return .ignored }
             open(lit)
             return .handled
