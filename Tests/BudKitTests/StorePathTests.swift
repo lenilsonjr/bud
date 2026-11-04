@@ -84,10 +84,11 @@ private actor FolderVault: Vault {
         let new = String(path.dropFirst(".trash/".count))
         relocate(path, new, place: .everything)
         let up = new.split(separator: "/").dropLast().joined(separator: "/")
-        records[try index(new)].parent = up.isEmpty ? nil : (records.contains { $0.path == up + ".md" } ? up + ".md" : up)
-        records.removeAll { record in
-            record.place == .trash && !record.path.hasSuffix(".md") && !records.contains { $0.parent == record.path }
-        }
+        let hasFile = records.contains { $0.path == up + ".md" }
+        let i = try index(new)
+        records[i].parent = up.isEmpty ? nil : (hasFile ? up + ".md" : up)
+        let parents = Set(records.compactMap(\.parent))
+        records.removeAll { $0.place == .trash && !$0.path.hasSuffix(".md") && !parents.contains($0.path) }
         return new
     }
 
