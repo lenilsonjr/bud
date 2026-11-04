@@ -78,9 +78,7 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
     func remove(_ id: String) async throws { try await off { try $0.forgetPeer(id: id) } }
     func rename(_ id: String, label: String?) async throws { try await off { try $0.renamePeer(id: id, label: label) } }
 
-    /// The core has no way back in for a device a rotation turned away yet: it pairs again.
-    func allow(_ id: String) async throws { throw PeersError.noSuchDevice(id) }
-
+    func allow(_ id: String) async throws { try await off { try $0.allowPeer(id: id) } }
 
     /// The core tells each peer's part as events; a rotation that fails before it is over ends
     /// with every peer missed, so the dialog never waits for good.
@@ -181,6 +179,11 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
             return .joinOffered(JoinOffer(id: id, kind: kind.flatMap(DeviceKind.init(rawValue:)), name: name, words: words))
         case let .fetchProgress(received, total):
             return .fetchProgress(received: Int(received), total: total.map { Int($0) })
+        case let .syncFinished(summary):
+            return .syncFinished(BudKit.SyncSummary(
+                created: Int(summary.created), updated: Int(summary.updated), written: Int(summary.written),
+                moved: Int(summary.moved), ops: Int(summary.ops)
+            ))
         case .keyRotation, .rotationDone:
             return nil
         }
