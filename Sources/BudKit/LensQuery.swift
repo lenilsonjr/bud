@@ -34,6 +34,15 @@ public struct LensQuery: Hashable, Sendable {
 
     public var isEmpty: Bool { self == LensQuery() }
 
+    /// The questions the canvas offers until the lens menu is designed, by the name it shows.
+    public static let canvasPresets: [(name: String, query: LensQuery)] = [
+        ("Open to-dos", .todos),
+        ("Holds open to-dos", LensQuery(holdsOpen: true)),
+        ("Today", .today),
+        ("Overdue", LensQuery(day: .overdue)),
+        ("Pinned", .pinnedBuds),
+    ]
+
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
