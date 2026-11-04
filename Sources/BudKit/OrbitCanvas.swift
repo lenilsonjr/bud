@@ -179,7 +179,8 @@ public struct OrbitCanvas: View {
                         light: lensLevel(
                             lightLevel(role: placed.role, lifted: lifted.contains(id)),
                             match: store.canvasLight[id],
-                            lensOn: store.canvasLens != nil
+                            // The center is where you stand; the lens fades around it, never it.
+                            lensOn: store.canvasLens != nil && placed.role != .center
                         ),
                         onTap: { tap(id, at: screenPoint(placed.position, in: size)) },
                         onOpen: { open(id) },
