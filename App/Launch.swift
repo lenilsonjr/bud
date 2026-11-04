@@ -59,7 +59,8 @@ enum Launch {
     /// Plants the buds a device kept in the old JSON file into its empty vault, once, and sets
     /// the file aside. The Apple TV's vault is a cache its peers fill, and a file that only holds
     /// the untouched sample world is left out: two devices planting it would collide when they
-    /// pair. A sample that was ticked, pinned or written in is the person's own and is planted.
+    /// pair. A sample that was ticked, pinned, written in, moved or scheduled is the person's own
+    /// and is planted.
     /// Returns whether anything was planted.
     nonisolated static func bringOldBuds(into vault: RustVault, platform: VaultPlatform) -> Bool {
         guard platform != .tvOS, let file = BudStore.defaultFile, let data = try? Data(contentsOf: file),
@@ -76,11 +77,19 @@ enum Launch {
         return planted
     }
 
-    /// What tells a person's buds from the untouched sample world: each bud's title, state, pin
-    /// and body. Dates are left out, since the sample's are set from the day it was made.
+    /// What tells a person's buds from the untouched sample world: each bud's title, where it
+    /// is (its place and the title above it), state, pin, body, and whether it has a day or a
+    /// due date. The dates themselves are left out, since the sample's are set from the day it
+    /// was made.
     private nonisolated static func shape(of tree: Tree) -> Set<String> {
-        Set(tree.records().filter { $0.place != .trash }.map { record in
-            [record.title, record.state?.rawValue ?? "note", String(record.pinned), record.body].joined(separator: "\u{1F}")
+        let records = tree.records().filter { $0.place != .trash }
+        let titles = Dictionary(records.map { ($0.path, $0.title) }, uniquingKeysWith: { first, _ in first })
+        return Set(records.map { record in
+            [
+                record.title, record.place.rawValue, record.parent.flatMap { titles[$0] } ?? "",
+                record.state?.rawValue ?? "note", String(record.pinned), record.body,
+                String(record.when != nil), String(record.due != nil),
+            ].joined(separator: "\u{1F}")
         })
     }
 }
