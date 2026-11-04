@@ -177,6 +177,21 @@ fn forgetting_a_peer_removes_it_and_an_unknown_one_is_an_error() {
 }
 
 #[test]
+fn a_removed_peer_syncs_again_once_allowed() {
+    let (a, b) = paired();
+    b.node.sync_now().unwrap();
+    let b_id = b.node.id().unwrap();
+    a.node.forget_peer(b_id.clone()).unwrap();
+    let ticket = a.node.ticket(true).unwrap();
+    b.node.forget_peer(a.node.id().unwrap()).unwrap();
+    b.node.accept_ticket(ticket).unwrap();
+    assert!(b.node.sync_now().is_err(), "the maker still refuses it");
+    a.node.allow_peer(b_id).unwrap();
+    b.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 1);
+}
+
+#[test]
 fn errors_keep_the_core_message() {
     let (a, b) = paired();
     let bad = b.node.accept_ticket("not a ticket".into());
@@ -268,7 +283,7 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
     a.node.listen(Box::new(heard_by_a.clone())).unwrap();
     b.node.listen(Box::new(heard_by_b.clone())).unwrap();
     b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
-    b.node.sync_now().unwrap();
+    let summary = b.node.sync_now().unwrap();
     let b_id = b.node.id().unwrap();
     assert_eq!(
         heard_by_a.0.lock().unwrap().clone(),
@@ -288,6 +303,7 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
                 received: 2,
                 total: Some(2),
             },
+            PeerEvent::SyncFinished { summary },
         ]
     );
     // A stopped node tells no one anything more, and refuses a new listener.

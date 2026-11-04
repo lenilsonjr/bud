@@ -304,6 +304,10 @@ pub enum NodeEvent {
         received: usize,
         total: Option<usize>,
     },
+    /// Changes from peers were applied here: what they did, for a session this node answered or
+    /// for every session of a sync it dialed. Only when buds changed; the files are written by
+    /// the vault, so the watcher does not report them.
+    SyncFinished(SyncReport),
 }
 
 /// Told each [`NodeEvent`] as it happens, from the node's own threads.
@@ -1116,10 +1120,12 @@ impl Shared {
         let peers = self.vault().peer_list()?;
         let mut failure = None;
         let mut reached = false;
+        let mut received = SyncReport::default();
         for peer in &peers {
             match tokio::time::timeout(SESSION_TIMEOUT, self.exchange(peer)).await {
                 Ok(Ok(done)) => {
                     report.add(done);
+                    received.add(done);
                     reached = true;
                     self.reached(&peer.id);
                 }
@@ -1132,6 +1138,9 @@ impl Shared {
                     failure = failure.or(Some(peer_error("a peer did not answer")));
                 }
             }
+        }
+        if received.changed() {
+            self.emit(NodeEvent::SyncFinished(received));
         }
         match failure {
             Some(err) if !reached => Err(err),
@@ -1480,10 +1489,13 @@ impl Shared {
         else {
             return Err(peer_error("a peer sent out of turn"));
         };
-        self.vault().apply_updates(&updates)?;
+        let report = self.vault().apply_updates(&updates)?;
         send_message(&mut send, &key, Side::Answerer, &Message::Done).await?;
         send.finish().map_err(peer_error)?;
         self.reached(&id_text(&remote));
+        if report.changed() {
+            self.emit(NodeEvent::SyncFinished(report));
+        }
         let _ = tokio::time::timeout(Duration::from_secs(10), connection.closed()).await;
         Ok(())
     }
