@@ -69,7 +69,7 @@ public final class DeviceStore: ObservableObject {
     /// Told when a key rotation is over, for the toast that says who missed it.
     public var onRotationFinished: ((RotationResult) -> Void)?
 
-    private let peers: Peers
+    private var peers: Peers
     private let now: @Sendable () -> Date
     private var listening: Task<Void, Never>?
     private var renewing: Task<Void, Never>?
@@ -82,9 +82,9 @@ public final class DeviceStore: ObservableObject {
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
 
-    /// The store the apps use: the app puts one over its node here at launch. Until then, and in
-    /// pictures, this device alone, so Settings shows the invitation.
-    public static var shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
+    /// The store the apps use. It starts on this device alone, so Settings shows the invitation,
+    /// and the app hands it the real node once that has started (`use`); pictures keep it alone.
+    public static let shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
@@ -99,6 +99,12 @@ public final class DeviceStore: ObservableObject {
 
     /// "k7f3…q2m9": the first four characters of an id, an ellipsis and the last four.
     public func shortID(_ id: String) -> String { PeerText.shortID(id) }
+
+    /// Follows another node from now on: the app's own, once it has started.
+    public func use(_ peers: Peers) async {
+        self.peers = peers
+        await start()
+    }
 
     /// Loads the devices and starts following what the node says.
     public func start() async {

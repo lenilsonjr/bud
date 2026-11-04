@@ -81,16 +81,27 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
     /// The core has no way back in for a device a rotation turned away yet: it pairs again.
     func allow(_ id: String) async throws { throw PeersError.noSuchDevice(id) }
 
+
+    /// The core tells each peer's part as events; a rotation that fails before it is over ends
+    /// with every peer missed, so the dialog never waits for good.
     func rotateKey() async throws -> AsyncStream<RotationStep> {
         let events = hub.subscribe()
         let node = current
-        DispatchQueue.global(qos: .userInitiated).async { _ = try? node.rotateKey() }
         return AsyncStream { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    _ = try node.rotateKey()
+                } catch {
+                    let missed = (try? node.peers().map(\.id)) ?? []
+                    continuation.yield(.done(RotationResult(reached: 0, missed: missed)))
+                    continuation.finish()
+                }
+            }
             let task = Task {
                 for await event in events {
                     switch event {
-                    case let .keyRotation(id, confirmed, _):
-                        continuation.yield(.device(id: id, reached: confirmed))
+                    case let .keyRotation(id, confirmed, holdsKey):
+                        continuation.yield(.device(id: id, reached: confirmed || holdsKey))
                     case let .rotationDone(reached, missed):
                         continuation.yield(.done(RotationResult(reached: Int(reached), missed: missed)))
                         continuation.finish()
@@ -120,16 +131,29 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
 
     func relay() async throws -> BudKit.RelaySetting { Self.storedRelay }
 
-    /// Remembers the setting and starts the node again on it; the pairings are the vault's and stay.
+    /// Starts the node again on the setting and remembers it; the pairings are the vault's and
+    /// stay. The old node stops first, since both would speak for this device; a new one that
+    /// will not start gives way to the old setting again.
     func setRelay(_ relay: BudKit.RelaySetting) async throws {
-        let fresh = try startNodeAs(vault: vault, relay: Self.core(relay), kind: kind, name: name)
-        try fresh.listen(listener: hub)
+        try await Task.detached { [self] in
+            current.stop()
+            let fresh: PeerNode
+            do {
+                fresh = try startNodeAs(vault: vault, relay: Self.core(relay), kind: kind, name: name)
+            } catch {
+                adopt(try startNodeAs(vault: vault, relay: Self.core(Self.storedRelay), kind: kind, name: name))
+                throw error
+            }
+            adopt(fresh)
+            Self.storedRelay = relay
+        }.value
+    }
+
+    private func adopt(_ fresh: PeerNode) {
+        try? fresh.listen(listener: hub)
         lock.lock()
-        let old = node
         node = fresh
         lock.unlock()
-        old.stop()
-        Self.storedRelay = relay
     }
 
     func events() async throws -> AsyncStream<BudKit.PeerEvent> {
