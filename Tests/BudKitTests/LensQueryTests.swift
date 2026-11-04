@@ -92,4 +92,18 @@ final class LensQueryTests: XCTestCase {
         XCTAssertEqual(Set(presets.map(\.query)).count, presets.count)
         XCTAssertFalse(presets.contains { $0.query.isEmpty })
     }
+
+    func testVoiceOverHearsWhereACardStandsUnderALens() {
+        XCTAssertEqual(spokenValue(done: false, match: nil, lensOn: false), "")
+        XCTAssertEqual(spokenValue(done: true, match: nil, lensOn: false), "Done")
+        XCTAssertEqual(spokenValue(done: false, match: .hit, lensOn: true), "Matches")
+        XCTAssertEqual(spokenValue(done: true, match: .path, lensOn: true), "Done, Holds a match")
+        XCTAssertEqual(spokenValue(done: false, match: nil, lensOn: true), "Faded")
+    }
+
+    func testALensThatFindsNothingLightsNothing() {
+        var t = Tree()
+        _ = t.add("A note", todo: false, under: rootID)
+        XCTAssertTrue(LensQuery(day: .overdue).light(t, on: day).isEmpty)
+    }
 }

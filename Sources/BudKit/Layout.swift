@@ -32,6 +32,21 @@ public func lensLevel(_ base: Double, match: LensQuery.Match?, lensOn: Bool) -> 
     }
 }
 
+/// What VoiceOver says for a card besides its words: Done for a closed to-do, then where it
+/// stands under a lens, so the fade is heard as well as seen.
+public func spokenValue(done: Bool, match: LensQuery.Match?, lensOn: Bool) -> String {
+    var parts: [String] = []
+    if done { parts.append("Done") }
+    if lensOn {
+        switch match {
+        case .hit: parts.append("Matches")
+        case .path: parts.append("Holds a match")
+        case nil: parts.append("Faded")
+        }
+    }
+    return parts.joined(separator: ", ")
+}
+
 public struct Placed: Equatable {
     public var id: UUID
     public var position: CGPoint
