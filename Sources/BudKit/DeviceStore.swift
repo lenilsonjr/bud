@@ -82,9 +82,9 @@ public final class DeviceStore: ObservableObject {
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
 
-    /// The store the apps use until a real node plugs in: this device alone, so Settings shows the
-    /// invitation.
-    public static let shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
+    /// The store the apps use: the app puts one over its node here at launch. Until then, and in
+    /// pictures, this device alone, so Settings shows the invitation.
+    public static var shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
 
     public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
         self.peers = peers
