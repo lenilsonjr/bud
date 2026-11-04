@@ -106,6 +106,9 @@ public final class VaultWatch: @unchecked Sendable {
 public protocol Vault: Sendable {
     /// The path the Inbox goes by, as a parent.
     var inboxPath: String { get }
+    /// The path a bud has after its body or a property is written: a vault on disk gives a bud
+    /// that is only a folder a file of its own then.
+    func pathAfterEdit(_ path: String) -> String
 
     /// Every bud, parents before children, siblings in their order, the Trash's buds last.
     func snapshot() async throws -> [BudRecord]
@@ -135,7 +138,9 @@ public protocol Vault: Sendable {
     func emptyTrash() async throws
     func deleteForever(_ path: String) async throws
     /// Replaces everything, the Trash included, with these records: a fresh start, empty or seeded.
-    func reset(to records: [BudRecord]) async throws
+    /// Returns the path each record's bud has now, by the record's path.
+    @discardableResult
+    func reset(to records: [BudRecord]) async throws -> [String: String]
 
     func search(_ query: String, limit: Int) async throws -> [HitRecord]
     /// The open to-dos due on or before the day, and the buds scheduled for it.
@@ -149,4 +154,5 @@ public protocol Vault: Sendable {
 
 extension Vault {
     public var inboxPath: String { inboxID.uuidString }
+    public func pathAfterEdit(_ path: String) -> String { path }
 }

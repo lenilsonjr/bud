@@ -18,6 +18,7 @@ public struct PathBook: Sendable, Equatable {
     /// Remembers where a bud is.
     public mutating func learn(_ id: UUID, at path: String) {
         if let old = paths[id], ids[old] == id { ids[old] = nil }
+        if let owner = ids[path], owner != id { paths[owner] = nil }
         paths[id] = path
         ids[path] = id
     }

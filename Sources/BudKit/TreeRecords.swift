@@ -25,6 +25,38 @@ extension Bud {
     }
 }
 
+extension BudRecord {
+    /// A vault on disk keeps a trashed bud at `.trash/<where it was>`, so trashing `Kitchen/Shelf.md`
+    /// leaves a folder `.trash/Kitchen` that the vault reads as a bud of its own. These records
+    /// leave such a folder out when it only holds what was trashed from a bud still alive, or from
+    /// the Inbox or the Archive; what was inside hangs from that live bud, or the top level.
+    public static func withoutTrashFolders(_ records: [BudRecord]) -> [BudRecord] {
+        let trash = ".trash/"
+        let live = Set(records.filter { $0.place != .trash }.map(\.path))
+        /// The live bud a trashed folder stands for, as nil inside an optional for the top level;
+        /// nil when it stands for none.
+        func counterpart(_ path: String) -> String?? {
+            guard path.hasPrefix(trash), !path.hasSuffix(".md") else { return nil }
+            let rest = String(path.dropFirst(trash.count))
+            if live.contains(rest + ".md") { return .some(rest + ".md") }
+            if live.contains(rest) { return .some(rest) }
+            if rest == "Inbox" || rest == "Archive" { return .some(nil) }
+            return nil
+        }
+        var stands: [String: String?] = [:]
+        for record in records where record.place == .trash {
+            if let live = counterpart(record.path) { stands[record.path] = live }
+        }
+        guard !stands.isEmpty else { return records }
+        return records.compactMap { record in
+            guard stands[record.path] == nil else { return nil }
+            var record = record
+            if let parent = record.parent, let live = stands[parent] { record.parent = live }
+            return record
+        }
+    }
+}
+
 extension Tree {
     public func path(of id: UUID) -> String { id.uuidString }
 

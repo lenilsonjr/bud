@@ -124,9 +124,10 @@ public actor MemoryVault: Vault {
         save()
     }
 
-    public func reset(to records: [BudRecord]) async throws {
+    public func reset(to records: [BudRecord]) async throws -> [String: String] {
         tree = Tree(records: records)
         save()
+        return Dictionary(records.map { ($0.path, $0.path) }, uniquingKeysWith: { first, _ in first })
     }
 
     public func search(_ query: String, limit: Int) async throws -> [HitRecord] {

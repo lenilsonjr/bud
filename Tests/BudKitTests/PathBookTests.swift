@@ -60,6 +60,32 @@ final class PathBookTests: XCTestCase {
         XCTAssertEqual(book.id(for: "Garden.md"), Bud.id(forPath: "Garden.md"))
     }
 
+    func testAPathTakenByAnotherBudLeavesTheFormerOwnerWithout() {
+        var book = book()
+        let newcomer = UUID()
+        book.learn(newcomer, at: "Kitchen.md")
+        XCTAssertEqual(book.id(for: "Kitchen.md"), newcomer)
+        XCTAssertEqual(book.path(of: kitchen), kitchen.uuidString, "never another bud's file")
+    }
+
+    func testTrashFoldersThatStandForLiveBudsAreLeftOut() {
+        let records = BudRecord.withoutTrashFolders([
+            BudRecord(path: "Kitchen.md", title: "Kitchen"),
+            BudRecord(path: ".trash/Kitchen", title: "Kitchen", place: .trash),
+            BudRecord(path: ".trash/Kitchen/Shelf.md", parent: ".trash/Kitchen", title: "Shelf", place: .trash),
+            BudRecord(path: ".trash/Inbox", title: "Inbox", place: .trash),
+            BudRecord(path: ".trash/Inbox/Call.md", parent: ".trash/Inbox", title: "Call", place: .trash),
+            BudRecord(path: ".trash/Old", title: "Old", place: .trash),
+            BudRecord(path: ".trash/Old/Note.md", parent: ".trash/Old", title: "Note", place: .trash),
+        ])
+        XCTAssertEqual(records.map(\.path), [
+            "Kitchen.md", ".trash/Kitchen/Shelf.md", ".trash/Inbox/Call.md", ".trash/Old", ".trash/Old/Note.md",
+        ])
+        XCTAssertEqual(records[1].parent, "Kitchen.md", "hangs from the live bud")
+        XCTAssertNil(records[2].parent, "a capture's folder stands for the Inbox")
+        XCTAssertEqual(records[4].parent, ".trash/Old", "a folder trashed on purpose stays a bud")
+    }
+
     func testATreeFromRecordsUsesTheBookForIds() {
         var book = book()
         book.move(from: "Kitchen.md", to: "Pantry.md")

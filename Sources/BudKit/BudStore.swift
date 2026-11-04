@@ -141,7 +141,8 @@ public final class BudStore: ObservableObject {
     /// exists; a snapshot that went stale while it was being taken is dropped.
     public func reload() async {
         let started = generation
-        guard let records = try? await vault.snapshot(), started == generation, inFlight == 0 else { return }
+        guard let snapshot = try? await vault.snapshot(), started == generation, inFlight == 0 else { return }
+        let records = BudRecord.withoutTrashFolders(snapshot)
         let seen = Dictionary(tree.trashed.map { ($0.id, $0.at) }, uniquingKeysWith: { first, _ in first })
         book.keep(records)
         let loaded = Tree(records: records, trashedAt: { seen[$0] }, id: book.id(for:))
@@ -185,6 +186,14 @@ public final class BudStore: ObservableObject {
         return id == inboxID ? vault.inboxPath : path(id)
     }
 
+    /// Runs a write to a bud's body or properties, and follows the bud to the file the vault may
+    /// have given it.
+    private func edit(_ id: UUID, _ operation: (Vault, String) async throws -> Void) async throws {
+        let old = path(id)
+        try await operation(vault, old)
+        book.move(from: old, to: vault.pathAfterEdit(old))
+    }
+
     /// Runs a write that gives a bud a new path, and follows it there.
     private func relocate(_ id: UUID, _ operation: (Vault, String) async throws -> String) async throws {
         let old = path(id)
@@ -220,7 +229,11 @@ public final class BudStore: ObservableObject {
         place = nil
         center = rootID
         commit { $0 = fresh }
-        write { try await $0.reset(to: fresh.records()) }
+        write { [self] vault in
+            let planted = try await vault.reset(to: fresh.records())
+            book = PathBook()
+            for (record, path) in planted { book.learn(Bud.id(forPath: record), at: path) }
+        }
         toasts.show(Undoable(message: sample ? "Started over with the sample vault" : "Started over", systemImage: "sparkles"))
     }
 
@@ -337,8 +350,8 @@ public final class BudStore: ObservableObject {
         commit { $0.update(id, text: text, todo: todo) }
         write { [self] vault in
             if text != before.text { try await relocate(id) { try await $0.rename($1, to: text) } }
-            if todo, before.state == nil { try await vault.setState(path(id), .open) }
-            if !todo, before.state != nil { try await vault.setState(path(id), nil) }
+            if todo, before.state == nil { try await edit(id) { try await $0.setState($1, .open) } }
+            if !todo, before.state != nil { try await edit(id) { try await $0.setState($1, nil) } }
         }
     }
 
@@ -350,8 +363,8 @@ public final class BudStore: ObservableObject {
                 tree.buds[i].state = state
             }
         }
-        write { [self] vault in
-            for id in ids { try await vault.setState(path(id), state) }
+        write { [self] _ in
+            for id in ids { try await edit(id) { try await $0.setState($1, state) } }
         }
     }
 
@@ -392,22 +405,22 @@ public final class BudStore: ObservableObject {
 
     public func setBody(_ id: UUID, _ body: String) {
         commit { $0.setBody(id, body) }
-        write { [self] in try await $0.setBody(path(id), body) }
+        write { [self] _ in try await edit(id) { try await $0.setBody($1, body) } }
     }
 
     public func setWhen(_ id: UUID, _ when: Date?) {
         commit { $0.setWhen(id, when) }
-        write { [self] in try await $0.setWhen(path(id), when) }
+        write { [self] _ in try await edit(id) { try await $0.setWhen($1, when) } }
     }
 
     public func setDue(_ id: UUID, _ due: Date?) {
         commit { $0.setDue(id, due) }
-        write { [self] in try await $0.setDue(path(id), due) }
+        write { [self] _ in try await edit(id) { try await $0.setDue($1, due) } }
     }
 
     public func setPinned(_ id: UUID, _ pinned: Bool) {
         commit { $0.setPinned(id, pinned) }
-        write { [self] in try await $0.setPinned(path(id), pinned) }
+        write { [self] _ in try await edit(id) { try await $0.setPinned($1, pinned) } }
     }
 
     /// Trades the places of two siblings in the orbit and offers to trade them back.
