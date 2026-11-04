@@ -50,6 +50,7 @@ targets:
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
       - sdk: Network.framework
+      - sdk: libresolv.tbd
     info:
       path: Resources/Info-iOS.plist
       properties:
@@ -106,6 +107,7 @@ targets:
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
       - sdk: Network.framework
+      - sdk: libresolv.tbd
     info:
       path: Resources/Info-macOS.plist
       properties:
@@ -138,6 +140,7 @@ targets:
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
       - sdk: Network.framework
+      - sdk: libresolv.tbd
     info:
       path: Resources/Info-tvOS.plist
       properties:
