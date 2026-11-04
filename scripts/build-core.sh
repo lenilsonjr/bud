@@ -12,6 +12,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 profile="release"
+# The apps' own minimums (project.yml), so the slices link without newer-OS warnings.
+export MACOSX_DEPLOYMENT_TARGET=14.0 IPHONEOS_DEPLOYMENT_TARGET=17.0 TVOS_DEPLOYMENT_TARGET=17.0
 lib="libbud_ffi"
 targets=(
   aarch64-apple-darwin

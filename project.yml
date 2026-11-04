@@ -49,6 +49,7 @@ targets:
         embed: false
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
+      - sdk: Network.framework
     info:
       path: Resources/Info-iOS.plist
       properties:
@@ -104,6 +105,7 @@ targets:
         embed: false
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
+      - sdk: Network.framework
     info:
       path: Resources/Info-macOS.plist
       properties:
@@ -135,6 +137,7 @@ targets:
         embed: false
       - sdk: SystemConfiguration.framework
       - sdk: Security.framework
+      - sdk: Network.framework
     info:
       path: Resources/Info-tvOS.plist
       properties:
