@@ -8,7 +8,8 @@
 //! rank that has any, or none at all, leaves the link unresolved. Trash is never a target.
 
 use crate::{lock, Result, Vault};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
 
 /// One link as written, with the bud it resolves to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,37 +25,50 @@ pub struct Link {
 }
 
 /// The links in a body, in order: target, label, byte offset of the opening brackets. Fenced
-/// code and code spans hold no links, and a link never spans lines.
+/// code and code spans hold no links, an embed (`![[...]]`) is not a link, and a link never
+/// spans lines.
 pub(crate) fn parse(body: &str) -> Vec<(String, Option<String>, usize)> {
     let mut out = Vec::new();
-    let mut fence: Option<&str> = None;
+    // The fence that is open: its character and the length of its run.
+    let mut fence: Option<(u8, usize)> = None;
     let mut offset = 0;
     for line in body.split_inclusive('\n') {
         let start = offset;
         offset += line.len();
-        let trimmed = line.trim_start();
-        if let Some(open) = fence {
-            if trimmed.starts_with(open) {
+        let trimmed = line.trim_start().trim_end_matches(['\n', '\r']);
+        let run = |c: u8| trimmed.bytes().take_while(|&b| b == c).count();
+        if let Some((c, len)) = fence {
+            // A fence closes on a run of its character at least as long, with nothing after it.
+            if run(c) >= len && trimmed.trim_start_matches(c as char).trim().is_empty() {
                 fence = None;
             }
             continue;
         }
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fence = Some(&trimmed[..3]);
+        if let Some(c) = b"`~".iter().copied().find(|&c| run(c) >= 3) {
+            fence = Some((c, run(c)));
             continue;
         }
         let bytes = line.as_bytes();
         let mut i = 0;
-        let mut in_code = false;
         while i < bytes.len() {
             match bytes[i] {
-                b'`' => in_code = !in_code,
-                b'[' if !in_code && bytes.get(i + 1) == Some(&b'[') => {
+                b'`' => {
+                    // A code span runs to the next run of exactly as many backticks; without one
+                    // the backticks are plain text.
+                    let n = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+                    i += n;
+                    if let Some(close) = closing_run(&bytes[i..], n) {
+                        i += close + n;
+                    }
+                    continue;
+                }
+                b'[' if bytes.get(i + 1) == Some(&b'[') => {
                     if let Some(len) = line[i + 2..].find("]]") {
                         let inner = &line[i + 2..i + 2 + len];
-                        if !inner.contains(['[', ']', '\n']) {
-                            if let Some(found) = split(inner) {
-                                out.push((found.0, found.1, start + i));
+                        if !inner.contains(['[', ']']) {
+                            let embed = i > 0 && bytes[i - 1] == b'!';
+                            if let (false, Some((target, label))) = (embed, split(inner)) {
+                                out.push((target, label, start + i));
                             }
                             i += len + 4;
                             continue;
@@ -67,6 +81,23 @@ pub(crate) fn parse(body: &str) -> Vec<(String, Option<String>, usize)> {
         }
     }
     out
+}
+
+/// Where a run of exactly `n` backticks starts in `bytes`.
+fn closing_run(bytes: &[u8], n: usize) -> Option<usize> {
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let len = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            if len == n {
+                return Some(i);
+            }
+            i += len;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 /// `Target#heading|label` as its target and label; none when the target is empty.
@@ -130,9 +161,18 @@ fn read(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Vec
     let rows: Vec<(String, String, Option<String>)> = stmt
         .query_map(args, |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;
+    // One lookup per distinct target, however often it is written.
+    let mut resolved: HashMap<String, Option<String>> = HashMap::new();
     rows.into_iter()
         .map(|(from, target, label)| {
-            let to = resolve(conn, &target)?;
+            let to = match resolved.get(&target) {
+                Some(to) => to.clone(),
+                None => {
+                    let to = resolve(conn, &target)?;
+                    resolved.insert(target.clone(), to.clone());
+                    to
+                }
+            };
             Ok(Link {
                 from,
                 target,
@@ -165,7 +205,7 @@ impl Vault {
                 params![path],
                 |r| r.get::<_, String>(0),
             )
-            .ok()
+            .optional()?
         else {
             return Ok(Vec::new());
         };
@@ -227,9 +267,27 @@ mod tests {
     #[test]
     fn broken_and_empty_brackets_are_not_links() {
         assert_eq!(
-            targets("[[]] [[ ]] [[open\nclose]] [[a [b] c]] [[#only heading]]"),
+            targets("[[]] [[ ]] [[open\nclose]] [[a [b] c]] [[#only heading]] ![[photo.png]]"),
             vec![]
         );
+    }
+
+    #[test]
+    fn backticks_without_a_partner_are_plain_text() {
+        assert_eq!(
+            targets("Don`t forget [[Plan]]"),
+            vec![("Plan".into(), None)]
+        );
+        assert_eq!(
+            targets("``[[x]] ` [[y]]`` then [[z]]"),
+            vec![("z".into(), None)]
+        );
+    }
+
+    #[test]
+    fn a_fence_closes_only_on_its_own_run() {
+        let body = "````\n```\n[[Inside]]\n```rust\n````\n[[Outside]]\n";
+        assert_eq!(targets(body), vec![("Outside".into(), None)]);
     }
 
     #[test]

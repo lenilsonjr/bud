@@ -1,6 +1,6 @@
 //! Links between buds: what the index keeps, what it resolves to, and how it follows edits.
 
-use bud_core::{Kind, Link, Vault};
+use bud_core::{Kind, Link, Place, Vault};
 use pretty_assertions::assert_eq;
 
 fn vault_with(files: &[(&str, &str)]) -> (Vault, tempfile::TempDir, tempfile::TempDir) {
@@ -128,4 +128,48 @@ fn a_rescan_rebuilds_the_same_links() {
     let before = vault.links("Launch.md").unwrap();
     vault.rescan().unwrap();
     assert_eq!(vault.links("Launch.md").unwrap(), before);
+}
+
+#[test]
+fn trashing_hides_a_buds_links_and_restoring_brings_them_back() {
+    let (mut vault, _dir, _index) = vault_with(WORLD);
+    vault.trash("Launch/Welcome list.md").unwrap();
+    assert!(
+        vault.backlinks("Launch.md").unwrap().is_empty(),
+        "its link to Launch is hidden"
+    );
+    assert_eq!(
+        vault.links("Launch.md").unwrap()[0].to,
+        None,
+        "trash is never a target"
+    );
+
+    vault.trash("Kitchen.md").unwrap();
+    let trashed = vault
+        .roots(Place::Trash)
+        .unwrap()
+        .into_iter()
+        .find(|b| b.title == "Kitchen")
+        .unwrap()
+        .path;
+    assert!(vault.links(&trashed).unwrap().is_empty());
+    let back = vault.restore(&trashed).unwrap();
+    assert_eq!(vault.links(&back).unwrap().len(), 1);
+}
+
+#[test]
+fn a_deleted_bud_leaves_no_links_behind() {
+    let (mut vault, dir, _index) = vault_with(WORLD);
+    std::fs::remove_file(dir.path().join("Kitchen.md")).unwrap();
+    vault.rescan().unwrap();
+    assert!(vault.links("Kitchen.md").unwrap().is_empty());
+    assert_eq!(
+        vault
+            .unresolved_links()
+            .unwrap()
+            .into_iter()
+            .map(|l| l.target)
+            .collect::<Vec<_>>(),
+        vec!["Nowhere".to_string()]
+    );
 }
