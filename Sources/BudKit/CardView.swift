@@ -45,6 +45,7 @@ struct CardView: View {
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.hubMark)
+                .accessibilityHidden(true)
             Text("Everything")
                 .textRole(.title)
                 .foregroundStyle(Theme.hubInk)
@@ -61,6 +62,9 @@ struct CardView: View {
         .background(hubBackground.overlay(wash(Radius.hub)))
         .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, onTap)
     }
 
     /// Inside a thread the thread is the hub (A2): its box in the corner when it is a to-do, the
@@ -101,6 +105,7 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
+        .accessibilityValue(bud.isDone ? "Done" : "")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
@@ -147,6 +152,7 @@ struct CardView: View {
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
         // moves land once, on the card.
         .accessibilityElement(children: .combine)
+        .accessibilityValue(bud.isDone ? "Done" : "")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(.default, onTap)
         .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
