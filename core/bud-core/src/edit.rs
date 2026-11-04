@@ -8,7 +8,9 @@
 use crate::frontmatter;
 use crate::lock;
 use crate::scan;
-use crate::{insert_row, links, tags, Error, Kind, Placement, Properties, Result, State, Vault};
+use crate::{
+    insert_row, links, tags, Error, Kind, Place, Placement, Properties, Result, State, Vault,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -258,8 +260,53 @@ impl Vault {
             return Err(Error::Invalid(format!("not in the trash: {path}")));
         };
         let restored = self.relocate(path, new_dir)?;
-        // Folders the trash only held for this bud's sake go with it.
-        let mut dir = old_dir.rsplit_once('/').map_or("", |(parent, _)| parent);
+        self.prune_trash(old_dir)?;
+        Ok(restored)
+    }
+
+    /// Remove a trashed bud for good: its file and its folder first, then its row and every row
+    /// below it. A bud outside the trash is refused. Its document stays until the next sync, which
+    /// records the removal for the peers.
+    pub fn delete_forever(&mut self, path: &str) -> Result<()> {
+        let dir = dir_of(path);
+        if !dir.starts_with(".trash/") {
+            return Err(Error::Invalid(format!("not in the trash: {path}")));
+        }
+        self.bud(path)?
+            .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
+        if path.ends_with(".md") {
+            std::fs::remove_file(self.root.join(path))?;
+        }
+        let folder = self.root.join(dir);
+        if folder.is_dir() {
+            std::fs::remove_dir_all(&folder)?;
+        }
+
+        {
+            let mut conn = lock(&self.conn);
+            let tx = conn.transaction()?;
+            tx.execute(
+                "DELETE FROM buds WHERE path = ?1 OR path = ?2
+                 OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
+                params![path, dir],
+            )?;
+            tx.commit()?;
+        }
+        self.prune_trash(dir)
+    }
+
+    /// Remove every bud in the trash for good.
+    pub fn empty_trash(&mut self) -> Result<()> {
+        for bud in self.roots(Place::Trash)? {
+            self.delete_forever(&bud.path)?;
+        }
+        Ok(())
+    }
+
+    /// Folders the trash only held for the sake of the bud that left `dir` go with it, and so do
+    /// their rows.
+    fn prune_trash(&self, dir: &str) -> Result<()> {
+        let mut dir = dir.rsplit_once('/').map_or("", |(parent, _)| parent);
         while dir.contains('/') {
             if std::fs::remove_dir(self.root.join(dir)).is_err() {
                 break;
@@ -267,13 +314,14 @@ impl Vault {
             lock(&self.conn).execute("DELETE FROM buds WHERE path = ?1", params![dir])?;
             dir = dir.rsplit_once('/').map_or("", |(parent, _)| parent);
         }
-        Ok(restored)
+        Ok(())
     }
 
-    /// Set `state: open|done` on one bud. Its children are untouched.
-    pub fn set_state(&mut self, path: &str, state: State) -> Result<()> {
+    /// Set `state: open|done` on one bud; none removes it and makes the bud a note. Its children
+    /// are untouched.
+    pub fn set_state(&mut self, path: &str, state: Option<State>) -> Result<()> {
         let mut props = self.properties_of(path)?;
-        props.state = Some(state);
+        props.state = state;
         self.set_properties(path, &props)
     }
 
@@ -281,6 +329,20 @@ impl Vault {
     pub fn set_pinned(&mut self, path: &str, pinned: bool) -> Result<()> {
         let mut props = self.properties_of(path)?;
         props.pinned = pinned;
+        self.set_properties(path, &props)
+    }
+
+    /// Set `when` (`YYYY-MM-DD`) on one bud; none removes it.
+    pub fn set_when(&mut self, path: &str, when: Option<&str>) -> Result<()> {
+        let mut props = self.properties_of(path)?;
+        props.when = when.map(str::to_string);
+        self.set_properties(path, &props)
+    }
+
+    /// Set `due` (`YYYY-MM-DD`) on one bud; none removes it.
+    pub fn set_due(&mut self, path: &str, due: Option<&str>) -> Result<()> {
+        let mut props = self.properties_of(path)?;
+        props.due = due.map(str::to_string);
         self.set_properties(path, &props)
     }
 

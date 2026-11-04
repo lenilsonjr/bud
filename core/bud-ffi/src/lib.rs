@@ -585,12 +585,23 @@ impl Vault {
         Ok(self.core().set_body(&path, &text)?)
     }
 
-    pub fn set_state(&self, path: String, state: BudState) -> Result<()> {
-        Ok(self.core().set_state(&path, state.into())?)
+    /// None removes the state and makes the bud a note.
+    pub fn set_state(&self, path: String, state: Option<BudState>) -> Result<()> {
+        Ok(self.core().set_state(&path, state.map(Into::into))?)
     }
 
     pub fn set_pinned(&self, path: String, pinned: bool) -> Result<()> {
         Ok(self.core().set_pinned(&path, pinned)?)
+    }
+
+    /// The day to do the bud (`YYYY-MM-DD`); none clears it.
+    pub fn set_when(&self, path: String, when: Option<String>) -> Result<()> {
+        Ok(self.core().set_when(&path, when.as_deref())?)
+    }
+
+    /// The day the bud is due (`YYYY-MM-DD`); none clears it.
+    pub fn set_due(&self, path: String, due: Option<String>) -> Result<()> {
+        Ok(self.core().set_due(&path, due.as_deref())?)
     }
 
     /// Returns the new path.
@@ -610,6 +621,16 @@ impl Vault {
     /// Returns the restored path.
     pub fn restore(&self, path: String) -> Result<String> {
         Ok(self.core().restore(&path)?)
+    }
+
+    /// Remove a bud in the Trash and its branch for good; a bud elsewhere is refused.
+    pub fn delete_forever(&self, path: String) -> Result<()> {
+        Ok(self.core().delete_forever(&path)?)
+    }
+
+    /// Remove every bud in the Trash for good.
+    pub fn empty_trash(&self) -> Result<()> {
+        Ok(self.core().empty_trash()?)
     }
 
     pub fn search(&self, query: String, limit: u64) -> Result<Vec<HitRecord>> {
