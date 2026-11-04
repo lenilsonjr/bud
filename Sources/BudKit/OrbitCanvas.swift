@@ -181,11 +181,27 @@ public struct OrbitCanvas: View {
             }
             .onEnded { _ in
                 guard dragging == id else { return }
+                if let other = swapTarget(for: id) {
+                    withAnimation(.spring(duration: 0.5, bounce: 0.15)) { _ = store.swap(id, other) }
+                }
                 motion.sim.release(id)
                 dragging = nil
                 dragStart = nil
                 animating = true
             }
+    }
+
+    /// The sibling whose slot the held card was let go on: within half a card of it. The hub and
+    /// the center never swap.
+    private func swapTarget(for id: UUID) -> UUID? {
+        guard id != rootID, let placed = store.layout.cards[id], !placed.hub, placed.role != .center,
+            let held = motion.sim.positions[id], let parent = store.tree.parent(of: id)
+        else { return nil }
+        let size = Metrics.size(hub: false)
+        return store.tree.children(of: parent).map(\.id).first { other in
+            guard other != id, let slot = store.layout.cards[other], !slot.hub, slot.role != .center else { return false }
+            return abs(held.x - slot.position.x) < size.width / 2 && abs(held.y - slot.position.y) < size.height / 2
+        }
     }
 
     /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.

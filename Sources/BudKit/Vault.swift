@@ -121,6 +121,9 @@ public protocol Vault: Sendable {
     /// Gives the bud and its branch a new parent, last among its children; nil is the top level.
     /// Returns the new path.
     func move(_ path: String, to parent: String?) async throws -> String
+    /// Puts a parent's children in the order of `paths`; nil is the top level. A vault on disk
+    /// keeps its own file order until it can store one.
+    func reorder(_ paths: [String], under parent: String?) async throws
     func trash(_ path: String) async throws
     /// Returns the restored path.
     func restore(_ path: String) async throws -> String
