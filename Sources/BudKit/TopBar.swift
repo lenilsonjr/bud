@@ -40,6 +40,7 @@ struct TopBar: View {
                 }
                 .buttonStyle(.plain)
                 .help("Capture")
+                .accessibilityLabel("Capture")
             } else {
                 if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
                 #if os(macOS)
