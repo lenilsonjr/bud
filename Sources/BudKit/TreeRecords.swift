@@ -56,17 +56,20 @@ extension Tree {
 
     /// A tree from a vault's records. Siblings keep the order the records came in. A branch in the
     /// Trash is one the records place there whose parent is not in the Trash with it; `trashedAt`
-    /// says when each went in, for a branch the caller has seen before.
-    public init(records: [BudRecord], trashedAt: (UUID) -> Date? = { _ in nil }) {
+    /// says when each went in, for a branch the caller has seen before. `id` names the bud at a
+    /// path, so one a vault moved can keep the id it had.
+    public init(
+        records: [BudRecord], trashedAt: (UUID) -> Date? = { _ in nil }, id: (String) -> UUID = Bud.id(forPath:)
+    ) {
         func bud(from record: BudRecord, order: Double) -> Bud {
             let parent: UUID
             if let up = record.parent {
-                parent = Bud.id(forPath: up)
+                parent = id(up)
             } else {
                 parent = record.place == .inbox ? inboxID : rootID
             }
             return Bud(
-                id: Bud.id(forPath: record.path), text: record.title,
+                id: id(record.path), text: record.title,
                 state: record.state ?? (record.kind == .todo ? .open : nil), parent: parent, order: order,
                 body: record.body, when: record.when, due: record.due, pinned: record.pinned,
                 created: record.created ?? Date(timeIntervalSince1970: 0), source: record.source
@@ -81,7 +84,7 @@ extension Tree {
         var gone: [Bud] = []
         for record in records {
             let isGone = record.place == .trash
-            let parent = record.parent.map(Bud.id(forPath:)) ?? (record.place == .inbox ? inboxID : rootID)
+            let parent = record.parent.map(id) ?? (record.place == .inbox ? inboxID : rootID)
             let made = bud(from: record, order: next(under: parent, trashed: isGone))
             if isGone { gone.append(made) } else { live.append(made) }
         }

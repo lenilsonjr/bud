@@ -94,6 +94,9 @@ public final class BudStore: ObservableObject {
     /// Counts local changes, so a snapshot taken before one is never applied after it.
     private var generation = 0
     private var watch: VaultWatch?
+    /// Where the vault keeps each bud. Writes look a path up when they run, after the writes
+    /// before them, so a bud planted a moment ago is found where the vault put it.
+    private var book = PathBook()
 
     /// A store over a vault. It shows `tree` at once and loads the vault's snapshot over it; the
     /// vault's `watch` reloads it again whenever the vault changes under it.
@@ -140,7 +143,8 @@ public final class BudStore: ObservableObject {
         let started = generation
         guard let records = try? await vault.snapshot(), started == generation, inFlight == 0 else { return }
         let seen = Dictionary(tree.trashed.map { ($0.id, $0.at) }, uniquingKeysWith: { first, _ in first })
-        let loaded = Tree(records: records, trashedAt: { seen[$0] })
+        book.keep(records)
+        let loaded = Tree(records: records, trashedAt: { seen[$0] }, id: book.id(for:))
         guard loaded != tree else { return }
         tree = loaded
         if center != rootID, tree.bud(center) == nil { center = rootID }
@@ -161,7 +165,7 @@ public final class BudStore: ObservableObject {
 
     /// Runs a vault write after the ones before it, then reloads. A write the vault refuses is
     /// undone by that reload, which shows what the vault holds.
-    private func write(_ operation: @escaping (Vault) async throws -> Void) {
+    private func write(_ operation: @escaping @MainActor (Vault) async throws -> Void) {
         inFlight += 1
         let previous = pending
         pending = Task { @MainActor [self] in
@@ -172,9 +176,20 @@ public final class BudStore: ObservableObject {
         }
     }
 
+    /// The path a bud has in the vault right now.
+    private func path(_ id: UUID) -> String { book.path(of: id) }
+
     /// The path a vault knows a parent by: Everything is the top level, nil.
     private func parentPath(_ id: UUID) -> String? {
-        id == rootID ? nil : id.uuidString
+        if id == rootID { return nil }
+        return id == inboxID ? vault.inboxPath : path(id)
+    }
+
+    /// Runs a write that gives a bud a new path, and follows it there.
+    private func relocate(_ id: UUID, _ operation: (Vault, String) async throws -> String) async throws {
+        let old = path(id)
+        let new = try await operation(vault, old)
+        book.move(from: old, to: new)
     }
 
     nonisolated public static var defaultFile: URL? {
@@ -226,8 +241,12 @@ public final class BudStore: ObservableObject {
         commit { planted = $0.add(line, todo: todo, under: parent) }
         guard let planted else { return nil }
         let id = planted.id
-        let up = parentPath(parent)
-        write { _ = try await $0.create(parent: up, title: line, kind: todo ? .todo : .note, source: nil, preferredPath: id.uuidString) }
+        write { [self] vault in
+            let path = try await vault.create(
+                parent: parentPath(parent), title: line, kind: todo ? .todo : .note, source: nil, preferredPath: id.uuidString
+            )
+            book.learn(id, at: path)
+        }
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted under \(tree.title(of: parent))") { [weak self] in
             Task { @MainActor in self?.remove(id) }
@@ -265,7 +284,12 @@ public final class BudStore: ObservableObject {
         commit { captured = $0.capture(line, source: source) }
         guard let captured else { return nil }
         let id = captured.id
-        write { _ = try await $0.create(parent: inboxID.uuidString, title: line, kind: .note, source: source, preferredPath: id.uuidString) }
+        write { [self] vault in
+            let path = try await vault.create(
+                parent: vault.inboxPath, title: line, kind: .note, source: source, preferredPath: id.uuidString
+            )
+            book.learn(id, at: path)
+        }
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Captured to the Inbox") { [weak self] in
             Task { @MainActor in self?.remove(id) }
@@ -301,19 +325,20 @@ public final class BudStore: ObservableObject {
         var moved = false
         commit { moved = $0.move(id, under: parent) }
         guard moved else { return false }
-        let up = parentPath(parent)
-        write { _ = try await $0.move(id.uuidString, to: up) }
+        write { [self] _ in
+            let up = parentPath(parent)
+            try await relocate(id) { try await $0.move($1, to: up) }
+        }
         return true
     }
 
     public func update(_ id: UUID, text: String, todo: Bool) {
         guard let before = tree.bud(id) else { return }
         commit { $0.update(id, text: text, todo: todo) }
-        let path = id.uuidString
-        write { vault in
-            if text != before.text { _ = try await vault.rename(path, to: text) }
-            if todo, before.state == nil { try await vault.setState(path, .open) }
-            if !todo, before.state != nil { try await vault.setState(path, nil) }
+        write { [self] vault in
+            if text != before.text { try await relocate(id) { try await $0.rename($1, to: text) } }
+            if todo, before.state == nil { try await vault.setState(path(id), .open) }
+            if !todo, before.state != nil { try await vault.setState(path(id), nil) }
         }
     }
 
@@ -325,8 +350,8 @@ public final class BudStore: ObservableObject {
                 tree.buds[i].state = state
             }
         }
-        write { vault in
-            for id in ids { try await vault.setState(id.uuidString, state) }
+        write { [self] vault in
+            for id in ids { try await vault.setState(path(id), state) }
         }
     }
 
@@ -367,22 +392,22 @@ public final class BudStore: ObservableObject {
 
     public func setBody(_ id: UUID, _ body: String) {
         commit { $0.setBody(id, body) }
-        write { try await $0.setBody(id.uuidString, body) }
+        write { [self] in try await $0.setBody(path(id), body) }
     }
 
     public func setWhen(_ id: UUID, _ when: Date?) {
         commit { $0.setWhen(id, when) }
-        write { try await $0.setWhen(id.uuidString, when) }
+        write { [self] in try await $0.setWhen(path(id), when) }
     }
 
     public func setDue(_ id: UUID, _ due: Date?) {
         commit { $0.setDue(id, due) }
-        write { try await $0.setDue(id.uuidString, due) }
+        write { [self] in try await $0.setDue(path(id), due) }
     }
 
     public func setPinned(_ id: UUID, _ pinned: Bool) {
         commit { $0.setPinned(id, pinned) }
-        write { try await $0.setPinned(id.uuidString, pinned) }
+        write { [self] in try await $0.setPinned(path(id), pinned) }
     }
 
     /// Trades the places of two siblings in the orbit and offers to trade them back.
@@ -406,18 +431,17 @@ public final class BudStore: ObservableObject {
         var traded = false
         commit { traded = $0.swap(a, b) }
         guard traded, let parent = tree.bud(a)?.parent else { return false }
-        let paths = tree.children(of: parent).map(\.id.uuidString)
-        let up = parentPath(parent)
-        write { try await $0.reorder(paths, under: up) }
+        let order = tree.children(of: parent).map(\.id)
+        write { [self] in try await $0.reorder(order.map(path), under: parentPath(parent)) }
         return true
     }
 
     /// Takes a bud and its branch away without a trace: no Trash, no toast.
     public func remove(_ id: UUID) {
         commit { $0.remove(id) }
-        write { vault in
-            try await vault.trash(id.uuidString)
-            try await vault.deleteForever(id.uuidString)
+        write { [self] vault in
+            try await relocate(id) { try await $0.trash($1) }
+            try await vault.deleteForever(path(id))
         }
     }
 
@@ -433,12 +457,12 @@ public final class BudStore: ObservableObject {
 
     private func sendToTrash(_ id: UUID) {
         commit { $0.trash(id) }
-        write { try await $0.trash(id.uuidString) }
+        write { [self] _ in try await relocate(id) { try await $0.trash($1) } }
     }
 
     private func putBack(_ id: UUID) {
         commit { $0.restore(id) }
-        write { _ = try await $0.restore(id.uuidString) }
+        write { [self] _ in try await relocate(id) { try await $0.restore($1) } }
     }
 
     /// Puts a branch back from the Trash and offers to trash it again.
@@ -453,7 +477,7 @@ public final class BudStore: ObservableObject {
     /// Drops a branch from the Trash for good. Not undoable: the dialog asks first.
     public func deleteForever(_ id: UUID) {
         commit { $0.deleteForever(id) }
-        write { try await $0.deleteForever(id.uuidString) }
+        write { [self] in try await $0.deleteForever(path(id)) }
     }
 
     public func emptyTrash() {

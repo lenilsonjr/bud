@@ -95,10 +95,11 @@ public actor MemoryVault: Vault {
         save()
     }
 
-    public func trash(_ path: String) async throws {
+    public func trash(_ path: String) async throws -> String {
         let id = try known(path)
         tree.trash(id)
         save()
+        return path
     }
 
     public func restore(_ path: String) async throws -> String {

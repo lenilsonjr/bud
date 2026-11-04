@@ -104,6 +104,9 @@ public final class VaultWatch: @unchecked Sendable {
 /// Where BudKit reads and writes buds. The app plugs in a vault; a view never touches a file.
 /// Paths name buds; a vault that renames or moves a bud returns the new path.
 public protocol Vault: Sendable {
+    /// The path the Inbox goes by, as a parent.
+    var inboxPath: String { get }
+
     /// Every bud, parents before children, siblings in their order, the Trash's buds last.
     func snapshot() async throws -> [BudRecord]
 
@@ -124,7 +127,9 @@ public protocol Vault: Sendable {
     /// Puts a parent's children in the order of `paths`; nil is the top level. A vault on disk
     /// keeps its own file order until it can store one.
     func reorder(_ paths: [String], under parent: String?) async throws
-    func trash(_ path: String) async throws
+    /// Returns the path in the Trash.
+    @discardableResult
+    func trash(_ path: String) async throws -> String
     /// Returns the restored path.
     func restore(_ path: String) async throws -> String
     func emptyTrash() async throws
@@ -140,4 +145,8 @@ public protocol Vault: Sendable {
     func nextStep(under: String?, date: Date) async throws -> RowRecord?
     /// Calls back once per batch of changes made outside the app.
     func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch
+}
+
+extension Vault {
+    public var inboxPath: String { inboxID.uuidString }
 }
