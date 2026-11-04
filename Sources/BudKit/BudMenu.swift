@@ -24,6 +24,9 @@ struct BudMenu: ViewModifier {
     func body(content: Content) -> some View {
         if id == rootID {
             content
+        } else if reorder {
+            // VoiceOver offers the same moves as rotor actions, without opening the menu.
+            attach(content).accessibilityActions { BudShiftItems(id: id, store: store) }
         } else {
             attach(content)
         }
