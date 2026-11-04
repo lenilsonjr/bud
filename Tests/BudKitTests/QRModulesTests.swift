@@ -22,8 +22,18 @@ final class QRModulesTests: XCTestCase {
         let modules = try XCTUnwrap(QRModules.encode(text))
         XCTAssertEqual(modules.count, modules.first?.count, "A QR code is square")
         XCTAssertEqual((modules.count - 21) % 4, 0, "A QR code has 21 + 4k modules a side")
-        // The finder square in the top-left corner: a dark ring seven modules wide.
-        XCTAssertTrue((0..<7).allSatisfy { modules[0][$0] && modules[6][$0] && modules[$0][0] && modules[$0][6] })
+        // Finder squares, dark rings seven modules wide, sit top left, top right and bottom left and
+        // never bottom right: the code is the right way up, not mirrored.
+        let n = modules.count
+        func finder(row: Int, column: Int) -> Bool {
+            (0..<7).allSatisfy {
+                modules[row][column + $0] && modules[row + 6][column + $0] && modules[row + $0][column] && modules[row + $0][column + 6]
+            }
+        }
+        XCTAssertTrue(finder(row: 0, column: 0))
+        XCTAssertTrue(finder(row: 0, column: n - 7))
+        XCTAssertTrue(finder(row: n - 7, column: 0))
+        XCTAssertFalse(finder(row: n - 7, column: n - 7), "A finder at the bottom right means the code is upside down")
         XCTAssertEqual(try decode(modules), text)
     }
 
