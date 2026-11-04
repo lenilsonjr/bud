@@ -27,7 +27,7 @@ use loro::{
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const KEYS: [&str; 6] = ["state", "when", "due", "pinned", "created", "source"];
 
@@ -44,7 +44,8 @@ pub struct SyncReport {
     pub updated: usize,
     /// Files written because their document had moved on.
     pub written: usize,
-    /// Buds renamed, moved, trashed or restored on disk to follow the tree document.
+    /// Buds renamed, moved, trashed, restored or deleted for good on disk to follow the tree
+    /// document.
     pub moved: usize,
     /// Operations added to the documents, the tree document included.
     pub ops: usize,
@@ -283,6 +284,19 @@ impl Tree {
             .collect()
     }
 
+    /// Bud identities whose node is deleted, itself or with an ancestor, and that no live node
+    /// carries.
+    fn gone(&self) -> HashSet<String> {
+        let live = self.nodes();
+        self.tree
+            .nodes()
+            .into_iter()
+            .filter(|node| self.tree.is_node_deleted(node).unwrap_or(false))
+            .filter_map(|node| text_of(self.tree.get_meta(node).ok()?.get("bud")))
+            .filter(|id| !live.contains_key(id))
+            .collect()
+    }
+
     fn meta(&self, node: TreeID) -> Result<LoroMap> {
         self.tree.get_meta(node).map_err(tree_fail)
     }
@@ -385,8 +399,11 @@ impl Vault {
                 })
                 .optional()?;
             conn.execute("DELETE FROM docs WHERE path = ?1", params![path])?;
+            // A child goes with its parent: its node is already deleted when its turn comes.
             if let Some(node) = id.and_then(|id| nodes.get(&id)) {
-                tree.tree.delete(*node).map_err(tree_fail)?;
+                if !tree.tree.is_node_deleted(node).unwrap_or(true) {
+                    tree.tree.delete(*node).map_err(tree_fail)?;
+                }
             }
         }
         for bud in &buds {
@@ -828,7 +845,12 @@ impl Vault {
             .map(|(id, path)| (path.as_str(), id.as_str()))
             .collect();
         let mut nodes = tree.nodes();
+        let gone = tree.gone();
         for (id, path) in &rows {
+            // A deleted bud stays deleted; [`Vault::forget_gone`] settles what is left of it here.
+            if gone.contains(id) {
+                continue;
+            }
             let Some(bud) = self.bud(path)? else {
                 continue;
             };
@@ -880,6 +902,7 @@ impl Vault {
     /// Make the folder follow the tree: parents first, so a bud's place is settled before its
     /// children are looked at.
     fn apply_tree(&mut self, tree: &Tree, report: &mut SyncReport) -> Result<()> {
+        self.forget_gone(tree, report)?;
         let nodes = tree.nodes();
         let mut order: Vec<(usize, String, TreeID)> = nodes
             .iter()
@@ -940,6 +963,48 @@ impl Vault {
                 };
                 self.move_to(&path, target)?;
                 report.moved += 1;
+            }
+        }
+        Ok(())
+    }
+
+    /// Settle the buds whose node a peer deleted for good. One still in the trash here goes for
+    /// good too: its file, its folder, its rows and its document. One that is not, because it was
+    /// restored here before the deletion arrived, is kept: it takes a new identity, it and every
+    /// bud under it, so the next sync records it as a new bud and the peers get it back. Losing
+    /// what someone just chose to keep is worse than seeing a deleted bud return.
+    fn forget_gone(&mut self, tree: &Tree, report: &mut SyncReport) -> Result<()> {
+        let gone = tree.gone();
+        if gone.is_empty() {
+            return Ok(());
+        }
+        let rows: Vec<(String, String)> = {
+            let conn = lock(&self.conn);
+            let mut stmt = conn.prepare("SELECT id, path FROM docs ORDER BY length(path), path")?;
+            let found = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            found.collect::<std::result::Result<_, _>>()?
+        };
+        for (id, path) in rows.into_iter().filter(|(id, _)| gone.contains(id)) {
+            // Gone already with a bud above it.
+            if self.path_of(&id).ok().as_deref() != Some(path.as_str()) {
+                continue;
+            }
+            if path.starts_with(".trash/") {
+                if self.bud(&path)?.is_some() {
+                    self.purge(&path)?;
+                    report.moved += 1;
+                }
+                let dir = path.strip_suffix(".md").unwrap_or(&path);
+                lock(&self.conn).execute(
+                    "DELETE FROM docs WHERE path = ?1
+                     OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
+                    params![path, dir],
+                )?;
+            } else if self.bud(&path)?.is_some() {
+                let conn = lock(&self.conn);
+                let fresh: String =
+                    conn.query_row("SELECT lower(hex(randomblob(16)))", [], |r| r.get(0))?;
+                conn.execute("UPDATE docs SET id = ?1 WHERE id = ?2", params![fresh, id])?;
             }
         }
         Ok(())
