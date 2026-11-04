@@ -4,6 +4,9 @@ name: Build check
 on:
   pull_request:
     branches: [main, develop]
+  # A run on develop leaves the Rust cache where every pull request can restore it.
+  push:
+    branches: [develop]
   workflow_dispatch:
 
 concurrency:
@@ -22,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       # tvOS is a tier 3 target: its slices need nightly with the standard library from source.
+      # Pinned, so a bad nightly cannot hold up every app build, and the cache key holds still.
       - name: Install nightly Rust for tvOS
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-10-15
           components: rust-src
       - name: Install stable Rust for macOS and iOS
         uses: dtolnay/rust-toolchain@stable
@@ -32,6 +37,8 @@ jobs:
           targets: aarch64-apple-darwin, x86_64-apple-darwin, aarch64-apple-ios, aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
       - name: Build the core
+        env:
+          BUD_NIGHTLY: nightly-2026-10-15
         run: scripts/build-core.sh
       - uses: actions/upload-artifact@v4
         with:
