@@ -7,7 +7,8 @@ import SwiftUI
 /// when you pinch. Dragging or scrolling moves it, tap a card with children to center it,
 /// tap a leaf to open it in place. A soft wash and the light rest under the pointer, or where
 /// the last tap landed on touch; the current orbit is in full light, the rest dims; Space opens
-/// that card, N plants a bud under it.
+/// that card, N plants a bud under it. Under the lit card a draft offers a new child; clicked, it
+/// becomes the inline bar that plants one line after another.
 public struct OrbitCanvas: View {
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
@@ -26,6 +27,13 @@ public struct OrbitCanvas: View {
     @State private var dragStart: CGPoint? = nil
     /// The ring card the held card would swap with if let go now, lit as the target.
     @State private var swapOver: UUID? = nil
+    /// The inline bar while the person types new buds on the canvas.
+    @State private var bar: InlineAdd? = nil
+    /// The card the draft sits under, held while the pointer is on the draft so it does not move.
+    @State private var draftFor: UUID? = nil
+    @State private var overDraft = false
+    /// Whether the bar's line has the keys; the canvas shortcuts wait while it does.
+    @FocusState private var barTyping: Bool
     private static let space = "orbit"
 
     private let lampReach: CGFloat = 170
@@ -47,6 +55,12 @@ public struct OrbitCanvas: View {
             }
             .onChange(of: store.layout) { _, now in
                 motion.retarget(to: now)
+                // The bar goes when nothing it could sit under is on the canvas any more.
+                if let current = bar, current.anchor(in: now, tree: store.tree) == nil { closeBar() }
+                if let held = draftFor, now.cards[held] == nil {
+                    draftFor = nil
+                    overDraft = false
+                }
                 if let id = dragging, now.cards[id] == nil {
                     dragging = nil
                     dragStart = nil
@@ -66,8 +80,12 @@ public struct OrbitCanvas: View {
             .onChange(of: size) { _, now in viewport = now }
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
-                case .active(let point): lamp = point
-                case .ended: lamp = nil
+                case .active(let point):
+                    lamp = point
+                    followDraft(at: point)
+                case .ended:
+                    lamp = nil
+                    if !overDraft { draftFor = nil }
                 }
             }
             .simultaneousGesture(magnifyGesture)
@@ -88,23 +106,34 @@ public struct OrbitCanvas: View {
         .onKeyPress(.escape) {
             // A card open over the canvas takes Escape for itself.
             guard store.modal == nil else { return .ignored }
-            if opened != nil { close() } else { stepOut() }
+            if bar != nil {
+                closeBar()
+            } else if opened != nil {
+                close()
+            } else {
+                stepOut()
+            }
             return .handled
         }
         .onKeyPress(.space) {
-            guard store.modal == nil else { return .ignored }
+            // While the bar's line is typing it takes every key.
+            guard store.modal == nil, !barTyping else { return .ignored }
             guard let lit = litCard(in: store.layout, viewport: viewport) else { return .ignored }
             open(lit)
             return .handled
         }
         .onKeyPress(KeyEquivalent("n")) {
-            // A card already open keeps the window: N does not replace it.
-            guard store.modal == nil else { return .ignored }
+            // A card already open keeps the window: N does not replace it. The bar types it.
+            guard store.modal == nil, !barTyping else { return .ignored }
             addUnderTheLitCard()
             return .handled
         }
+        .onChange(of: opened) { _, _ in overDraft = false }
+        .onChange(of: store.modal) { _, _ in overDraft = false }
+        .onChange(of: dragging) { _, _ in overDraft = false }
         .onChange(of: store.center) { _, _ in
             opened = nil
+            if bar?.line == nil { bar = nil }
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { camera = .zero }
         }
     }
@@ -130,7 +159,9 @@ public struct OrbitCanvas: View {
                 .onTapGesture(coordinateSpace: .local) { point in
                     focused = true
                     close()
+                    if bar?.line == nil { bar = nil }
                     lamp = point
+                    draftFor = litCard(in: store.layout, viewport: viewport)
                 }
             wash
             EdgesLayer(layout: layout, scale: scale, lifted: Set(lifted)) { screenPoint($0, in: size) }
@@ -154,6 +185,7 @@ public struct OrbitCanvas: View {
                     .zIndex(dragging == id || lit == id ? 2 : (placed.role == .center ? 1 : 0))
                 }
             }
+            inlineAdd(layout: layout, size: size)
             if let opened, let placed = layout.cards[opened] {
                 DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
                     .scaleEffect(scale)
@@ -205,6 +237,111 @@ public struct OrbitCanvas: View {
             guard other != id, let slot = store.layout.cards[other], !slot.hub, slot.role == .ring else { return false }
             return abs(held.x - slot.position.x) < size.width / 2 && abs(held.y - slot.position.y) < size.height / 2
         }
+    }
+
+    // MARK: inline add
+
+    /// The draft under the lit card, or the bar once the person clicked it.
+    @ViewBuilder private func inlineAdd(layout: Layout, size: CGSize) -> some View {
+        if let current = bar {
+            if let anchor = current.anchor(in: layout, tree: store.tree), let placed = layout.cards[anchor] {
+                InlineAddBar(
+                    // A line letting go of the keys writes its text back; once the bar is closed
+                    // that write must not bring it back.
+                    bar: Binding(get: { bar ?? current }, set: { if bar != nil { bar = $0 } }),
+                    typing: $barTyping,
+                    placeholder: current.placeholder(in: store.tree),
+                    onSubmit: plantFromBar,
+                    onNest: nestBar,
+                    onRise: riseBar,
+                    onClose: closeBar
+                )
+                .position(onScreen(under(placed, in: size, gap: 30), in: size))
+                .zIndex(4)
+            }
+        } else if dragging == nil, opened == nil, store.modal == nil,
+            let target = draftFor, let placed = layout.cards[target] {
+            InlineAddDraft(
+                onTap: { openBar(under: target) },
+                onHover: { inside in overDraft = inside }
+            )
+            .position(under(placed, in: size, gap: 26))
+            .zIndex(2)
+            .transition(.opacity)
+        }
+    }
+
+    /// The draft follows the lit card, but holds on its card while the pointer is between that
+    /// card and the draft, or on the draft, so it does not jump on the way down to it.
+    private func followDraft(at point: CGPoint) {
+        guard !overDraft else { return }
+        if let held = draftFor, let placed = store.layout.cards[held] {
+            let card = Metrics.size(hub: placed.hub)
+            let top = screenPoint(placed.position, in: viewport)
+            let width = max(card.width * scale, 160)
+            let zone = CGRect(x: top.x - width / 2, y: top.y, width: width, height: card.height / 2 * scale + 26 + 20)
+            if zone.contains(point) { return }
+        }
+        draftFor = litCard(in: store.layout, viewport: viewport)
+    }
+
+    /// A point just below a card on screen, `gap` points past its bottom edge.
+    private func under(_ placed: Placed, in size: CGSize, gap: CGFloat) -> CGPoint {
+        let at = screenPoint(placed.position, in: size)
+        return CGPoint(x: at.x, y: at.y + Metrics.size(hub: placed.hub).height / 2 * scale + gap)
+    }
+
+    /// Keeps the bar whole inside the viewport, whatever the camera shows.
+    private func onScreen(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        let half = InlineAddBar.width / 2 + 12
+        let x = size.width > half * 2 ? min(max(point.x, half), size.width - half) : size.width / 2
+        let y = min(max(point.y, 32), max(32, size.height - 32))
+        return CGPoint(x: x, y: y)
+    }
+
+    /// Moves the camera so the card the bar sits under is in view, when it is not.
+    private func followBar() {
+        guard let current = bar, let anchor = current.anchor(in: store.layout, tree: store.tree),
+            let placed = store.layout.cards[anchor] else { return }
+        let at = screenPoint(placed.position, in: viewport)
+        let safe = CGRect(origin: .zero, size: viewport).insetBy(dx: InlineAddBar.width / 2 + 12, dy: 120)
+        guard !safe.contains(at) else { return }
+        withAnimation(.spring(duration: 0.6, bounce: 0.1)) {
+            camera = CGPoint(x: placed.position.x, y: placed.position.y + 40 / scale)
+        }
+    }
+
+    private func openBar(under id: UUID) {
+        overDraft = false
+        draftFor = nil
+        bar = InlineAdd(under: id, todo: store.tree.suggestsTodo(under: id))
+    }
+
+    private func plantFromBar() {
+        guard var current = bar, let line = current.line else { return }
+        guard let bud = store.add(line, todo: current.todo, under: current.parent) else { return }
+        current.planted(bud.id)
+        bar = current
+    }
+
+    private func nestBar() {
+        guard var current = bar, let last = current.last, store.tree.bud(last) != nil else { return }
+        current.nest(todo: store.tree.suggestsTodo(under: last))
+        bar = current
+        followBar()
+    }
+
+    private func riseBar() {
+        guard var current = bar, let up = current.trail.last else { return }
+        current.rise(todo: store.tree.suggestsTodo(under: up))
+        bar = current
+        followBar()
+    }
+
+    private func closeBar() {
+        barTyping = false
+        bar = nil
+        focused = true
     }
 
     /// The light itself: a soft radial wash that follows the pointer and fades out when it leaves.
@@ -279,6 +416,7 @@ public struct OrbitCanvas: View {
     /// On touch the light has no pointer to follow, so it rests where the tap landed.
     private func tap(_ id: UUID, at point: CGPoint) {
         lamp = point
+        draftFor = id
         if id == rootID || store.tree.hasChildren(id) {
             if id == store.center {
                 if id != rootID { open(id) }
