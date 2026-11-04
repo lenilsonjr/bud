@@ -380,9 +380,9 @@ public final class BudStore: ObservableObject {
 
     /// Trades the places of two siblings in the orbit and offers to trade them back.
     @discardableResult
-    public func swap(_ a: UUID, _ b: UUID) -> Bool {
+    public func swap(_ a: UUID, _ b: UUID, message: String = "Swapped") -> Bool {
         guard trade(a, b) else { return false }
-        toasts.show(Undoable(message: "Swapped") { [weak self] in
+        toasts.show(Undoable(message: message) { [weak self] in
             Task { @MainActor in _ = self?.trade(a, b) }
         })
         return true
@@ -392,7 +392,7 @@ public final class BudStore: ObservableObject {
     @discardableResult
     public func shift(_ id: UUID, by offset: Int) -> Bool {
         guard let other = tree.sibling(of: id, offset: offset) else { return false }
-        return swap(id, other)
+        return swap(id, other, message: offset < 0 ? "Moved earlier" : "Moved later")
     }
 
     private func trade(_ a: UUID, _ b: UUID) -> Bool {

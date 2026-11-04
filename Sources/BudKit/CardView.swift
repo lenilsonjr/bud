@@ -97,7 +97,7 @@ struct CardView: View {
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.hub))
         .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
-        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
+        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
     private func chip(_ bud: Bud) -> some View {
@@ -135,7 +135,7 @@ struct CardView: View {
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.card))
         .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         .onTapGesture(perform: onTap)
-        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen)
+        .budMenu(id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: true)
     }
 
     private func chipBackground(_ bud: Bud) -> some View {

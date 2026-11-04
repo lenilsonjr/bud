@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The one menu for a bud, the system's own: a long press on touch and TV, a right click or
 /// control click on the Mac. Add inside…, Open, Open as file, Close or Reopen (Make a to-do for
-/// a note), Move up and Move down among its siblings, Move to…, then Trash. The hub (Everything) has no menu.
+/// a note), Move earlier and Move later where the surface shows every sibling (the canvas and the
+/// TV row), Move to…, then Trash. The hub (Everything) has no menu.
 ///
 /// Add inside… and Open take closures where the surface has its own way (the TV plants through
 /// its own sheet, the canvas opens the card in place); without them Add inside… raises the quick
@@ -13,6 +14,8 @@ struct BudMenu: ViewModifier {
     @ObservedObject var store: BudStore
     var onAdd: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
+    /// Offers Move earlier and Move later: only where every sibling is on screen.
+    var reorder = false
 
     #if !os(tvOS)
     @State private var moving: Bud? = nil
@@ -32,7 +35,7 @@ struct BudMenu: ViewModifier {
             if let onAdd { Button("Add inside…", systemImage: "plus", action: onAdd) }
             if let onOpen { Button("Open", systemImage: "arrow.up.left.and.arrow.down.right", action: onOpen) }
             stateItem
-            BudShiftItems(id: id, store: store)
+            if reorder { BudShiftItems(id: id, store: store) }
             Divider()
             trashItem
         }
@@ -41,7 +44,7 @@ struct BudMenu: ViewModifier {
     private func attach(_ content: Content) -> some View {
         content
             .contextMenu {
-                BudMenuItems(id: id, store: store, onAdd: onAdd, onOpen: onOpen, onMove: { moving = store.tree.bud(id) })
+                BudMenuItems(id: id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: reorder, onMove: { moving = store.tree.bud(id) })
             }
             .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
     }
@@ -75,18 +78,18 @@ struct BudStateItem: View {
     }
 }
 
-/// Move up and Move down: trade places with the sibling before or after, the reorder that needs
-/// no drag (Reduce Motion, VoiceOver, the TV remote). Each shows only when there is a sibling.
+/// Move earlier and Move later: trade places with the sibling before or after, the reorder that
+/// needs no drag (Reduce Motion, VoiceOver, the TV remote). Each shows only when there is one.
 struct BudShiftItems: View {
     let id: UUID
     @ObservedObject var store: BudStore
 
     var body: some View {
         if store.tree.sibling(of: id, offset: -1) != nil {
-            Button("Move up", systemImage: "arrow.up") { store.shift(id, by: -1) }
+            Button("Move earlier", systemImage: "arrow.uturn.backward") { store.shift(id, by: -1) }
         }
         if store.tree.sibling(of: id, offset: 1) != nil {
-            Button("Move down", systemImage: "arrow.down") { store.shift(id, by: 1) }
+            Button("Move later", systemImage: "arrow.uturn.forward") { store.shift(id, by: 1) }
         }
     }
 }
@@ -98,6 +101,7 @@ struct BudMenuItems: View {
     @ObservedObject var store: BudStore
     var onAdd: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
+    var reorder = false
     let onMove: () -> Void
 
     var body: some View {
@@ -111,7 +115,7 @@ struct BudMenuItems: View {
             Button("Open as file", systemImage: "doc.text") { store.openAsFile(id) }
         }
         BudStateItem(id: id, store: store)
-        BudShiftItems(id: id, store: store)
+        if reorder { BudShiftItems(id: id, store: store) }
         Button("Move to…", systemImage: "arrow.turn.down.right", action: onMove)
         Divider()
         Button("Trash", systemImage: "trash", role: .destructive) { store.trash(id) }
@@ -121,8 +125,8 @@ struct BudMenuItems: View {
 
 extension View {
     /// Attaches the bud menu for `id`. See `BudMenu`.
-    func budMenu(_ id: UUID, store: BudStore, onAdd: (() -> Void)? = nil, onOpen: (() -> Void)? = nil) -> some View {
-        modifier(BudMenu(id: id, store: store, onAdd: onAdd, onOpen: onOpen))
+    func budMenu(_ id: UUID, store: BudStore, onAdd: (() -> Void)? = nil, onOpen: (() -> Void)? = nil, reorder: Bool = false) -> some View {
+        modifier(BudMenu(id: id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: reorder))
     }
 }
 #endif

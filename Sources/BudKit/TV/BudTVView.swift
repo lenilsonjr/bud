@@ -208,7 +208,7 @@ struct TVCanvas: View {
                             TVCardFace(id: id, store: store, lit: focused == id)
                         }
                         .buttonStyle(.tvBare)
-                        .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { onOpen(id) })
+                        .budMenu(id, store: store, onAdd: { adding = TVAddTarget(id: id) }, onOpen: { onOpen(id) }, reorder: true)
                         .focused($focused, equals: id)
                         .opacity(focused == id ? 1 : lightLevel(role: placed.role, lifted: lifted.contains(id)))
                         .scaleEffect(scale * (focused == id ? 1.06 : 1))

@@ -109,6 +109,7 @@ final class StoreVaultTests: XCTestCase {
         await store.settle()
         let top = try await vault.snapshot().filter { $0.parent == nil && $0.place == .everything }.map(\.path)
         XCTAssertEqual(Array(top.prefix(2)), [threads[1].uuidString, threads[0].uuidString])
+        XCTAssertEqual(store.toasts.current?.action.message, "Moved later")
         XCTAssertFalse(store.shift(threads[1], by: -1), "Already first")
     }
 
