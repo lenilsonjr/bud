@@ -58,15 +58,15 @@ enum Launch {
 
     /// Plants the buds a device kept in the old JSON file into its empty vault, once, and sets
     /// the file aside. The Apple TV's vault is a cache its peers fill, and a file that only holds
-    /// the sample world is left out: two devices planting it would collide when they pair.
+    /// the untouched sample world is left out: two devices planting it would collide when they
+    /// pair. A sample that was ticked, pinned or written in is the person's own and is planted.
     /// Returns whether anything was planted.
     nonisolated static func bringOldBuds(into vault: RustVault, platform: VaultPlatform) -> Bool {
         guard platform != .tvOS, let file = BudStore.defaultFile, let data = try? Data(contentsOf: file),
               let tree = try? JSONDecoder().decode(Tree.self, from: data),
               (try? vault.core.snapshot().isEmpty) == true
         else { return false }
-        let sample = Set(Tree.seed().buds.map(\.text))
-        let planted = Set(tree.buds.map(\.text)) != sample
+        let planted = shape(of: tree) != shape(of: Tree.seed())
         if planted { vault.plant(tree.records()) }
         do {
             try FileManager.default.moveItem(at: file, to: file.deletingPathExtension().appendingPathExtension("imported.json"))
@@ -74,5 +74,13 @@ enum Launch {
             NSLog("Bud: the old buds file stays where it was: \(error)")
         }
         return planted
+    }
+
+    /// What tells a person's buds from the untouched sample world: each bud's title, state, pin
+    /// and body. Dates are left out, since the sample's are set from the day it was made.
+    private nonisolated static func shape(of tree: Tree) -> Set<String> {
+        Set(tree.records().filter { $0.place != .trash }.map { record in
+            [record.title, record.state?.rawValue ?? "note", String(record.pinned), record.body].joined(separator: "\u{1F}")
+        })
     }
 }

@@ -440,6 +440,23 @@ fn set_state_none_makes_a_note() {
 }
 
 #[test]
+fn set_created_keeps_the_moment_a_bud_was_first_made() {
+    let (mut vault, dir, _index) = vault_with(&[("Recipe.md", "Body\n")]);
+    vault
+        .set_created("Recipe.md", Some("2026-10-02T11:00:00Z"))
+        .unwrap();
+    assert_eq!(
+        read(dir.path(), "Recipe.md"),
+        "---\ncreated: 2026-10-02T11:00:00Z\n---\nBody\n"
+    );
+    let bud = vault.bud("Recipe.md").unwrap().unwrap();
+    assert_eq!(bud.created.as_deref(), Some("2026-10-02T11:00:00Z"));
+    vault.set_created("Recipe.md", Some("")).unwrap();
+    assert_eq!(read(dir.path(), "Recipe.md"), "---\n---\nBody\n");
+    assert_matches_rescan(&mut vault);
+}
+
+#[test]
 fn set_when_and_set_due_write_the_file_and_clear_with_none() {
     let (mut vault, dir, _index) = vault_with(&[("Draft issue.md", "---\nstate: open\n---\nD\n")]);
     vault

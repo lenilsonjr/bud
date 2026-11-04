@@ -386,6 +386,16 @@ impl Vault {
         self.set_properties(path, &props)
     }
 
+    /// Set `created` (an ISO moment, `2026-10-02T11:00:00Z`) on one bud, for a bud brought in
+    /// from elsewhere that keeps the moment it was first made; none or an empty one removes it.
+    pub fn set_created(&mut self, path: &str, created: Option<&str>) -> Result<()> {
+        let mut props = self.properties_of(path)?;
+        props.created = created
+            .filter(|moment| !moment.is_empty())
+            .map(str::to_string);
+        self.set_properties(path, &props)
+    }
+
     fn properties_of(&self, path: &str) -> Result<Properties> {
         let bud = self
             .bud(path)?
