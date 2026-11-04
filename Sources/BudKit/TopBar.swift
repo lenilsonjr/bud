@@ -20,8 +20,13 @@ struct TopBar: View {
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
             Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
-            if compact { lastCrumb.layoutPriority(1) } else { breadcrumb.layoutPriority(1) }
-            Spacer(minLength: 8)
+            if compact {
+                // The place name takes whatever the buttons leave, so it never clips early.
+                lastCrumb.frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                breadcrumb.layoutPriority(1)
+                Spacer(minLength: 8)
+            }
             if compact {
                 if let step = store.nextStep { bullseye(step.bud) }
                 if store.surface == .canvas { lensMenu }
@@ -265,11 +270,12 @@ struct TopBar: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Light up what matches")
-            .accessibilityLabel(activeLens.map { "Lens: \($0.name)" } ?? "Lens")
-            .accessibilityValue(store.canvasLens != nil && store.canvasLight.isEmpty ? "No matches" : "")
+            .accessibilityLabel(activeLens.map { "Lens: \($0.name)" + (nothingMatches ? ", no matches" : "") } ?? "Lens")
             .accessibilityIdentifier("canvas-lens")
         }
     }
+
+    private var nothingMatches: Bool { store.canvasLens != nil && store.canvasLight.isEmpty }
 
     private var activeLens: (name: String, query: LensQuery)? {
         LensQuery.canvasPresets.first { $0.query == store.canvasLens }
@@ -278,8 +284,9 @@ struct TopBar: View {
     /// On a narrow bar a bare glyph like the search glass beside it, filled while a lens is on;
     /// elsewhere a chip like the zoom with the lens's name.
     @ViewBuilder private var lensLabel: some View {
+        // Filled in leaf while the lens finds something; filled but quiet when it finds nothing.
         let glyph = Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-            .foregroundStyle(activeLens == nil ? Theme.text2 : Theme.leaf)
+            .foregroundStyle(activeLens == nil ? Theme.text2 : nothingMatches ? Theme.text3 : Theme.leaf)
         if compact {
             glyph
                 .frame(width: 28, height: 28)
@@ -288,7 +295,7 @@ struct TopBar: View {
             HStack(spacing: 6) {
                 glyph
                 if let active = activeLens {
-                    Text(store.canvasLight.isEmpty ? "No matches" : active.name)
+                    Text(nothingMatches ? "No matches" : active.name)
                         .textRole(.label)
                         .foregroundStyle(Theme.text)
                 }
