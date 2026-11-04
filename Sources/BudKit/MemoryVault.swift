@@ -87,8 +87,10 @@ public actor MemoryVault: Vault {
         return path
     }
 
+    /// A path the vault no longer knows, a bud deleted outside the app, is skipped rather than
+    /// refusing the whole order.
     public func reorder(_ paths: [String], under parent: String?) async throws {
-        let ids = try paths.map(known)
+        let ids = paths.compactMap { try? known($0) }
         tree.reorder(ids, under: try parentID(parent))
         save()
     }
