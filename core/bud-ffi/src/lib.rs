@@ -618,6 +618,12 @@ impl Vault {
         Ok(self.core().set_due(&path, due.as_deref())?)
     }
 
+    /// When the bud was first made (an ISO moment), for a bud brought in from elsewhere; none
+    /// clears it.
+    pub fn set_created(&self, path: String, created: Option<String>) -> Result<()> {
+        Ok(self.core().set_created(&path, created.as_deref())?)
+    }
+
     /// Returns the new path.
     pub fn rename(&self, path: String, new_title: String) -> Result<String> {
         Ok(self.core().rename(&path, &new_title)?)

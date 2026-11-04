@@ -85,6 +85,9 @@ final class RustVault: BudKit.Vault {
                 if let when = record.when { try core.setWhen(path: path, when: Self.day(when)) }
                 if let due = record.due { try core.setDue(path: path, due: Self.day(due)) }
                 if record.pinned { try core.setPinned(path: path, pinned: true) }
+                if let created = record.created {
+                    try core.setCreated(path: path, created: ISO8601DateFormatter().string(from: created))
+                }
                 if !record.body.isEmpty { try core.setBody(path: path, text: record.body) }
             } catch {
                 NSLog("Bud: \(record.title) did not plant: \(error)")
