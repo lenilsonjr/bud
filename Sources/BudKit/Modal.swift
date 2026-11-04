@@ -43,8 +43,8 @@ enum Modal: Hashable, Identifiable {
         }
     }
 
-    /// Enrich under an ordinary card; the hub is not a place to plant under, so it captures into
-    /// the Inbox instead.
+    /// An add on the canvas plants where it was asked, the hub included: only the capture button
+    /// and its shortcut send a line to the Inbox.
     static func adding(under id: UUID) -> Modal {
         switch PlantTarget.forCenter(id) {
         case .inbox: return .capture

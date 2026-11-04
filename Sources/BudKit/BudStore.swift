@@ -228,8 +228,8 @@ public final class BudStore: ObservableObject {
         return planted
     }
 
-    /// One line to where it belongs: the Inbox from Everything (a capture, a note, with its
-    /// source), or under the bud on screen (a bud of the kind asked for).
+    /// One line to where it belongs: the Inbox from the capture button (a capture, a note, with its
+    /// source), or under the bud on screen, Everything included (a bud of the kind asked for).
     @discardableResult
     public func plant(_ text: String, todo: Bool, at target: PlantTarget, source: String = BudStore.platformSource) -> Bud? {
         switch target {

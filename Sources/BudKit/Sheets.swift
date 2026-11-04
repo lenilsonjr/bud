@@ -9,8 +9,8 @@ enum AddMode: Hashable {
 }
 
 /// The quick add sheet: one line and a kind, Return plants it, Esc cancels. Opened by the + on a
-/// card or the N key for the lit card. In capture mode, opened by Add here in the bar or the
-/// hub's Capture button, it has no kind: a capture is a note until it is enriched.
+/// card or the N key for the lit card, on Everything too. In capture mode, opened by the capture
+/// button at the top right or its shortcut, it has no kind: a capture is a note until it is enriched.
 struct AddSheet: View {
     @ObservedObject var store: BudStore
     let mode: AddMode
@@ -83,7 +83,7 @@ struct AddSheet: View {
 
     private var heading: String {
         switch mode {
-        case .enrich(let parent): return "New bud under \(store.tree.title(of: parent))"
+        case .enrich(let parent): return PlantTarget.under(parent).title(in: store.tree)
         case .capture: return "Capture"
         }
     }

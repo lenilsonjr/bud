@@ -1,19 +1,22 @@
 import Foundation
 
-/// Where a quick line lands: in the Inbox when the screen shows Everything, under the bud on
-/// screen anywhere deeper. The same rule on every platform.
+/// Where a quick line lands: in the Inbox only from the capture button and its shortcut; an add
+/// on the canvas plants under the bud on screen, and on Everything at the top level, so it shows
+/// in the orbit. The same rule on every platform.
 public enum PlantTarget: Equatable, Sendable {
     case inbox
     case under(UUID)
 
+    /// An add on the canvas: under the bud on screen, Everything included.
     public static func forCenter(_ id: UUID) -> PlantTarget {
-        id == rootID ? .inbox : .under(id)
+        .under(id)
     }
 
-    /// The sheet's title: "New bud in Inbox" or "New bud under <title>".
+    /// The sheet's title: "New bud in Inbox", "New bud on Everything" or "New bud under <title>".
     public func title(in tree: Tree) -> String {
         switch self {
         case .inbox: return "New bud in Inbox"
+        case .under(let id) where id == rootID: return "New bud on Everything"
         case .under(let id): return "New bud under \(tree.title(of: id))"
         }
     }
