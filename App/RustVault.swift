@@ -20,6 +20,9 @@ final class RustVault: BudKit.Vault {
 
     var inboxPath: String { "Inbox" }
 
+    /// A bud that is only a folder gets its file on its first edit.
+    func pathAfterEdit(_ path: String) -> String { path.hasSuffix(".md") ? path : path + ".md" }
+
     func snapshot() async throws -> [BudKit.BudRecord] {
         try core.snapshot().map(Self.record)
     }
@@ -53,16 +56,18 @@ final class RustVault: BudKit.Vault {
     func deleteForever(_ path: String) async throws { try core.deleteForever(path: path) }
 
     /// Trashes everything, empties the Trash, and plants the records again, parents first.
-    func reset(to records: [BudKit.BudRecord]) async throws {
+    func reset(to records: [BudKit.BudRecord]) async throws -> [String: String] {
         for bud in try core.snapshot() where bud.parent == nil && bud.place != .trash {
             try core.trash(path: bud.path)
         }
         try core.emptyTrash()
-        try plant(records)
+        return try plant(records)
     }
 
-    /// Writes records as new files, parents first, the Trash left out.
-    func plant(_ records: [BudKit.BudRecord]) throws {
+    /// Writes records as new files, parents first, the Trash left out. Returns the path each
+    /// record's bud has now, by the record's path.
+    @discardableResult
+    func plant(_ records: [BudKit.BudRecord]) throws -> [String: String] {
         var planted: [String: String] = [:]
         for record in records where record.place != .trash {
             let parent = record.place == .inbox && record.parent == nil ? inboxPath : record.parent.flatMap { planted[$0] }
@@ -76,6 +81,7 @@ final class RustVault: BudKit.Vault {
             if record.pinned { try core.setPinned(path: path, pinned: true) }
             if !record.body.isEmpty { try core.setBody(path: path, text: record.body) }
         }
+        return planted
     }
 
     func search(_ query: String, limit: Int) async throws -> [BudKit.HitRecord] {
