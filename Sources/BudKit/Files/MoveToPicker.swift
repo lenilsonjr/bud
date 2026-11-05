@@ -2,27 +2,56 @@
 import SwiftUI
 
 /// Move to…: a search field over Everything and every bud. Return moves to the picked row, and so
-/// does a click; the arrows move the pick, Esc cancels.
+/// does a click; the arrows move the pick, Esc cancels. Planting a source item from the iPhone's
+/// soil uses it too, with the Inbox first.
 struct MoveToPicker: View {
     @ObservedObject var store: BudStore
-    let bud: Bud
+    /// The line under the heading: what is being moved or planted.
+    let subject: String
+    let heading: String
+    let action: String
+    let find: @MainActor (Tree, String) -> [SearchHit]
+    let pick: @MainActor (UUID) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var picked = 0
     @FocusState private var typing: Bool
 
+    init(store: BudStore, bud: Bud) {
+        self.store = store
+        subject = bud.text
+        heading = "Move to…"
+        action = "move here"
+        find = { tree, query in MoveTargets(tree: tree).matching(query, for: bud.id) }
+        pick = { [store] parent in store.move(bud.id, under: parent) }
+    }
+
+    init(store: BudStore, planting item: SourceItem, from account: SourceAccount) {
+        self.store = store
+        subject = item.title
+        heading = "Plant in…"
+        action = "plant here"
+        find = { tree, query in
+            let inbox = SearchHit(id: inboxID, title: tree.title(of: inboxID), trail: [])
+            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let buds = MoveTargets(tree: tree).matching(query, for: UUID())
+            return (needle.isEmpty || inbox.title.lowercased().contains(needle) ? [inbox] : []) + buds
+        }
+        pick = { [store] parent in _ = store.plant(item, from: account, at: parent == inboxID ? .inbox : .under(parent)) }
+    }
+
     private var targets: [SearchHit] {
-        MoveTargets(tree: store.tree).matching(query, for: bud.id)
+        find(store.tree, query)
     }
 
     var body: some View {
         let targets = targets
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Move to…")
+                Text(heading)
                     .textRole(.heading)
                     .foregroundStyle(Theme.text)
-                Text(bud.text)
+                Text(subject)
                     .textRole(.caption)
                     .lineLimit(1)
                     .foregroundStyle(Theme.text3)
@@ -69,7 +98,7 @@ struct MoveToPicker: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Text("↵ move here · ↑↓ pick · esc cancel")
+                Text("↵ \(action) · ↑↓ pick · esc cancel")
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
             }
@@ -113,7 +142,7 @@ struct MoveToPicker: View {
 
     private func go(_ targets: [SearchHit]) {
         guard targets.indices.contains(picked) else { return }
-        store.move(bud.id, under: targets[picked].id)
+        pick(targets[picked].id)
         dismiss()
     }
 }
