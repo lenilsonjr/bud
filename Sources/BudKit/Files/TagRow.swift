@@ -166,7 +166,7 @@ struct TagPicker: View {
 }
 
 /// Lays its views in rows, left to right, starting a new row when one is full.
-struct WrapStack: Layout {
+struct WrapStack: SwiftUI.Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
