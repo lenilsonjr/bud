@@ -488,6 +488,7 @@ impl Vault {
     /// renames, moves and trashing in the tree document. Call after [`Vault::rescan`].
     pub fn sync(&mut self) -> Result<SyncReport> {
         let mut report = SyncReport::default();
+        report.written += self.restore_folder_files()?;
         let mut tree = self.load_tree()?;
         self.forget_gone(&tree, &mut report)?;
         let buds = self.all()?;
@@ -547,6 +548,36 @@ impl Vault {
         report.ops += tree.doc.len_ops() - before;
         self.store_tree(&tree.doc)?;
         Ok(report)
+    }
+
+    /// A `Name.md` deleted outside the app while its folder still holds buds comes back from its
+    /// document: the folder keeps its identity and its children keep their parent. Returns how
+    /// many files came back.
+    fn restore_folder_files(&mut self) -> Result<usize> {
+        let rows: Vec<(String, String)> = {
+            let conn = lock(&self.conn);
+            let mut stmt =
+                conn.prepare("SELECT path, known_text FROM docs WHERE path LIKE '%.md'")?;
+            let found = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            found.collect::<std::result::Result<_, _>>()?
+        };
+        let mut restored = 0;
+        for (path, text) in rows {
+            let Some(folder) = path.strip_suffix(".md") else {
+                continue;
+            };
+            let file = self.root.join(&path);
+            if file.exists() || !self.root.join(folder).is_dir() || self.bud(folder)?.is_none() {
+                continue;
+            }
+            crate::edit::write_atomic(&file, &text)?;
+            lock(&self.written).insert(path.clone(), crate::edit::mtime_of(&file));
+            restored += 1;
+        }
+        if restored > 0 {
+            self.rescan()?;
+        }
+        Ok(restored)
     }
 
     /// How many files differ from what their document knows, or have no document yet: the edits
