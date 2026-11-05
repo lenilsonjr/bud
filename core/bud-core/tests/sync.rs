@@ -585,3 +585,23 @@ fn the_same_file_written_beside_a_folder_bud_on_two_devices_is_kept_once() {
     );
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
 }
+
+#[test]
+fn a_folder_bud_trashed_on_purpose_stays_when_its_last_child_goes() {
+    let (mut a, mut b) = pair();
+    let trashed = trash_on_both(&mut a, &mut b, "Routines");
+    let child = format!("{trashed}/Weekly review.md");
+    a.vault.delete_forever(&child).unwrap();
+    a.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+
+    for replica in [&mut a, &mut b] {
+        assert!(!replica.exists(&child));
+        assert!(
+            replica.vault.bud(&trashed).unwrap().is_some(),
+            "the folder bud is still in the trash"
+        );
+        replica.vault.restore(&trashed).unwrap();
+        assert!(replica.vault.bud("Routines").unwrap().is_some());
+    }
+}
