@@ -35,12 +35,19 @@ struct DocumentView: View {
                 .pageColumn()
             }
             #if os(iOS)
-            // On iPhone the keyboard covers the page: Done or a drag of the page ends the edit.
-            .scrollDismissesKeyboard(.immediately)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") { bodyFocused = false }
+            // On iPhone the keyboard covers the page: Done, or a drag down the page, ends the edit.
+            .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .bottom) {
+                if bodyFocused {
+                    HStack {
+                        Spacer()
+                        Button("Done") { bodyFocused = false }
+                            .buttonStyle(.budGhost)
+                            .accessibilityIdentifier("body-done")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Theme.surface)
                 }
             }
             #endif
@@ -132,6 +139,9 @@ struct DocumentView: View {
                     .onAppear { bodyFocused = true }
                     .onChange(of: bodyFocused) { _, now in if !now { editing = false; flush() } }
                     .onChange(of: linkPicker?.query) { _, _ in pick = 0 }
+                    #if os(iOS)
+                    .scrollDismissesKeyboard(.never)
+                    #endif
                     .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
                         press.modifiers.isEmpty && pickerKey(press.key) ? .handled : .ignored
                     }
@@ -492,33 +502,25 @@ struct RenderedBody: View {
                 if let id = tree?.resolve(link.target) {
                     shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
                     shown.foregroundColor = Theme.leaf
-                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf) + Text("\u{00A0}") + Text(shown).fontWeight(.semibold)
+                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf).accessibilityLabel("") + Text("\u{00A0}") + Text(shown).fontWeight(.semibold)
                 } else {
                     shown.foregroundColor = Theme.text3
                     shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
-                    out = out + Text(shown) + Text("\u{00A0}") + Text(Image(systemName: "circle.dashed")).foregroundStyle(Theme.text3)
+                    out = out + Text(shown) + Text("\u{00A0}") + Text(Image(systemName: "circle.dashed")).foregroundStyle(Theme.text3).accessibilityLabel(", no such bud")
                 }
             }
         }
         return out
     }
 
-    /// A line read aloud as it reads on the page, links by their text, with an action to open
-    /// each bud it links to.
+    /// A line with an action to open each bud it links to, beside the links VoiceOver lists.
     private func readable(_ line: Text, _ text: String) -> some View {
-        let runs = BudLinks.runs(text)
-        let spoken = runs.map { run -> String in
-            switch run {
-            case .text(let plain): return String(MarkdownBlocks.inline(plain).characters)
-            case .link(let link): return link.shown
-            }
-        }.joined()
-        let targets: [(String, UUID)] = runs.compactMap { run in
-            guard case .link(let link) = run, let id = tree?.resolve(link.target) else { return nil }
+        var seen: Set<UUID> = []
+        let targets: [(String, UUID)] = BudLinks.runs(text).compactMap { run in
+            guard case .link(let link) = run, let id = tree?.resolve(link.target), seen.insert(id).inserted else { return nil }
             return (tree?.title(of: id) ?? link.shown, id)
         }
         return line
-            .accessibilityLabel(spoken)
             .accessibilityActions {
                 ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
                     Button("Open \(target.0)") { open(target.1) }
