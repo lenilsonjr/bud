@@ -191,11 +191,13 @@ fn set_layout(doc: &LoroDoc, yaml: Option<&str>) -> Result<()> {
     let fail = |err: loro::LoroError| Error::Invalid(format!("document: {err}"));
     let wanted = yaml.map(frontmatter::layout).unwrap_or_default();
     let map = doc.get_map("extra");
-    let stale: Vec<String> = map
+    let mut stale: Vec<String> = map
         .keys()
         .map(|key| key.to_string())
         .filter(|key| !wanted.extras.iter().any(|(k, _)| k == key))
         .collect();
+    // The same edit must make the same operations on every device; see [`absorb`].
+    stale.sort();
     for key in stale {
         map.delete(&key).map_err(fail)?;
     }
@@ -247,7 +249,34 @@ fn set_text(text: &LoroText, new: &str) -> Result<()> {
 }
 
 /// Bring `doc` to what `file` says. Returns how many operations that took.
+///
+/// The operations are written as a peer named after the document's version and the file, so two
+/// devices that take the same file from the same version, a file that reached both through a
+/// cloud folder for instance, make the very same operations, and the merge keeps them once.
 fn absorb(doc: &LoroDoc, file: &str) -> Result<usize> {
+    let fail = |err: loro::LoroError| Error::Invalid(format!("document: {err}"));
+    doc.commit();
+    let own = doc.peer_id();
+    let mut version: Vec<(u64, i32)> = doc.oplog_vv().iter().map(|(p, c)| (*p, *c)).collect();
+    version.sort();
+    let mut hasher = blake3::Hasher::new();
+    for (peer, counter) in version {
+        hasher.update(&peer.to_le_bytes());
+        hasher.update(&counter.to_le_bytes());
+    }
+    hasher.update(file.as_bytes());
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
+    // The largest peer is reserved.
+    doc.set_peer_id(u64::from_le_bytes(first).min(u64::MAX - 1))
+        .map_err(fail)?;
+    let made = absorb_as_is(doc, file);
+    doc.commit();
+    doc.set_peer_id(own).map_err(fail)?;
+    made
+}
+
+fn absorb_as_is(doc: &LoroDoc, file: &str) -> Result<usize> {
     let before = doc.len_ops();
     let (yaml, body) = frontmatter::split(file);
     set_text(&doc.get_text("body"), body)?;

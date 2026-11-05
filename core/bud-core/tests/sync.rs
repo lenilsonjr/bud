@@ -535,3 +535,53 @@ fn a_deletion_that_could_not_remove_the_file_is_tried_again_on_the_next_sync() {
     exchange(&mut a, &mut b);
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
 }
+
+#[test]
+fn the_same_outside_edit_on_two_devices_is_kept_once() {
+    let (mut a, mut b) = pair();
+    let text = a.read("Gift ideas.md");
+    let edited = format!("{text}Written elsewhere\n");
+    a.write("Gift ideas.md", &edited);
+    b.write("Gift ideas.md", &edited);
+    a.rescan_and_sync();
+    b.rescan_and_sync();
+    exchange(&mut a, &mut b);
+    for replica in [&a, &b] {
+        assert_eq!(replica.read("Gift ideas.md"), edited);
+        assert_eq!(replica.vault.pending_changes().unwrap(), 0);
+    }
+    // Edits after it still merge as edits.
+    a.write("Gift ideas.md", &format!("{edited}From a\n"));
+    b.write(
+        "Gift ideas.md",
+        &edited.replace("Written elsewhere", "From b\nWritten elsewhere"),
+    );
+    a.rescan_and_sync();
+    b.rescan_and_sync();
+    exchange(&mut a, &mut b);
+    assert_eq!(a.read("Gift ideas.md"), b.read("Gift ideas.md"));
+    let merged = a.read("Gift ideas.md");
+    assert_eq!(merged.matches("From a").count(), 1);
+    assert_eq!(merged.matches("From b").count(), 1);
+    assert_eq!(merged.matches("Written elsewhere").count(), 1);
+}
+
+#[test]
+fn the_same_file_written_beside_a_folder_bud_on_two_devices_is_kept_once() {
+    let (mut a, mut b) = pair();
+    let text = "---\npinned: true\n---\nWritten elsewhere\n";
+    a.write("Routines.md", text);
+    b.write("Routines.md", text);
+    a.rescan_and_sync();
+    b.rescan_and_sync();
+    exchange(&mut a, &mut b);
+    for replica in [&a, &b] {
+        assert_eq!(replica.read("Routines.md"), text);
+        assert_eq!(replica.vault.pending_changes().unwrap(), 0);
+    }
+    assert_eq!(
+        a.vault.doc_id("Routines.md").unwrap(),
+        b.vault.doc_id("Routines.md").unwrap()
+    );
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}
