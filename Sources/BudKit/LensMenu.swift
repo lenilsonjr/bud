@@ -77,8 +77,7 @@ struct LensMenu: View {
                 Text("Tick rows to light what matches")
             } else {
                 let hits = store.canvasLens?.hits(store.tree).count ?? 0
-                let every = store.canvasFacets.count > 1 ? (store.canvasFacets.count == 2 ? " both" : " all") : ""
-                Text(hits == 0 ? "Nothing matches" : "\(hits) match\(every)")
+                Text(Self.footerText(hits: hits, rows: store.canvasFacets.count))
                 Spacer()
                 Button("Clear") {
                     withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets = [] }
@@ -90,6 +89,14 @@ struct LensMenu: View {
         .foregroundStyle(Theme.leaf)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
+    }
+
+    /// "13 matches" for one row; "2 match both" or "1 matches all" for more.
+    static func footerText(hits: Int, rows: Int) -> String {
+        guard hits > 0 else { return "Nothing matches" }
+        guard rows > 1 else { return hits == 1 ? "1 match" : "\(hits) matches" }
+        let every = rows == 2 ? "both" : "all"
+        return hits == 1 ? "1 matches \(every)" : "\(hits) match \(every)"
     }
 }
 #endif

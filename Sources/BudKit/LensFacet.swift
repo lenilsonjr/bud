@@ -29,10 +29,10 @@ public enum LensFacet: Hashable, Sendable {
 
     public var systemImage: String {
         switch self {
-        case .openTodos: return "square"
+        case .openTodos: return "circle"
         case .dueToday: return "flag"
         case .pinned: return "pin"
-        case .done: return "checkmark.square"
+        case .done: return "checkmark.circle"
         case .tag: return "number"
         }
     }
