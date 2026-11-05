@@ -154,5 +154,10 @@ final class LensQueryTests: XCTestCase {
         XCTAssertEqual(LensFacet.query(of: [facet, .linked(out.id, title: "Out")])?.hits(t).map(\.id), [],
                        "nothing is linked with both")
         XCTAssertEqual(LensFacet.linked(alone.id, title: "Alone").query.hits(t).map(\.id), [])
+        let light = facet.query.light(t, links: LinkGraph(t))
+        XCTAssertEqual(light[out.id], .hit)
+        XCTAssertEqual(light[plan.id], .path, "the bud asked about stays in view")
+        XCTAssertNil(light[alone.id])
+        XCTAssertTrue(LensFacet.linked(alone.id, title: "Alone").query.light(t).isEmpty, "nothing hits, nothing lit")
     }
 }
