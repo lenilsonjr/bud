@@ -295,6 +295,23 @@ final class SnapshotTests: XCTestCase {
         store.soilFolded = false
     }
 
+    func testRendersThePhoneSoilSheet() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        store.sources = SourceAccount.samples()
+        for scheme in [ColorScheme.light, .dark] {
+            let view = PhoneSoilSheet(store: store).frame(width: 390, height: 420)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("soil-phone-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheQuickAddSheet() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
