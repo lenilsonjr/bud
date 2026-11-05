@@ -38,6 +38,8 @@ public struct OrbitCanvas: View {
     @State private var swapOver: UUID? = nil
     /// The bud a source item in hand would be planted under if let go now, lit as the target.
     @State private var plantOver: UUID? = nil
+    /// Whether the iPhone's soil sheet is up.
+    @State private var phoneSoil = false
     /// The source item in hand and where it is, drawn over everything while it moves.
     @State private var inHand: (item: SourceItem, at: CGPoint)? = nil
     /// The inline bar while the person types new buds on the canvas.
@@ -245,7 +247,34 @@ public struct OrbitCanvas: View {
     /// The sources under the soil line, and the item in hand above them. A compact width gets the
     /// soil as a sheet instead.
     @ViewBuilder private func soil(size: CGSize) -> some View {
-        if !store.sources.isEmpty, !compact {
+        if !store.sources.isEmpty, compact {
+            VStack {
+                Spacer(minLength: 0)
+                Button { phoneSoil = true } label: {
+                    HStack(spacing: 6) {
+                        Text("Soil").textRole(.label)
+                        Image(systemName: "chevron.up").font(.system(size: 10, weight: .semibold))
+                        if store.roots().contains(where: \.leaf) {
+                            Circle().fill(Theme.leaf).frame(width: 6, height: 6)
+                        }
+                    }
+                    .foregroundStyle(Theme.text2)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Theme.raised, in: Capsule())
+                    .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 12)
+                .accessibilityIdentifier("soil-handle")
+            }
+            .zIndex(4)
+            .sheet(isPresented: $phoneSoil) {
+                PhoneSoilSheet(store: store)
+                    .presentationDetents([.medium, .large])
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            }
+        } else if !store.sources.isEmpty {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 SoilView(
