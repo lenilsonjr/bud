@@ -338,6 +338,9 @@ struct LinkPickerList: View {
     /// The title of the bud being written in, for the plant row.
     let here: String
     let choose: (Row) -> Void
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -354,7 +357,7 @@ struct LinkPickerList: View {
                     .foregroundStyle(Theme.text3)
                     .padding(8)
             }
-            if Self.hasKeys {
+            if hasKeys {
                 Divider()
                 Text("↑↓ choose · ↩ link · ⇥ link with a label · esc close")
                     .textRole(.caption)
@@ -370,11 +373,13 @@ struct LinkPickerList: View {
         .accessibilityIdentifier("link-picker")
     }
 
-    /// Whether the keys in the hint work: always on the Mac; on iPhone and iPad only with a
+    /// Whether the keys in the hint work: always on the Mac; on iOS only on an iPad with a
     /// hardware keyboard attached.
-    private static var hasKeys: Bool {
+    private var hasKeys: Bool {
         #if os(iOS)
-        GCKeyboard.coalesced != nil
+        // The simulator reports a keyboard while the soft one is up, and an iPhone rarely has
+        // one: the hints show on an iPad with a keyboard attached.
+        sizeClass == .regular && GCKeyboard.coalesced != nil
         #else
         true
         #endif
@@ -550,19 +555,35 @@ struct RenderedBody: View {
         return out
     }
 
-    /// A line with an action to open each bud it links to, beside the links VoiceOver lists.
+    /// A line with an action to open each bud it links to.
     private func readable(_ line: Text, _ text: String) -> some View {
         var seen: Set<UUID> = []
         let targets: [(String, UUID)] = BudLinks.runs(text).compactMap { run in
             guard case .link(let link) = run, let id = tree?.resolve(link.target), seen.insert(id).inserted else { return nil }
             return (tree?.title(of: id) ?? link.shown, id)
         }
-        return line
+        guard !BudLinks.parse(text).isEmpty else { return AnyView(line) }
+        // A line with links reads as its words alone: VoiceOver gives a link that wraps to a
+        // second line no element of its own, and reads the arrows in the line's text. Each bud
+        // it links to is an Open action instead.
+        return AnyView(line
+            .accessibilityLabel(spoken(text))
             .accessibilityActions {
                 ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
                     Button("Open \(target.0)") { open(target.1) }
                 }
+            })
+    }
+
+    /// What VoiceOver says for a line: its words, each link as the words it shows, and a link
+    /// to no bud followed by "no such bud".
+    private func spoken(_ text: String) -> String {
+        BudLinks.runs(text).map { run in
+            switch run {
+            case .text(let plain): return String(MarkdownBlocks.inline(plain).characters)
+            case .link(let link): return tree?.resolve(link.target) != nil ? link.shown : link.shown + ", no such bud,"
             }
+        }.joined()
     }
 
     private func paragraph(_ text: String) -> some View {
