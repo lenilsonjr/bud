@@ -28,8 +28,8 @@ struct DetailCard: View {
                         // A title that wraps takes Return as a new line on iPhone, never as a
                         // submit: a line break ends the edit instead, and so does leaving the field.
                         .onChange(of: title) { _, now in
-                            if now.contains("\n") {
-                                title = now.replacingOccurrences(of: "\n", with: "")
+                            if now.contains(where: \.isNewline) {
+                                title = now.split(whereSeparator: \.isNewline).joined(separator: " ")
                                 save()
                             }
                         }
