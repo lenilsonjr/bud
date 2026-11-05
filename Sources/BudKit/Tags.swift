@@ -190,3 +190,47 @@ extension Tree {
         return changed
     }
 }
+
+/// What the tag picker offers for what is typed: tags in use whose name holds it, in any case,
+/// those that start with it first, each with its bud count; then creating it, when it is a tag
+/// no bud uses yet. Tags the bud carries already are left out.
+public struct TagChoices {
+    public enum Row: Hashable, Sendable {
+        case tag(TagCount)
+        case create(String)
+    }
+
+    public static func rows(for query: String, in counts: [TagCount], excluding carried: [String], limit: Int = 6) -> [Row] {
+        let typed = query.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }
+        let wanted = BudTags.key(String(typed))
+        let skip = Set(carried.map(BudTags.key))
+        let found = counts.filter { count in
+            let key = BudTags.key(count.tag)
+            return !skip.contains(key) && (wanted.isEmpty || key.contains(wanted))
+        }
+        let starting = found.filter { BudTags.key($0.tag).hasPrefix(wanted) }
+        let inside = found.filter { !BudTags.key($0.tag).hasPrefix(wanted) }
+        var rows = (starting + inside).prefix(limit).map(Row.tag)
+        let taken = counts.contains { BudTags.key($0.tag) == wanted } || skip.contains(wanted)
+        if let tag = BudTags.clean(String(typed)), !taken { rows.append(.create(tag)) }
+        return rows
+    }
+}
+
+/// One chip under a page's title: a tag of the bud's own list, which can be taken off, or a
+/// `#tag` written in its body, which stays until the text changes.
+public struct TagChip: Hashable, Sendable {
+    public var tag: String
+    public var inText: Bool
+}
+
+extension Bud {
+    /// The chips under the page title: the bud's own list, then the body's tags it lacks.
+    public var tagChips: [TagChip] {
+        let own = Set(tags.map(BudTags.key))
+        var seen: Set<String> = []
+        return tags.filter { seen.insert(BudTags.key($0)).inserted }.map { TagChip(tag: $0, inText: false) }
+            + BudTags.inBody(body).filter { !own.contains(BudTags.key($0)) && seen.insert(BudTags.key($0)).inserted }
+                .map { TagChip(tag: $0, inText: true) }
+    }
+}

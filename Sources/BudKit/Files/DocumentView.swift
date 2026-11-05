@@ -26,9 +26,12 @@ struct DocumentView: View {
             MaybeScroll {
                 VStack(alignment: .leading, spacing: 20) {
                     docBar(bud)
-                    Text(bud.text)
-                        .textRole(.title)
-                        .foregroundStyle(Theme.text)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(bud.text)
+                            .textRole(.title)
+                            .foregroundStyle(Theme.text)
+                        TagRow(bud: bud, store: store)
+                    }
                     properties(bud)
                     bodyEditor
                     inside(bud)
