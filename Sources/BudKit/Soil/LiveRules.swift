@@ -5,6 +5,8 @@ import Foundation
 /// next change at the source.
 public struct SourceSnapshot: Codable, Hashable, Sendable {
     public var title: String
+    /// Linear: the team and state the bud's body says.
+    public var detail: String?
     public var date: Date?
     public var todo: Bool
     public var cancelled: Bool
@@ -13,6 +15,7 @@ public struct SourceSnapshot: Codable, Hashable, Sendable {
 
     public init(_ item: SourceItem, at: Date? = nil) {
         title = item.title
+        detail = item.detail
         date = item.date
         todo = item.todo
         cancelled = item.cancelled
@@ -21,7 +24,7 @@ public struct SourceSnapshot: Codable, Hashable, Sendable {
 
     /// The same values, whenever they were seen.
     func same(as other: SourceSnapshot) -> Bool {
-        title == other.title && date == other.date && todo == other.todo && cancelled == other.cancelled
+        title == other.title && detail == other.detail && date == other.date && todo == other.todo && cancelled == other.cancelled
     }
 }
 
@@ -38,6 +41,8 @@ public enum LiveChange: Equatable, Sendable {
     case when(Date?)
     /// Linear: the issue's due date.
     case due(Date?)
+    /// Linear: the body that says the issue's team and state.
+    case body(String)
     /// Mail: flagged is an open to-do, unflagged after that is done. Linear: completed or
     /// cancelled is done, reopened is open again.
     case state(BudState)
@@ -85,14 +90,21 @@ public enum LiveRules {
             changes.append(.state(item.todo ? .open : .done))
             mark = .some("\(item.todo ? "flagged" : "unflagged") \(stamp)")
         }
-        if kind == .linear, item.todo != last.todo {
-            changes.append(.state(item.todo ? .open : .done))
-            mark = .some(item.todo ? "reopened \(stamp)" : "closed")
-        }
         if item.cancelled != last.cancelled {
             mark = .some(item.cancelled ? "cancelled" : nil)
         } else if item.cancelled, bud.fromState != "cancelled" {
             mark = .some("cancelled")
+        }
+        if kind == .linear {
+            // The body follows the state only while it still says what was planted.
+            if let detail = item.detail, let was = last.detail, detail != was,
+               bud.body.trimmingCharacters(in: .whitespacesAndNewlines) == was {
+                changes.append(.body(detail))
+            }
+            if item.todo != last.todo {
+                changes.append(.state(item.todo ? .open : .done))
+                mark = .some(item.todo ? "reopened \(stamp)" : item.cancelled ? "cancelled" : "closed \(stamp)")
+            }
         }
         if let mark, mark != bud.fromState { changes.append(.mark(mark)) }
         return (changes, seen)
@@ -107,6 +119,8 @@ extension SourceMark {
         switch text {
         case "cancelled": self.init(status: .cancelled)
         case "closed": self.init(status: .closed)
+        case _ where text.hasPrefix("closed "):
+            self.init(status: .closed, at: ISO8601DateFormatter().date(from: String(text.dropFirst(7))))
         case "gone": self.init(status: .gone)
         default:
             let parts = text.split(separator: " ", maxSplits: 1).map(String.init)

@@ -459,7 +459,7 @@ final class StoreVaultTests: XCTestCase {
         await store.settle()
         let now = try XCTUnwrap(store.tree.bud(bud.id))
         XCTAssertTrue(now.isDone)
-        XCTAssertEqual(now.fromState, "closed")
+        XCTAssertTrue(now.fromState?.hasPrefix("closed ") ?? false)
         record = try await vault.snapshot().first { $0.from == "linear:ENG-41" }
         XCTAssertEqual(record?.state, .done)
     }

@@ -181,6 +181,7 @@ public final class BudStore: ObservableObject {
             case .rename(let title): update(bud.id, text: title, todo: bud.isTodo)
             case .when(let when): setWhen(bud.id, when)
             case .due(let due): setDue(bud.id, due)
+            case .body(let body): setBody(bud.id, body)
             case .state(.open):
                 if !bud.isTodo { update(bud.id, text: tree.bud(bud.id)?.text ?? bud.text, todo: true) }
                 else if bud.isDone { set(.open, on: [bud.id]) }
