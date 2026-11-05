@@ -36,7 +36,7 @@ pub use peer::{
 };
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};
-pub use tags::{TagCount, TagOrigin};
+pub use tags::{TagCount, TagEdit, TagOrigin};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
@@ -297,6 +297,29 @@ impl Vault {
         props: &Properties,
         layout: Option<&Layout>,
     ) -> Result<()> {
+        self.bud(path)?
+            .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
+        let text = if path.ends_with(".md") {
+            std::fs::read_to_string(self.root.join(path))?
+        } else {
+            String::new()
+        };
+        let mut written = frontmatter::write(&text, props);
+        if let Some(layout) = layout {
+            written = frontmatter::write_layout(&written, layout);
+        }
+        self.write_file(path, &written, Some(props))
+    }
+
+    /// Write the whole text of the bud at `path` and let its row follow: its properties (`props`,
+    /// or what the text says), links and tags. A bud that is only a folder gets `Name.md` beside
+    /// the folder, and its children now belong to that file.
+    pub(crate) fn write_file(
+        &mut self,
+        path: &str,
+        written: &str,
+        props: Option<&Properties>,
+    ) -> Result<()> {
         let bud = self
             .bud(path)?
             .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
@@ -307,18 +330,11 @@ impl Vault {
             path.to_string()
         };
         let absolute = self.root.join(&file_path);
-        let text = if is_folder {
-            String::new()
-        } else {
-            std::fs::read_to_string(&absolute)?
-        };
-        let mut written = frontmatter::write(&text, props);
-        if let Some(layout) = layout {
-            written = frontmatter::write_layout(&written, layout);
-        }
-        edit::write_atomic(&absolute, &written)?;
+        edit::write_atomic(&absolute, written)?;
         let mtime = edit::mtime_of(&absolute);
-        let (yaml, body) = frontmatter::split(&written);
+        let (yaml, body) = frontmatter::split(written);
+        let read = yaml.map(frontmatter::parse).unwrap_or_default();
+        let props = props.unwrap_or(&read);
         let row = Placement {
             path: &file_path,
             parent: bud.parent.as_deref(),

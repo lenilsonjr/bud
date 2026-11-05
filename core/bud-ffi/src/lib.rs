@@ -121,6 +121,14 @@ pub struct TagCountRecord {
     pub buds: u64,
 }
 
+/// One file a tag rename rewrote, with its text before and after.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TagEditRecord {
+    pub path: String,
+    pub before: String,
+    pub after: String,
+}
+
 /// What is under a bud: every descendant, and the open to-dos among them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
 pub struct CountsRecord {
@@ -749,6 +757,35 @@ impl Vault {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    /// Add `tag` to the bud's frontmatter; a bud that carries it already is left as it is.
+    pub fn add_tag(&self, path: String, tag: String) -> Result<()> {
+        Ok(self.core().add_tag(&path, &tag)?)
+    }
+
+    /// Take `tag` out of the bud's frontmatter; a `#tag` in its body stays.
+    pub fn remove_tag(&self, path: String, tag: String) -> Result<()> {
+        Ok(self.core().remove_tag(&path, &tag)?)
+    }
+
+    /// Rename or merge a tag across the vault. Returns each file it rewrote, for undo.
+    pub fn rename_tag(&self, from: String, to: String) -> Result<Vec<TagEditRecord>> {
+        Ok(self
+            .core()
+            .rename_tag(&from, &to)?
+            .into_iter()
+            .map(|e| TagEditRecord {
+                path: e.path,
+                before: e.before,
+                after: e.after,
+            })
+            .collect())
+    }
+
+    /// Write a bud's whole file, as undoing a tag rename does.
+    pub fn set_text(&self, path: String, text: String) -> Result<()> {
+        Ok(self.core().set_text(&path, &text)?)
     }
 
     /// Follow the folder and tell `listener` once per batch of outside changes.
