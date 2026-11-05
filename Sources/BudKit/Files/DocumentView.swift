@@ -121,7 +121,8 @@ struct DocumentView: View {
             .textRole(.body)
             .frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
             .contentShape(Rectangle())
-            .onTapGesture { editing = true }
+            // Beside the links in the text, not over them: a click on a link opens its bud.
+            .simultaneousGesture(TapGesture().onEnded { editing = true })
         }
     }
 
@@ -280,6 +281,7 @@ struct RenderedBody: View {
                 switch block {
                 case .heading(let level, let text):
                     linked(text)
+                        .tint(tint(for: text))
                         .textRole(level == 1 ? .title : .heading)
                         .foregroundStyle(Theme.text)
                         .padding(.top, level == 1 ? 4 : 2)
@@ -311,6 +313,15 @@ struct RenderedBody: View {
 
     private static let scheme = "bud"
 
+    /// Text draws every link in its tint: a line with a link to a bud tints its links leaf.
+    private func tint(for text: String) -> Color {
+        let toBud = BudLinks.runs(text).contains { run in
+            if case .link(let link) = run { return tree?.resolve(link.target) != nil }
+            return false
+        }
+        return toBud ? Theme.leaf : Theme.amethyst
+    }
+
     /// One line of text with its `[[links]]` drawn as links to buds.
     private func linked(_ text: String) -> Text {
         var out = Text("")
@@ -323,11 +334,11 @@ struct RenderedBody: View {
                 if let id = tree?.resolve(link.target) {
                     shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
                     shown.foregroundColor = Theme.leaf
-                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf) + Text(" ") + Text(shown).fontWeight(.semibold)
+                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf) + Text("\u{00A0}") + Text(shown).fontWeight(.semibold)
                 } else {
                     shown.foregroundColor = Theme.text3
                     shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
-                    out = out + Text(shown) + Text(" ") + Text(Image(systemName: "circle.dashed")).foregroundStyle(Theme.text3)
+                    out = out + Text(shown) + Text("\u{00A0}") + Text(Image(systemName: "circle.dashed")).foregroundStyle(Theme.text3)
                 }
             }
         }
@@ -336,6 +347,7 @@ struct RenderedBody: View {
 
     private func paragraph(_ text: String) -> some View {
         linked(text)
+            .tint(tint(for: text))
             .textRole(.body)
             .lineSpacing(14 * 0.55)
             .foregroundStyle(Theme.text)

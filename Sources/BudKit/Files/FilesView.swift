@@ -65,7 +65,10 @@ struct FilesPage: View {
             } else if store.center == rootID || store.tree.hasChildren(store.center) {
                 OutlinePage(store: store)
             } else {
+                // A page of its own for each bud, so a link followed in read mode opens the next
+                // page reading, not in the editor the last one left open.
                 DocumentView(id: store.center, store: store)
+                    .id(store.center)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
