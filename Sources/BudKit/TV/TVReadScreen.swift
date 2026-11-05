@@ -115,6 +115,10 @@ struct TVReadScreen: View {
                 Text(TVReadText.kindLine(bud))
                     .textStyle(Self.kind)
                     .foregroundStyle(Theme.text2)
+                if let from = bud.from {
+                    // Read-only here: the TV shows where the bud came from and nothing to open.
+                    SourcePageRow(from: from, mark: store.marks[from])
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
