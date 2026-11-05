@@ -40,7 +40,7 @@ pub use tags::{TagCount, TagEdit, TagOrigin};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -157,6 +157,8 @@ pub struct Bud {
     pub source: Option<String>,
     /// Where a planted bud came from, as in `mail:M1234`; none for a bud made here.
     pub from: Option<String>,
+    /// `from-state:`: how a planted bud stands with its source; none while nothing happened.
+    pub from_state: Option<String>,
     pub body: String,
     pub mtime: i64,
     pub place: Place,
@@ -459,14 +461,14 @@ fn insert_row(
     conn.execute(
         "INSERT INTO buds
          (path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place,
-          planted_from)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+          planted_from, from_state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(path) DO UPDATE SET
             parent = excluded.parent, title = excluded.title, kind = excluded.kind,
             state = excluded.state, when_date = excluded.when_date, due = excluded.due,
             pinned = excluded.pinned, created = excluded.created, source = excluded.source,
             body = excluded.body, mtime = excluded.mtime, place = excluded.place,
-            planted_from = excluded.planted_from",
+            planted_from = excluded.planted_from, from_state = excluded.from_state",
         params![
             row.path,
             row.parent,
@@ -482,6 +484,7 @@ fn insert_row(
             row.mtime,
             row.place.as_str(),
             props.from,
+            props.from_state,
         ],
     )?;
     links::relink(conn, row.path, body)?;
@@ -490,7 +493,7 @@ fn insert_row(
 
 pub(crate) const SELECT: &str = "SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place,
     (SELECT group_concat(tag, char(31) ORDER BY position) FROM bud_tags
-     WHERE bud_tags.source = buds.rowid AND origin = 'frontmatter'), planted_from FROM buds";
+     WHERE bud_tags.source = buds.rowid AND origin = 'frontmatter'), planted_from, from_state FROM buds";
 const ORDER: &str = "ORDER BY created IS NULL, created, title COLLATE NOCASE";
 
 pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
@@ -511,6 +514,7 @@ pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
         created: row.get(8)?,
         source: row.get(9)?,
         from: row.get(14)?,
+        from_state: row.get(15)?,
         body: row.get(10)?,
         mtime: row.get(11)?,
         place: Place::parse(&place).unwrap_or(Place::Everything),

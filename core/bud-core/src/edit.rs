@@ -417,6 +417,14 @@ impl Vault {
         self.set_properties(path, &props)
     }
 
+    /// Set `from-state` on a planted bud (`moved 2026-11-05T21:00:00Z`, `cancelled`, `closed`,
+    /// `gone`); none or an empty one removes it.
+    pub fn set_from_state(&mut self, path: &str, state: Option<&str>) -> Result<()> {
+        let mut props = self.properties_of(path)?;
+        props.from_state = state.filter(|s| !s.is_empty()).map(str::to_string);
+        self.set_properties(path, &props)
+    }
+
     fn properties_of(&self, path: &str) -> Result<Properties> {
         let bud = self
             .bud(path)?
@@ -429,6 +437,7 @@ impl Vault {
             created: bud.created,
             source: bud.source,
             from: bud.from,
+            from_state: bud.from_state,
         })
     }
 

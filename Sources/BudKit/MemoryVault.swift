@@ -75,6 +75,13 @@ public actor MemoryVault: Vault {
         save()
     }
 
+    public func setFromState(_ path: String, _ state: String?) async throws {
+        let id = try known(path)
+        guard let i = tree.buds.firstIndex(where: { $0.id == id }) else { throw VaultError.notFound(path) }
+        tree.buds[i].fromState = state
+        save()
+    }
+
     public func setPinned(_ path: String, _ pinned: Bool) async throws {
         tree.setPinned(try known(path), pinned)
         save()

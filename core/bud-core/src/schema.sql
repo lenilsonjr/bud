@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS buds (
     mtime     INTEGER NOT NULL,
     place     TEXT NOT NULL,
     -- `from:` in the frontmatter: the source item a planted bud came from.
-    planted_from TEXT
+    planted_from TEXT,
+    -- `from-state:`: how a planted bud stands with its source.
+    from_state TEXT
 );
 CREATE INDEX IF NOT EXISTS buds_parent ON buds(parent);
 CREATE INDEX IF NOT EXISTS buds_planted_from ON buds(planted_from);

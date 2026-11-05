@@ -59,6 +59,7 @@ fn the_row_follows_every_property() {
         created: Some("2026-10-02T11:00:00Z".into()),
         source: Some("phone".into()),
         from: None,
+        from_state: None,
     };
     vault.set_properties("Note.md", &props).unwrap();
     let bud = vault.bud("Note.md").unwrap().unwrap();

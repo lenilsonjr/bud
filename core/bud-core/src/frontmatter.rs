@@ -17,6 +17,9 @@ pub struct Properties {
     /// Where a planted bud came from: the source and the item id, as in `mail:M1234`. The key
     /// that finds an item already planted.
     pub from: Option<String>,
+    /// How a planted bud stands with its source, as the device that keeps it live last saw it:
+    /// `moved 2026-11-05T21:00:00Z`, `cancelled`, `closed` or `gone`. None while nothing happened.
+    pub from_state: Option<String>,
 }
 
 /// Split a file into its frontmatter YAML (without the `---` fences) and its body.
@@ -72,6 +75,7 @@ pub fn parse(yaml: &str) -> Properties {
         created: text("created"),
         source: text("source"),
         from: text("from"),
+        from_state: text("from-state"),
     }
 }
 
@@ -179,12 +183,19 @@ pub fn write_layout(text: &str, layout: &Layout) -> String {
 }
 
 /// The keys this module writes, in the order new ones are appended.
-const KEYS: [&str; 7] = [
-    "state", "when", "due", "pinned", "created", "source", "from",
+const KEYS: [&str; 8] = [
+    "state",
+    "when",
+    "due",
+    "pinned",
+    "created",
+    "source",
+    "from",
+    "from-state",
 ];
 
 /// The text of each key as it is written; none means the key is absent.
-fn wanted(props: &Properties) -> [Option<String>; 7] {
+fn wanted(props: &Properties) -> [Option<String>; 8] {
     [
         props.state.map(|s| s.as_str().to_string()),
         props.when.as_deref().map(scalar),
@@ -193,6 +204,7 @@ fn wanted(props: &Properties) -> [Option<String>; 7] {
         props.created.as_deref().map(scalar),
         props.source.as_deref().map(scalar),
         props.from.as_deref().map(scalar),
+        props.from_state.as_deref().map(scalar),
     ]
 }
 
@@ -280,13 +292,14 @@ fn unchanged(key: usize, chunk: &str, current: &Properties) -> bool {
         3 => existing.pinned == current.pinned,
         4 => existing.created == current.created,
         5 => existing.source == current.source,
-        _ => existing.from == current.from,
+        6 => existing.from == current.from,
+        _ => existing.from_state == current.from_state,
     }
 }
 
-fn edit_block(yaml: &str, current: &Properties, wanted: &[Option<String>; 7], eol: &str) -> String {
+fn edit_block(yaml: &str, current: &Properties, wanted: &[Option<String>; 8], eol: &str) -> String {
     let mut out = String::with_capacity(yaml.len() + 64);
-    let mut seen = [false; 7];
+    let mut seen = [false; 8];
     let mut lines = yaml.split_inclusive('\n').peekable();
     while let Some(line) = lines.next() {
         let hit = KEYS.iter().position(|key| {
@@ -345,6 +358,7 @@ mod tests {
             created: Some("2026-10-02T11:00:00Z".into()),
             source: Some("phone".into()),
             from: None,
+            from_state: None,
         }
     }
 
@@ -523,8 +537,24 @@ mod tests {
                 created: None,
                 source: Some("phone".into()),
                 from: None,
+                from_state: None,
             }
         );
+    }
+
+    #[test]
+    fn from_state_follows_from_and_is_read_back() {
+        let props = Properties {
+            from: Some("calendar:E-1".into()),
+            from_state: Some("moved 2026-11-05T21:00:00Z".into()),
+            ..Default::default()
+        };
+        let out = write("", &props);
+        assert_eq!(
+            out,
+            "---\nfrom: calendar:E-1\nfrom-state: moved 2026-11-05T21:00:00Z\n---\n"
+        );
+        assert_eq!(parse(split(&out).0.unwrap()), props);
     }
 
     #[test]
