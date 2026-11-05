@@ -497,10 +497,14 @@ public final class BudStore: ObservableObject {
     private func undoRemoveTag(_ id: UUID, _ tag: String, at index: Int, _ edits: TagEdits) {
         commit { $0.addTag(id, tag, at: index) }
         write { [self] vault in
-            if let record = edits.byID[id], try await vault.restoreText(path(id), from: record.after, to: record.before) {
+            if let record = edits.byID[id], (try? await vault.restoreText(path(id), from: record.after, to: record.before)) == true {
                 return
             }
-            try await edit(id) { try await $0.addTag($1, tag) }
+            do {
+                try await edit(id) { try await $0.addTag($1, tag) }
+            } catch {
+                toasts.show(Undoable(message: "Couldn't put #\(tag) back on this bud", systemImage: "exclamationmark.triangle"))
+            }
         }
     }
 
