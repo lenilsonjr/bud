@@ -399,8 +399,11 @@ fn a_file_written_outside_beside_a_folder_bud_keeps_the_bud_whole_on_both_device
         .doc_id("Routines")
         .unwrap()
         .expect("the folder has a document");
-    a.write("Routines.md", "---\npinned: true\n---\nWritten elsewhere\n");
-    a.rescan_and_sync();
+    let child = "Routines/Weekly review.md";
+    let child_id = a.vault.doc_id(child).unwrap();
+    let text = "---\npinned: true\n---\nWritten elsewhere\n";
+    a.write("Routines.md", text);
+    assert_eq!(a.rescan_and_sync().created, 0, "no new bud");
     assert_eq!(
         a.vault.doc_id("Routines.md").unwrap(),
         Some(id.clone()),
@@ -408,7 +411,17 @@ fn a_file_written_outside_beside_a_folder_bud_keeps_the_bud_whole_on_both_device
     );
     exchange(&mut a, &mut b);
     assert_eq!(b.vault.doc_id("Routines.md").unwrap(), Some(id));
-    assert!(b.read("Routines.md").contains("Written elsewhere"));
+    assert_eq!(b.read("Routines.md"), text);
+    for replica in [&a, &b] {
+        assert_eq!(replica.vault.doc_id(child).unwrap(), child_id);
+        assert_eq!(
+            replica.vault.bud(child).unwrap().unwrap().parent.as_deref(),
+            Some("Routines.md")
+        );
+        assert_eq!(replica.vault.pending_changes().unwrap(), 0);
+    }
+    let again = a.rescan_and_sync();
+    assert_eq!((again.updated, again.written, again.ops), (0, 0, 0));
     let named = |r: &Replica| {
         r.vault
             .all()

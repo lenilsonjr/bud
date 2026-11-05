@@ -394,14 +394,16 @@ impl Vault {
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
         // A folder bud that gained its `Name.md` from outside the app is the same bud at its
-        // file: its document follows it there, unless the file has a document of its own.
+        // file: its document follows it there, unless the file has a document of its own. The
+        // folder still being there tells a file it gained from a folder a file replaced.
         let documented: std::collections::HashSet<String> = stale.iter().cloned().collect();
         let mut followed = Vec::new();
         for path in &stale {
             let file = format!("{path}.md");
             let gained = !path.ends_with(".md")
                 && !live.contains(path.as_str())
-                && live.contains(file.as_str());
+                && live.contains(file.as_str())
+                && self.root.join(path).is_dir();
             if gained && !documented.contains(&file) {
                 lock(&self.conn).execute(
                     "UPDATE docs SET path = ?1 WHERE path = ?2",
