@@ -123,6 +123,7 @@ final class SnapshotTests: XCTestCase {
         ]) {
             store.setBody(bud.id, sentence)
         }
+        store.setBody(target.id, target.body + "\n\n- Settle it in [[Pick a name]] first\n- Go through the [[Lease checklist]] before signing")
         store.openAsFile(target.id)
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
