@@ -114,6 +114,9 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#house"])
         store.renameTag("house", to: "place")
         XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#place"])
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where store.canvasFacets.map(\.name) != ["Open to-dos", "#house"] { await Task.yield() }
+        XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#house"])
         await store.settle()
     }
 
