@@ -27,11 +27,13 @@ public struct BudRecord: Codable, Hashable, Sendable {
     public var source: String?
     public var body: String
     public var place: BudPlace
+    /// The tags in the bud's own list: its frontmatter `tags`, not the `#tags` in its body.
+    public var tags: [String]
 
     public init(
         path: String, parent: String? = nil, title: String, kind: BudKind = .note, state: BudState? = nil,
         when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date? = nil, source: String? = nil,
-        body: String = "", place: BudPlace = .everything
+        body: String = "", place: BudPlace = .everything, tags: [String] = []
     ) {
         self.path = path
         self.parent = parent
@@ -45,6 +47,7 @@ public struct BudRecord: Codable, Hashable, Sendable {
         self.source = source
         self.body = body
         self.place = place
+        self.tags = tags
     }
 }
 
@@ -148,6 +151,17 @@ public protocol Vault: Sendable {
     func counts(_ path: String) async throws -> CountsRecord
     /// The open to-do to do next under a bud, or anywhere when `under` is nil.
     func nextStep(under: String?, date: Date) async throws -> RowRecord?
+    /// Adds a tag to a bud's own list. A bud that carries it already, in its list or as a `#tag`
+    /// in its body, stays as it is.
+    func addTag(_ path: String, _ tag: String) async throws
+    /// Takes a tag out of a bud's own list. A `#tag` in its body stays: that is the bud's text.
+    func removeTag(_ path: String, _ tag: String) async throws
+    /// Renames a tag in every bud outside the Trash, lists and bodies alike, with the tags nested
+    /// under it; renaming onto a tag in use merges the two. Returns each bud it changed.
+    func renameTag(_ from: String, to: String) async throws -> [TagEditRecord]
+    /// Writes back a text a tag rename handed over as `before`, undoing it for that bud.
+    func setText(_ path: String, _ text: String) async throws
+
     /// Calls back once per batch of changes made outside the app.
     func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch
 }

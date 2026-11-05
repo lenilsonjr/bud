@@ -152,6 +152,50 @@ public actor MemoryVault: Vault {
         return tree.nextStep(under: root).map(row)
     }
 
+    public func addTag(_ path: String, _ tag: String) async throws {
+        guard BudTags.clean(tag) != nil else { throw VaultError.refused("Not a tag: \(tag)") }
+        tree.addTag(try known(path), tag)
+        save()
+    }
+
+    public func removeTag(_ path: String, _ tag: String) async throws {
+        tree.removeTag(try known(path), tag)
+        save()
+    }
+
+    /// A bud's text here is its list and body as JSON: the memory vault has no file to hand over.
+    public func renameTag(_ from: String, to: String) async throws -> [TagEditRecord] {
+        guard BudTags.clean(from) != nil, BudTags.clean(to) != nil else {
+            throw VaultError.refused("Not a tag: \(from) or \(to)")
+        }
+        let before = tree
+        let changed = tree.renameTag(from, to: to)
+        save()
+        return changed.compactMap { id in
+            guard let old = before.bud(id), let new = tree.bud(id) else { return nil }
+            return TagEditRecord(path: id.uuidString, before: Self.text(of: old), after: Self.text(of: new))
+        }
+    }
+
+    public func setText(_ path: String, _ text: String) async throws {
+        let id = try known(path)
+        guard let data = text.data(using: .utf8), let written = try? JSONDecoder().decode(Written.self, from: data),
+              let i = tree.buds.firstIndex(where: { $0.id == id }) else { throw VaultError.refused("Not a text from this vault") }
+        tree.buds[i].tags = written.tags
+        tree.buds[i].body = written.body
+        save()
+    }
+
+    private struct Written: Codable {
+        var tags: [String]
+        var body: String
+    }
+
+    private static func text(of bud: Bud) -> String {
+        let data = (try? JSONEncoder().encode(Written(tags: bud.tags, body: bud.body))) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
     public func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch {
         let key = UUID()
         watchers[key] = onChange

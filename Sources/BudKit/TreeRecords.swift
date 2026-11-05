@@ -75,7 +75,8 @@ extension Tree {
         BudRecord(
             path: bud.path, parent: bud.parent == rootID ? nil : bud.parent.uuidString, title: bud.text,
             kind: bud.isTodo ? .todo : .note, state: bud.state, when: bud.when, due: bud.due,
-            pinned: bud.pinned, created: bud.created, source: bud.source, body: bud.body, place: place
+            pinned: bud.pinned, created: bud.created, source: bud.source, body: bud.body, place: place,
+            tags: bud.tags
         )
     }
 
@@ -104,7 +105,8 @@ extension Tree {
                 id: id(record.path), text: record.title,
                 state: record.state ?? (record.kind == .todo ? .open : nil), parent: parent, order: order,
                 body: record.body, when: record.when, due: record.due, pinned: record.pinned,
-                created: record.created ?? Date(timeIntervalSince1970: 0), source: record.source
+                created: record.created ?? Date(timeIntervalSince1970: 0), source: record.source,
+                tags: record.tags
             )
         }
         var counters: [Bool: [UUID: Double]] = [false: [:], true: [:]]
