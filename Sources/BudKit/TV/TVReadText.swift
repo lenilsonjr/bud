@@ -25,6 +25,12 @@ public enum TVReadText {
         return "\(count) inside" + (open > 0 ? " · \(open) open" : "")
     }
 
+    /// The eyebrow over the buds that link here: "Linked from · 2", or nothing when none do.
+    public static func linkedFromLine(in tree: Tree, to id: UUID) -> String? {
+        let count = tree.backlinks(to: id).count
+        return count > 0 ? "Linked from · \(count)" : nil
+    }
+
     /// The kind and dates under the title: "To-do · Due 3 Nov", "Note", "Done".
     public static func kindLine(_ bud: Bud) -> String {
         var parts = [bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note"]
