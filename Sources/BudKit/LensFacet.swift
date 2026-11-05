@@ -5,7 +5,7 @@ public enum LensFacet: Hashable, Sendable {
     case openTodos, dueToday, recentlyGrown, pinned, done
     /// A tag, by the way the menu shows it; two spellings of one tag are the same row.
     case tag(String)
-    /// Buds from one source, by its key (`linear`, `mac`).
+    /// Buds from one source, by its key (`mail`, `mac`).
     case source(String)
     /// The buds linked with one bud, either way; the title is the bud's when it was picked.
     case linked(UUID, title: String)
@@ -68,8 +68,7 @@ public enum LensFacet: Hashable, Sendable {
     /// A source as people write it: the names Bud knows, otherwise the key with a capital.
     static func sourceName(_ key: String) -> String {
         let known = [
-            "mac": "Mac", "iphone": "iPhone", "ipad": "iPad", "watch": "Watch", "tv": "TV",
-            "github": "GitHub", "linear": "Linear", "fastmail": "Fastmail", "calendar": "Calendar",
+            "mac": "Mac", "iphone": "iPhone", "ipad": "iPad", "tv": "TV",
         ]
         return known[key] ?? key.prefix(1).uppercased() + key.dropFirst()
     }
