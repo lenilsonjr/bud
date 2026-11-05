@@ -1,8 +1,8 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The rows a lens can tick: the built-in questions, then the tags in use, then the buds picked
-/// under "Linked to…", each with how many buds answer it alone. Ticked rows combine, and the canvas lights the answer while the menu is
+/// The rows a lens can tick: the built-in questions, then the tags in use, the sources buds came
+/// from, and the buds picked under "Linked to…", each with how many buds answer it alone. Ticked rows combine, and the canvas lights the answer while the menu is
 /// open. The footer counts the buds that answer every ticked row.
 struct LensMenu: View {
     @ObservedObject var store: BudStore
@@ -21,6 +21,8 @@ struct LensMenu: View {
         VStack(alignment: .leading, spacing: 2) {
             section("Built in", LensFacet.builtIns)
             if !tags.isEmpty { section("Tags", Array(tags)) }
+            let sources = Self.sources(in: store.tree)
+            if !sources.isEmpty { section("Sources", sources) }
             links
             Divider().padding(.vertical, 4)
             footer
@@ -40,6 +42,15 @@ struct LensMenu: View {
                 .padding(.bottom, 2)
             ForEach(facets, id: \.self) { facet in row(facet) }
         }
+    }
+
+    /// The sources the buds on the canvas came from, the most used first.
+    static func sources(in tree: Tree) -> [LensFacet] {
+        var counts: [String: Int] = [:]
+        for bud in tree.walk(under: rootID) {
+            if let key = LensQuery.sourceKey(bud.source) { counts[key, default: 0] += 1 }
+        }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { .source($0.key) }
     }
 
     /// The buds picked so far, each a row to untick, then "Linked to…", which opens a search over

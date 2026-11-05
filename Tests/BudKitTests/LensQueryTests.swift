@@ -160,4 +160,47 @@ final class LensQueryTests: XCTestCase {
         XCTAssertNil(light[alone.id])
         XCTAssertTrue(LensFacet.linked(alone.id, title: "Alone").query.light(t).isEmpty, "nothing hits, nothing lit")
     }
+
+    func testRecentlyGrownMatchesWhatGainedABudThisWeek() {
+        var t = Tree()
+        let fresh = t.add("Fresh", todo: false, under: rootID)
+        let inner = t.add("Inner", todo: false, under: fresh.id)
+        let stale = t.add("Stale", todo: false, under: rootID)
+        let six = t.add("Six days old", todo: true, under: inner.id)
+        let eight = t.add("Eight days old", todo: false, under: stale.id)
+        for i in t.buds.indices { t.buds[i].created = day.addingTimeInterval(-30 * 86_400) }
+        func age(_ id: UUID, days: Double) {
+            if let i = t.buds.firstIndex(where: { $0.id == id }) { t.buds[i].created = day.addingTimeInterval(-days * 86_400) }
+        }
+        age(six.id, days: 6)
+        age(eight.id, days: 8)
+
+        let grown = LensFacet.recentlyGrown.query.hits(t, on: day).map(\.id)
+        XCTAssertEqual(Set(grown), [fresh.id, inner.id], "what holds the six-day-old bud, at any depth")
+        XCTAssertEqual(LensFacet.query(of: [.recentlyGrown, .openTodos])?.hits(t, on: day).map(\.id), [],
+                       "the holders are notes")
+        XCTAssertEqual(LensFacet.recentlyGrown.query.light(t, on: day)[rootID], .path)
+    }
+
+    func testASourceFacetMatchesBudsByTheSourceBeforeTheColon() {
+        var t = Tree()
+        let issue = t.add("Ship the fix", todo: true, under: rootID)
+        let pr = t.add("Review the PR", todo: true, under: rootID)
+        let note = t.add("Typed here", todo: false, under: rootID)
+        let mac = t.add("Captured on the Mac", todo: false, under: rootID)
+        for (id, source) in [(issue.id, "linear:BUD-77"), (pr.id, "GitHub:bud#12"), (mac.id, "mac")] {
+            if let i = t.buds.firstIndex(where: { $0.id == id }) { t.buds[i].source = source }
+        }
+
+        XCTAssertEqual(LensFacet.source("linear").query.hits(t).map(\.id), [issue.id])
+        XCTAssertEqual(LensFacet.source("github").query.hits(t).map(\.id), [pr.id])
+        XCTAssertEqual(LensFacet.source("mac").query.hits(t).map(\.id), [mac.id])
+        XCTAssertFalse(LensFacet.source("linear").query.hits(t).contains { $0.id == note.id })
+        XCTAssertEqual(LensFacet.source("github").name, "From GitHub")
+        XCTAssertEqual(LensFacet.query(of: [.source("linear"), .openTodos])?.hits(t).map(\.id), [issue.id])
+        XCTAssertEqual(LensFacet.query(of: [.source("linear"), .source("github")])?.hits(t).map(\.id), [],
+                       "one bud has one source")
+        XCTAssertEqual(LensQuery.sourceKey(" Linear :x"), "linear")
+        XCTAssertNil(LensQuery.sourceKey(":x"))
+    }
 }

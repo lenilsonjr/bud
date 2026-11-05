@@ -24,13 +24,20 @@ public struct LensQuery: Hashable, Sendable {
     public var tags: Set<String>
     /// Buds the bud must be linked with, every one, by a link either way.
     public var linked: Set<UUID>
+    /// Something was added somewhere below the bud in the last `grownDays` days.
+    public var grown: Bool
+    /// Where the bud came from: the part of its source before any ":", in any case
+    /// (`linear:BUD-77` is from `linear`).
+    public var source: String?
+    /// How far back "Recently grown" looks.
+    public static let grownDays = 7
     /// Two facets that ask for different things in one slot, a to-do that is open and done:
     /// nothing answers.
     public var never = false
 
     public init(
         kind: Kind? = nil, state: BudState? = nil, day: Day? = nil, pinned: Bool = false, holdsOpen: Bool = false,
-        tags: Set<String> = [], linked: Set<UUID> = []
+        tags: Set<String> = [], linked: Set<UUID> = [], grown: Bool = false, source: String? = nil
     ) {
         self.kind = kind
         self.state = state
@@ -39,6 +46,16 @@ public struct LensQuery: Hashable, Sendable {
         self.holdsOpen = holdsOpen
         self.tags = Set(tags.map(BudTags.key))
         self.linked = linked
+        self.grown = grown
+        self.source = source.flatMap(Self.sourceKey)
+    }
+
+    /// The source a bud's provenance names: what comes before any ":", lowercased; nil for none.
+    public static func sourceKey(_ provenance: String?) -> String? {
+        guard let provenance else { return nil }
+        let key = provenance.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
+        return key.isEmpty ? nil : key
     }
 
     public static let todos = LensQuery(kind: .todo, state: .open)
@@ -61,6 +78,8 @@ public struct LensQuery: Hashable, Sendable {
         out.day = merge(day, other.day)
         out.pinned = pinned || other.pinned
         out.holdsOpen = holdsOpen || other.holdsOpen
+        out.grown = grown || other.grown
+        out.source = merge(source, other.source)
         out.tags = tags.union(other.tags)
         out.linked = linked.union(other.linked)
         out.never = out.never || never || other.never
@@ -70,7 +89,11 @@ public struct LensQuery: Hashable, Sendable {
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
-        return matches(bud, holders: holders, around: around(in: tree, links: nil), start: calendar.startOfDay(for: now))
+        let growers = grown ? tree.grown(since: now.addingTimeInterval(-Double(Self.grownDays) * 86_400)) : []
+        return matches(
+            bud, holders: holders, growers: growers, around: around(in: tree, links: nil),
+            start: calendar.startOfDay(for: now)
+        )
     }
 
     /// For each bud the query asks to be linked with, the buds linked with it: the links read
@@ -83,7 +106,7 @@ public struct LensQuery: Hashable, Sendable {
 
     /// The day's start and the buds holding an open to-do are worked out once per question, not
     /// once per bud.
-    private func matches(_ bud: Bud, holders: Set<UUID>, around: [Set<UUID>], start: Date) -> Bool {
+    private func matches(_ bud: Bud, holders: Set<UUID>, growers: Set<UUID>, around: [Set<UUID>], start: Date) -> Bool {
         if never { return false }
         if let kind, (kind == .todo) != bud.isTodo { return false }
         if let state, bud.state != state { return false }
@@ -100,6 +123,8 @@ public struct LensQuery: Hashable, Sendable {
             }
         }
         if holdsOpen && !holders.contains(bud.id) { return false }
+        if grown && !growers.contains(bud.id) { return false }
+        if let source, Self.sourceKey(bud.source) != source { return false }
         if !tags.isEmpty {
             let carried = bud.allTags.map(BudTags.key)
             for tag in tags where !carried.contains(where: { $0 == tag || $0.hasPrefix(tag + "/") }) { return false }
@@ -150,7 +175,10 @@ public struct LensQuery: Hashable, Sendable {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
         let start = calendar.startOfDay(for: now)
         let around = around(in: tree, links: links)
-        return tree.walk(under: rootID).filter { matches($0, holders: holders, around: around, start: start) }
+        let growers = grown ? tree.grown(since: now.addingTimeInterval(-Double(Self.grownDays) * 86_400)) : []
+        return tree.walk(under: rootID).filter {
+            matches($0, holders: holders, growers: growers, around: around, start: start)
+        }
     }
 }
 
@@ -159,6 +187,17 @@ extension Tree {
     func holdersOfOpen() -> Set<UUID> {
         var out: Set<UUID> = []
         for bud in walk(under: rootID) where bud.state == .open {
+            for above in ancestors(of: bud.id) {
+                if !out.insert(above).inserted { break }
+            }
+        }
+        return out
+    }
+
+    /// Every bud that something was added below since `date`, at any depth.
+    func grown(since date: Date) -> Set<UUID> {
+        var out: Set<UUID> = []
+        for bud in walk(under: rootID) where bud.created >= date {
             for above in ancestors(of: bud.id) {
                 if !out.insert(above).inserted { break }
             }
