@@ -105,6 +105,14 @@ public final class BudStore: ObservableObject {
     /// it live last saw it.
     @Published public var marks: [String: SourceMark] = [:]
 
+    private var soilFeed: AnyCancellable?
+
+    /// Shows what a source store reads below the soil, and starts it reading.
+    public func follow(_ soil: SourceStore) {
+        soilFeed = soil.$accounts.receive(on: RunLoop.main).sink { [weak self] in self?.sources = $0 }
+        soil.start()
+    }
+
     /// One root per account, in the order the accounts were connected.
     public func roots(now: Date = Date()) -> [Root] {
         sources.map { Root($0, now: now) }

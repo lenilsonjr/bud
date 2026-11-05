@@ -10,6 +10,8 @@ struct SoilView: View {
     /// The device word for a locked root: "Sign in on this Mac".
     let device: String
     let onFold: () -> Void
+    /// Signs this device in to a locked account.
+    var onSignIn: (String) -> Void = { _ in }
     /// An item in hand, at a point in the canvas's space; nil when it is let go.
     let onDrag: (SourceItem, SourceAccount, CGPoint) -> Void
     let onDrop: (SourceItem, SourceAccount, CGPoint) -> Void
@@ -71,10 +73,13 @@ struct SoilView: View {
         VStack(alignment: .leading, spacing: 6) {
             header(root)
             if root.account.locked {
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill")
-                    Text("Sign in on this \(device)")
+                Button { onSignIn(root.id) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.fill")
+                        Text("Sign in on this \(device)")
+                    }
                 }
+                .buttonStyle(.plain)
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
                 .padding(.top, 4)
