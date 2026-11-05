@@ -369,3 +369,24 @@ fn a_folder_bud_that_gets_its_file_from_an_edit_stays_one_bud_on_the_peer() {
     assert_eq!(named(&b), 1);
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
 }
+
+#[test]
+fn a_body_written_to_a_folder_bud_reaches_the_peer_as_its_file() {
+    let (mut a, mut b) = pair();
+    let id = a
+        .vault
+        .doc_id("Routines")
+        .unwrap()
+        .expect("the folder has a document");
+    a.vault.set_body("Routines", "Hello body\n").unwrap();
+    a.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(b.vault.doc_id("Routines.md").unwrap(), Some(id));
+    assert!(b.read("Routines.md").contains("Hello body"));
+    assert_eq!(
+        a.vault.doc_text("Routines.md").unwrap(),
+        b.vault.doc_text("Routines.md").unwrap()
+    );
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+    assert_eq!(b.rescan_and_sync().written, 0);
+}
