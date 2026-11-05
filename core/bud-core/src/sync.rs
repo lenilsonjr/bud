@@ -253,6 +253,8 @@ fn set_text(text: &LoroText, new: &str) -> Result<()> {
 /// The operations are written as a peer named after the document's version and the file, so two
 /// devices that take the same file from the same version, a file that reached both through a
 /// cloud folder for instance, make the very same operations, and the merge keeps them once.
+/// That holds while the version settles everything an operation carries: documents stay attached
+/// and record no timestamps.
 fn absorb(doc: &LoroDoc, file: &str) -> Result<usize> {
     let fail = |err: loro::LoroError| Error::Invalid(format!("document: {err}"));
     doc.commit();
