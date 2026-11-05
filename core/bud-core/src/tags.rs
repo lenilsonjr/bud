@@ -136,11 +136,13 @@ struct Item {
 
 impl Item {
     fn written(raw: &str) -> Item {
-        let unquoted = raw
+        let (value, _) = comment(raw);
+        let value = value.trim();
+        let unquoted = value
             .strip_prefix('\'')
             .and_then(|r| r.strip_suffix('\''))
-            .or_else(|| raw.strip_prefix('"').and_then(|r| r.strip_suffix('"')))
-            .unwrap_or(raw);
+            .or_else(|| value.strip_prefix('"').and_then(|r| r.strip_suffix('"')))
+            .unwrap_or(value);
         Item {
             raw: raw.to_string(),
             tag: clean(unquoted),
@@ -159,6 +161,52 @@ impl Item {
     }
 }
 
+/// `text` split before a YAML comment: a `#` at the start or after a space or tab, outside
+/// quotes. The comment keeps the space before it.
+fn comment(text: &str) -> (&str, &str) {
+    let mut quote: Option<char> = None;
+    let mut previous: Option<char> = None;
+    for (i, c) in text.char_indices() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == '#' && previous.is_none_or(|p| p == ' ' || p == '\t') => {
+                let at = text[..i].trim_end_matches([' ', '\t']).len();
+                return (&text[..at], &text[at..]);
+            }
+            None => {}
+        }
+        previous = Some(c);
+    }
+    (text, "")
+}
+
+/// The items of a one-line flow list's inside, split on commas outside quotes.
+fn flow_items(inner: &str) -> Vec<Item> {
+    let mut out = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut from = 0;
+    for (i, c) in inner.char_indices() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == ',' => {
+                out.push(&inner[from..i]);
+                from = i + 1;
+            }
+            None => {}
+        }
+    }
+    out.push(&inner[from..]);
+    out.into_iter()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+        .map(Item::written)
+        .collect()
+}
+
 /// How a file writes its `tags` key, so an edit writes it back the same way.
 enum Shape {
     /// `tags: [a, b]`
@@ -169,7 +217,8 @@ enum Shape {
     Words(&'static str),
 }
 
-/// The tag list after `change`, or none when it changes nothing.
+/// The tag list after `change`, or none when it changes nothing. A rename that lands on a tag
+/// the list has already merges the two; other repeats the file wrote stay.
 fn changed(items: &[Item], change: Change<'_>) -> Option<Vec<Item>> {
     let mut out = items.to_vec();
     match change {
@@ -180,70 +229,64 @@ fn changed(items: &[Item], change: Change<'_>) -> Option<Vec<Item>> {
         }
         Change::Remove(tag) => out.retain(|item| !item.is(tag)),
         Change::Rename { from, to } => {
+            let mut landed = std::collections::HashSet::new();
             for item in &mut out {
                 if let Some(new) = item.tag.as_deref().and_then(|tag| renamed(tag, from, to)) {
+                    landed.insert(key(&new));
                     *item = Item::new(&new);
                 }
             }
-            // A rename onto a tag the list has already merges the two.
             let mut seen = std::collections::HashSet::new();
-            out.retain(|item| item.tag.as_deref().is_none_or(|tag| seen.insert(key(tag))));
+            out.retain(|item| {
+                item.tag
+                    .as_deref()
+                    .map(key)
+                    .is_none_or(|k| !landed.contains(&k) || seen.insert(k))
+            });
         }
     }
     (out != items).then_some(out)
 }
 
-/// The `tags` key of a frontmatter block as lines, after `change`; empty when no tag is left.
-fn write_key(shape: &Shape, items: &[Item], eol: &str) -> String {
+/// The `tags` key as lines; empty when no entry is left. `note` is a comment the key line had.
+fn write_key(shape: &Shape, items: &[Item], note: &str, eol: &str) -> String {
     if items.is_empty() {
         return String::new();
     }
+    let raws: Vec<&str> = items.iter().map(|item| item.raw.as_str()).collect();
     match shape {
-        Shape::Flow => {
-            let raws: Vec<&str> = items.iter().map(|item| item.raw.as_str()).collect();
-            format!("tags: [{}]{eol}", raws.join(", "))
+        // Words are not quoted, so a tag that needs quotes turns the string into a flow list.
+        Shape::Words(between) if !raws.iter().any(|raw| raw.starts_with(['"', '\''])) => {
+            format!("tags: {}{note}{eol}", raws.join(between))
         }
         Shape::Block(indent) => {
-            let mut out = format!("tags:{eol}");
-            for item in items {
-                out.push_str(&format!("{indent}- {}{eol}", item.raw));
+            let mut out = format!("tags:{note}{eol}");
+            for raw in raws {
+                out.push_str(&format!("{indent}- {raw}{eol}"));
             }
             out
         }
-        Shape::Words(between) => {
-            // Words are not quoted: each is a tag's own text.
-            let words: Vec<&str> = items
-                .iter()
-                .filter_map(|item| item.tag.as_deref())
-                .collect();
-            format!("tags: {}{eol}", words.join(between))
-        }
+        _ => format!("tags: [{}]{note}{eol}", raws.join(", ")),
     }
 }
 
-/// The shape and entries of a `tags` key, from its line and the lines that continue it.
-fn read_key(chunk: &str) -> (Shape, Vec<Item>) {
+/// The shape, entries and key-line comment of a `tags` key, from its line and the lines that
+/// continue it.
+fn read_key(chunk: &str) -> (Shape, Vec<Item>, String) {
     let mut lines = chunk.lines();
-    let value = lines
-        .next()
-        .and_then(|line| line.strip_prefix("tags:"))
-        .unwrap_or("")
-        .trim();
-    let rest: Vec<&str> = lines.collect();
-    let dashed = |line: &&str| line.trim_start().starts_with('-');
+    let first = lines.next().unwrap_or("");
+    let after = first.split_once(':').map_or("", |(_, value)| value);
+    let (value, note) = comment(after);
+    let value = value.trim();
+    let rest: Vec<&str> = lines.filter(|line| !line.trim().is_empty()).collect();
     let inner = value
         .strip_prefix('[')
         .and_then(|v| v.strip_suffix(']'))
         .filter(|inner| !inner.contains(['[', ']', '{', '}']));
     if let (true, Some(inner)) = (rest.is_empty(), inner) {
-        let items = inner
-            .split(',')
-            .map(str::trim)
-            .filter(|raw| !raw.is_empty())
-            .map(Item::written)
-            .collect();
-        return (Shape::Flow, items);
+        return (Shape::Flow, flow_items(inner), note.to_string());
     }
+    let dashed = |line: &&str| line.trim_start().starts_with("- ") || line.trim() == "-";
     if value.is_empty() && !rest.is_empty() && rest.iter().all(dashed) {
         let indent = rest[0][..rest[0].len() - rest[0].trim_start().len()].to_string();
         let items = rest
@@ -252,7 +295,7 @@ fn read_key(chunk: &str) -> (Shape, Vec<Item>) {
             .filter(|raw| !raw.is_empty())
             .map(Item::written)
             .collect();
-        return (Shape::Block(indent), items);
+        return (Shape::Block(indent), items, note.to_string());
     }
     let plain = !value.starts_with(['"', '\'', '[', '{', '|', '>', '&', '*', '!']);
     if rest.is_empty() && plain && !value.is_empty() {
@@ -262,21 +305,60 @@ fn read_key(chunk: &str) -> (Shape, Vec<Item>) {
             .filter(|raw| !raw.is_empty())
             .map(Item::written)
             .collect();
-        return (Shape::Words(between), items);
+        return (Shape::Words(between), items, note.to_string());
     }
     // Any other way of writing the list is read the lenient way and written back as a flow list.
     let items = from_frontmatter(chunk)
         .iter()
         .map(|tag| Item::new(tag))
         .collect();
-    (Shape::Flow, items)
+    (Shape::Flow, items, String::new())
+}
+
+/// Whether a line of a block starts the `tags` key: `tags:` or `tags :`.
+fn is_tags_line(line: &str) -> bool {
+    line.strip_prefix("tags")
+        .is_some_and(|rest| rest.trim_start_matches([' ', '\t']).starts_with(':'))
+}
+
+/// The lines from `at` that belong to the key starting there: indented lines, a flow list's
+/// lines up to its `]`, and for a key with no value its unindented `- ` lines. A blank line
+/// belongs when more of the key follows it.
+fn key_end(lines: &[&str], at: usize) -> usize {
+    let after = lines[at].split_once(':').map_or("", |(_, value)| value);
+    let value = comment(after).0.trim();
+    let mut end = at + 1;
+    if value.starts_with('[') && !value.ends_with(']') {
+        while end < lines.len() {
+            end += 1;
+            if lines[end - 1].contains(']') {
+                break;
+            }
+        }
+        return end;
+    }
+    let mut last = end;
+    while end < lines.len() {
+        let line = lines[end];
+        let indented = line.starts_with([' ', '\t']) && !line.trim().is_empty();
+        let dashed = value.is_empty() && line.starts_with('-');
+        if indented || dashed {
+            end += 1;
+            last = end;
+        } else if line.trim().is_empty() {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    last
 }
 
 /// `text` with `change` made to the `tags` key of its frontmatter, or none when that changes
 /// nothing. Every other line of the file stays as it was, and a list keeps the way it is written.
 /// A file with no `tags` key gets `tags: [tag]` at the end of its block, made when it has none;
 /// a block left with nothing in it goes.
-fn write_frontmatter(text: &str, change: Change<'_>) -> Option<String> {
+fn rewrite_frontmatter(text: &str, change: Change<'_>) -> Option<String> {
     let first = text.split_inclusive('\n').next().unwrap_or("");
     let file_eol = if first.ends_with("\r\n") {
         "\r\n"
@@ -287,19 +369,14 @@ fn write_frontmatter(text: &str, change: Change<'_>) -> Option<String> {
         let Change::Add(tag) = change else {
             return None;
         };
-        let line = write_key(&Shape::Flow, &[Item::new(tag)], file_eol);
+        let line = write_key(&Shape::Flow, &[Item::new(tag)], "", file_eol);
         return Some(format!("---{file_eol}{line}---{file_eol}{text}"));
     };
     let open = if text.starts_with("---\r\n") { 5 } else { 4 };
     let close = &text[open + yaml.len()..text.len() - body.len()];
 
-    // Find the key and the lines that belong to it.
     let mut lines: Vec<&str> = yaml.split_inclusive('\n').collect();
-    let at = lines.iter().position(|line| {
-        line.strip_prefix("tags")
-            .is_some_and(|rest| rest.starts_with(':'))
-    });
-    let block = match at {
+    let block = match lines.iter().position(|line| is_tags_line(line)) {
         None => {
             let Change::Add(tag) = change else {
                 return None;
@@ -308,38 +385,74 @@ fn write_frontmatter(text: &str, change: Change<'_>) -> Option<String> {
             if !block.is_empty() && !block.ends_with('\n') {
                 block.push_str(file_eol);
             }
-            block.push_str(&write_key(&Shape::Flow, &[Item::new(tag)], file_eol));
+            block.push_str(&write_key(&Shape::Flow, &[Item::new(tag)], "", file_eol));
             block
         }
         Some(at) => {
-            let empty_value = lines[at]["tags:".len()..].trim().is_empty();
-            let mut end = at + 1;
-            while end < lines.len() {
-                let line = lines[end];
-                let indented = line.starts_with([' ', '\t']) && !line.trim().is_empty();
-                let dashed = empty_value && line.starts_with('-');
-                if !(indented || dashed) {
-                    break;
-                }
-                end += 1;
-            }
+            let end = key_end(&lines, at);
             let chunk: String = lines[at..end].concat();
             let eol = if lines[at].ends_with("\r\n") {
                 "\r\n"
             } else {
                 file_eol
             };
-            let (shape, items) = read_key(&chunk);
+            let (shape, items, note) = read_key(&chunk);
             let after = changed(&items, change)?;
-            let written = write_key(&shape, &after, eol);
+            let written = write_key(&shape, &after, &note, eol);
             lines.splice(at..end, [written.as_str()]);
             lines.concat()
         }
     };
-    if block.trim().is_empty() {
+    // A body that starts with a fence of its own would read as the block once this one went.
+    let body_fenced = body
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim_end() == "---");
+    if block.trim().is_empty() && !body_fenced {
         return Some(body.to_string());
     }
     Some(format!("{}{block}{close}{body}", &text[..open]))
+}
+
+/// The tags a frontmatter block should read as once `change` is made, by key.
+fn expected(yaml: &str, change: Change<'_>) -> std::collections::BTreeSet<String> {
+    let mut tags: Vec<String> = from_frontmatter(yaml);
+    match change {
+        Change::Add(tag) => tags.push(tag.to_string()),
+        Change::Remove(tag) => tags.retain(|own| key(own) != key(tag)),
+        Change::Rename { from, to } => {
+            for own in &mut tags {
+                if let Some(new) = renamed(own, from, to) {
+                    *own = new;
+                }
+            }
+        }
+    }
+    tags.iter().map(|tag| key(tag)).collect()
+}
+
+/// [`rewrite_frontmatter`], checked: the new block must parse whenever the old one did, keep
+/// every property it had, and read as exactly the tags the change asks for. A file whose list
+/// cannot be rewritten that way is refused rather than written.
+fn write_frontmatter(text: &str, change: Change<'_>) -> Result<Option<String>> {
+    let Some(written) = rewrite_frontmatter(text, change) else {
+        return Ok(None);
+    };
+    let old = frontmatter::split(text).0.unwrap_or("");
+    let new = frontmatter::split(&written).0.unwrap_or("");
+    let parses = |yaml: &str| serde_yaml::from_str::<serde_yaml::Value>(yaml).is_ok();
+    let new_tags: std::collections::BTreeSet<String> =
+        from_frontmatter(new).iter().map(|tag| key(tag)).collect();
+    let sound = (parses(new) || !parses(old))
+        && frontmatter::parse(new) == frontmatter::parse(old)
+        && new_tags == expected(old, change)
+        && frontmatter::split(&written).1 == frontmatter::split(text).1;
+    if !sound {
+        return Err(Error::Invalid(
+            "the tags in this file are written in a way Bud cannot change safely".to_string(),
+        ));
+    }
+    Ok(Some(written))
 }
 
 /// `body` with every `#from`, and every tag nested under it, renamed to `to`; none when it has
@@ -485,7 +598,11 @@ impl Vault {
                 from: &from,
                 to: &to,
             };
-            let mut after = write_frontmatter(&before, change).unwrap_or_else(|| before.clone());
+            // A file whose list cannot be rewritten safely is left as it is.
+            let Ok(written) = write_frontmatter(&before, change) else {
+                continue;
+            };
+            let mut after = written.unwrap_or_else(|| before.clone());
             let (_, body) = frontmatter::split(&after);
             if let Some(body_after) = rename_in_body(body, &from, &to) {
                 after = format!("{}{body_after}", &after[..after.len() - body.len()]);
@@ -516,7 +633,7 @@ impl Vault {
         } else {
             String::new()
         };
-        match write_frontmatter(&text, change) {
+        match write_frontmatter(&text, change)? {
             Some(written) => self.write_file(path, &written, None),
             None => Ok(()),
         }

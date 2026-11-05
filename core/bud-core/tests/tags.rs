@@ -294,3 +294,111 @@ fn renaming_only_the_case_of_a_tag_rewrites_it() {
     assert_eq!(read(&dir, "Note.md"), "---\ntags: [Home]\n---\n#Home\n");
     assert!(vault.rename_tag("home", "no way").is_err());
 }
+
+/// Each way a file can write its list that an edit must not break, with the text it gives back.
+#[test]
+fn awkward_lists_are_rewritten_without_breaking_the_block() {
+    let cases: &[(&str, &str, &str, &str)] = &[
+        // (file, change, tag, expected)
+        (
+            "---\nstate: open\ntags: # mine\n- a\n- b\n---\n",
+            "add",
+            "c",
+            "---\nstate: open\ntags: # mine\n- a\n- b\n- c\n---\n",
+        ),
+        (
+            "---\ntags: [a,\n  b]\nstate: open\n---\n",
+            "add",
+            "c",
+            "---\ntags: [a, b, c]\nstate: open\n---\n",
+        ),
+        (
+            "---\ntags : [a]\n---\n",
+            "add",
+            "b",
+            "---\ntags: [a, b]\n---\n",
+        ),
+        (
+            "---\ntags: a, b # note\n---\n",
+            "remove",
+            "a",
+            "---\ntags: b # note\n---\n",
+        ),
+        (
+            "---\ntags:\n  - a # x\n  - b\n---\n",
+            "remove",
+            "a",
+            "---\ntags:\n  - b\n---\n",
+        ),
+        (
+            "---\ntitle: t\ntags:\n  - a\n\n  - b\n---\n",
+            "remove",
+            "a",
+            "---\ntitle: t\ntags:\n  - b\n---\n",
+        ),
+        (
+            "---\ntags:\n  - a\n\n  - b\n---\n",
+            "remove",
+            "b",
+            "---\ntags:\n  - a\n---\n",
+        ),
+        (
+            "---\ntags: [a]\n---\n---\nhr\n---\n",
+            "remove",
+            "a",
+            "---\n---\n---\nhr\n---\n",
+        ),
+        (
+            "---\ntags: a, 2024, b\n---\n",
+            "remove",
+            "a",
+            "---\ntags: 2024, b\n---\n",
+        ),
+        (
+            "---\ntags: [\"a,b\", c]\n---\n",
+            "remove",
+            "c",
+            "---\ntags: [\"a,b\"]\n---\n",
+        ),
+        (
+            "---\ntags: [a, b] # c\n---\n",
+            "remove",
+            "a",
+            "---\ntags: [b] # c\n---\n",
+        ),
+    ];
+    for (file, change, tag, want) in cases {
+        let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
+        match *change {
+            "add" => vault.add_tag("Note.md", tag).unwrap(),
+            _ => vault.remove_tag("Note.md", tag).unwrap(),
+        }
+        assert_eq!(&read(&dir, "Note.md"), want, "{change} {tag} on {file:?}");
+    }
+}
+
+#[test]
+fn a_rename_keeps_repeats_it_did_not_make_and_quotes_words_that_need_it() {
+    let (mut vault, dir, _index) = vault_with(&[
+        ("Repeats.md", "---\ntags: [a, A, b]\n---\n"),
+        ("Words.md", "---\nstate: open\ntags: home\n---\n"),
+    ]);
+    vault.rename_tag("b", "c").unwrap();
+    assert_eq!(read(&dir, "Repeats.md"), "---\ntags: [a, A, c]\n---\n");
+    vault.rename_tag("home", "true").unwrap();
+    assert_eq!(
+        read(&dir, "Words.md"),
+        "---\nstate: open\ntags: [\"true\"]\n---\n"
+    );
+    assert_eq!(vault.tags_of("Words.md").unwrap(), ["true"]);
+}
+
+#[test]
+fn a_list_bud_cannot_rewrite_safely_is_refused_and_left_alone() {
+    let file = "---\nbase: &t [a, b]\ntags: *t\n---\n";
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
+    assert!(vault.add_tag("Note.md", "c").is_err());
+    assert_eq!(read(&dir, "Note.md"), file);
+    assert!(vault.rename_tag("a", "z").unwrap().is_empty());
+    assert_eq!(read(&dir, "Note.md"), file);
+}
