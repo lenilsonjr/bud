@@ -605,3 +605,38 @@ fn a_folder_bud_trashed_on_purpose_stays_when_its_last_child_goes() {
         assert!(replica.vault.bud("Routines").unwrap().is_some());
     }
 }
+
+#[test]
+fn the_source_list_reaches_the_peer_and_a_removal_follows() {
+    let (mut a, mut b) = pair();
+    a.vault
+        .set_source("acct-1", Some(r#"{"kind":"mail","name":"Work mail"}"#))
+        .unwrap();
+    a.vault
+        .set_source("acct-2", Some(r#"{"kind":"calendar","name":"Home"}"#))
+        .unwrap();
+    exchange(&mut a, &mut b);
+    let ids: Vec<String> = b
+        .vault
+        .sources()
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, ["acct-1", "acct-2"]);
+    assert_eq!(
+        b.vault.sources().unwrap()[0].1,
+        r#"{"kind":"mail","name":"Work mail"}"#
+    );
+
+    b.vault.set_source("acct-1", None).unwrap();
+    exchange(&mut a, &mut b);
+    let left: Vec<String> = a
+        .vault
+        .sources()
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(left, ["acct-2"]);
+}
