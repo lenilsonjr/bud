@@ -28,7 +28,7 @@ struct SoilView: View {
         }
         .frame(height: folded ? Self.foldedHeight : Self.openHeight, alignment: .top)
         .frame(maxWidth: .infinity)
-        .background(Theme.sidebar.opacity(0.92))
+        .background(Theme.sidebar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("soil")
     }
