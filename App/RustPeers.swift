@@ -146,7 +146,9 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
     /// the next call tries it again.
     func setRelay(_ relay: BudKit.RelaySetting) async throws {
         try await Task.detached { [self] in
-            try live().stop()
+            lock.lock()
+            if !stopped { node.stop() }
+            lock.unlock()
             let fresh: PeerNode
             do {
                 fresh = try startNodeAs(vault: vault, relay: Self.core(relay), kind: kind, name: name)
@@ -157,12 +159,25 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
                     lock.lock()
                     stopped = true
                     lock.unlock()
+                    retryLater()
                 }
                 throw error
             }
             adopt(fresh)
             Self.storedRelay = relay
         }.value
+    }
+
+    /// Keeps trying a stopped node every half minute, so sync comes back without a tap.
+    private func retryLater() {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let stopped = self.stopped
+            self.lock.unlock()
+            guard stopped else { return }
+            if (try? self.live()) == nil { self.retryLater() }
+        }
     }
 
     private func adopt(_ fresh: PeerNode) {
