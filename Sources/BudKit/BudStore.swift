@@ -514,6 +514,7 @@ public final class BudStore: ObservableObject {
         var changed: [UUID] = []
         commit { changed = $0.renameTag(from, to: to) }
         guard !changed.isEmpty else { return }
+        renameFacets(from, to: to)
         let edits = TagEdits()
         write { [self] vault in
             let records = try await vault.renameTag(from, to: to)
@@ -524,6 +525,17 @@ public final class BudStore: ObservableObject {
         toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
             Task { @MainActor in self?.undoRenameTag(edits) }
         })
+    }
+
+    /// A ticked tag the rename reached takes its new name, so its chip keeps matching; one that
+    /// lands on a tag ticked already merges into it.
+    private func renameFacets(_ from: String, to: String) {
+        var seen: Set<LensFacet> = []
+        let renamed = canvasFacets.map { facet -> LensFacet in
+            guard case .tag(let tag) = facet, let new = BudTags.renamed(tag, from: from, to: to) else { return facet }
+            return .tag(new)
+        }.filter { seen.insert($0).inserted }
+        if renamed.map(\.name) != canvasFacets.map(\.name) { canvasFacets = renamed }
     }
 
     /// Puts back each file a tag rename wrote, where nothing has changed it since. It queues

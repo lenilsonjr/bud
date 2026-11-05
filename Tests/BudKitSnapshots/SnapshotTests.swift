@@ -642,6 +642,11 @@ final class SnapshotTests: XCTestCase {
         store.center = rootID
         let canvas = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
         try render(canvas, scheme: .light).write(to: folder.appendingPathComponent("phone-canvas-light.png"))
+        // A lens on the phone: its chips take a row under the bar.
+        store.canvasFacets = [.openTodos, .pinned]
+        let lensed = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
+        try render(lensed, scheme: .light).write(to: folder.appendingPathComponent("phone-canvas-lens-light.png"))
+        store.canvasFacets = []
         let palette = CommandPalette(store: store, onClose: {})
             .padding(12)
             .frame(width: phone.width)

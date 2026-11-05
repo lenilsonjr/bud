@@ -103,6 +103,20 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(records.first { $0.path == a.id.uuidString }?.tags, ["home", "errands"])
     }
 
+    func testATickedTagFollowsARename() async throws {
+        let (store, _) = await loaded()
+        let a = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(a.id, "home")
+        store.addTag(a.id, "house")
+        await store.settle()
+        store.canvasFacets = [.openTodos, .tag("Home"), .tag("house")]
+        store.renameTag("home", to: "house")
+        XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#house"])
+        store.renameTag("house", to: "place")
+        XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#place"])
+        await store.settle()
+    }
+
     func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
         let (store, vault) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)

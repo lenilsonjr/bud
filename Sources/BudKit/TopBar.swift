@@ -13,6 +13,19 @@ struct TopBar: View {
     @State private var lensOpen = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            bar
+            if compact && store.surface == .canvas && !store.canvasFacets.isEmpty { compactChips }
+        }
+        .frame(maxWidth: .infinity)
+        .background(Theme.window)
+        .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
+        #if os(macOS)
+        .background(WindowDragArea())
+        #endif
+    }
+
+    private var bar: some View {
         HStack(spacing: compact ? 10 : 14) {
             #if os(iOS)
             if !compact && store.surface == .files { sidebarToggle }
@@ -80,12 +93,21 @@ struct TopBar: View {
         .padding(.leading, compact ? 12 : leadingInset)
         .padding(.trailing, compact ? 8 : 14)
         .frame(height: 52)
-        .frame(maxWidth: .infinity)
-        .background(Theme.window)
-        .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
-        #if os(macOS)
-        .background(WindowDragArea())
-        #endif
+    }
+
+    /// On a narrow bar the lens chips get their own row under it, scrolling sideways when they
+    /// outgrow it.
+    @ViewBuilder private var compactChips: some View {
+        // A still picture draws no scroll view, so it gets the chips as they are.
+        if still {
+            lensChips.padding(.horizontal, 12).frame(maxWidth: .infinity, alignment: .leading).frame(height: 36).padding(.bottom, 6)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                lensChips.padding(.horizontal, 12)
+            }
+            .frame(height: 36)
+            .padding(.bottom, 6)
+        }
     }
 
     #if os(iOS)
