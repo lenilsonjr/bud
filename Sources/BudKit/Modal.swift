@@ -19,6 +19,7 @@ enum Modal: Hashable, Identifiable {
     case freshStart
     /// Settings › Sources: connect a mail account, or sign this device in to one.
     case connectMail(account: String?)
+    case connectCalendar
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
@@ -29,6 +30,7 @@ enum Modal: Hashable, Identifiable {
     static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
     static let freshStartID = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
     static let connectMailID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
+    static let connectCalendarID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!
 
     var id: UUID {
         switch self {
@@ -44,6 +46,7 @@ enum Modal: Hashable, Identifiable {
         case .rotateKey: return Self.rotateKeyID
         case .freshStart: return Self.freshStartID
         case .connectMail: return Self.connectMailID
+        case .connectCalendar: return Self.connectCalendarID
         }
     }
 
@@ -127,6 +130,8 @@ struct ModalHost: View {
                 FreshStartDialog(close: { store.modal = .settings }, perform: { store.freshStart(sample: $0) })
             case let .connectMail(account):
                 ConnectMailSheet(sources: .shared, account: account, close: { store.modal = .settings })
+            case .connectCalendar:
+                ConnectCalendarSheet(sources: .shared, close: { store.modal = .settings })
             }
         }
         .modalCard()

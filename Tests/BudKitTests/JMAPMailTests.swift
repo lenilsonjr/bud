@@ -13,9 +13,10 @@ final class ScriptedHTTP: HTTP, @unchecked Sendable {
     init(_ replies: [(String, Int)]) { self.replies = replies.map { (Data($0.0.utf8), $0.1) } }
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
-        lock.lock(); defer { lock.unlock() }
-        asked.append(request)
-        return replies.isEmpty ? (Data(), 500) : replies.removeFirst()
+        lock.withLock {
+            asked.append(request)
+            return replies.isEmpty ? (Data(), 500) : replies.removeFirst()
+        }
     }
 
     func body(_ i: Int) -> [String: Any] {
