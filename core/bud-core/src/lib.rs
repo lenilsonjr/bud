@@ -158,6 +158,8 @@ pub struct Bud {
     pub body: String,
     pub mtime: i64,
     pub place: Place,
+    /// The tags of its frontmatter list, in order; the `#tags` in its body are not here.
+    pub tags: Vec<String>,
 }
 
 impl Bud {
@@ -475,7 +477,9 @@ fn insert_row(
     tags::retag(conn, row.path, yaml, body)
 }
 
-pub(crate) const SELECT: &str ="SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place FROM buds";
+pub(crate) const SELECT: &str = "SELECT path, parent, title, kind, state, when_date, due, pinned, created, source, body, mtime, place,
+    (SELECT group_concat(tag, char(31) ORDER BY position) FROM bud_tags
+     WHERE bud_tags.source = buds.rowid AND origin = 'frontmatter') FROM buds";
 const ORDER: &str = "ORDER BY created IS NULL, created, title COLLATE NOCASE";
 
 pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
@@ -483,6 +487,7 @@ pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
     let state: Option<String> = row.get(4)?;
     let place: String = row.get(12)?;
     let pinned: i64 = row.get(7)?;
+    let tags: Option<String> = row.get(13)?;
     Ok(Bud {
         path: row.get(0)?,
         parent: row.get(1)?,
@@ -497,5 +502,8 @@ pub(crate) fn read_bud(row: &SqlRow<'_>) -> rusqlite::Result<Bud> {
         body: row.get(10)?,
         mtime: row.get(11)?,
         place: Place::parse(&place).unwrap_or(Place::Everything),
+        tags: tags.map_or_else(Vec::new, |t| {
+            t.split('\u{1f}').map(str::to_string).collect()
+        }),
     })
 }
