@@ -253,6 +253,7 @@ public struct OrbitCanvas: View {
                     folded: store.soilFolded,
                     device: BudStore.deviceName,
                     onFold: { withAnimation(.spring(duration: 0.35, bounce: 0.1)) { store.soilFolded.toggle() } },
+                    onSignIn: { store.modal = .connectMail(account: $0) },
                     onDrag: { item, _, point in
                         inHand = (item, point)
                         plantOver = point.y < soilTop(in: size) ? card(at: point, in: size) : nil

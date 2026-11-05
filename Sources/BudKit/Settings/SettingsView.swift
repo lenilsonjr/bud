@@ -45,6 +45,9 @@ public struct SettingsView: View {
             DevicesSection(devices: devices, present: { modal in
                 if let present { present(modal) } else { local = modal }
             })
+            SourcesSection(sources: .shared, present: { modal in
+                if let present { present(modal) } else { local = modal }
+            })
             section("Start over", caption: "Erases every bud on this device and starts again, empty or with the sample vault.") {
                 Button {
                     if let present { present(.freshStart) } else { local = .freshStart }
@@ -82,6 +85,8 @@ public struct SettingsView: View {
                         NotificationCenter.default.post(name: BudStore.freshStartRequested, object: nil, userInfo: ["sample": sample])
                         local = nil
                     })
+                case let .connectMail(account):
+                    ConnectMailSheet(sources: .shared, account: account, close: { local = nil })
                 default: EmptyView()
                 }
             }
