@@ -263,15 +263,16 @@ extension Tree {
 }
 
 /// The `[[` picker's sums: the link being typed in a body, the buds it could name, and the body
-/// once one is picked. The editor cannot say where its caret is, so the link being typed is the
-/// last `[[` on its line with no `]]` after it.
+/// once one is picked. The editor cannot say where its caret is, so the picker reads the end of
+/// the body: an open `[[` on its last line, outside code, with nothing closing it.
 public struct LinkPicker: Equatable, Sendable {
-    /// What follows the open `[[`, up to the end of its line.
+    /// What follows the open `[[`, up to the end of the body.
     public var query: String
     /// Where `[[` and the query are in the body, in characters.
     var range: Range<Int>
 
-    /// The link being typed in `body`, if one is: an open `[[` with no `]]`, `|` or newline after it.
+    /// The link being typed at the end of `body`, if one is: an open `[[` with no `]]`, `|` or
+    /// newline after it, not an embed and not in code.
     public init?(typing body: String) {
         let chars = Array(body)
         var i = chars.count - 1
@@ -283,16 +284,27 @@ public struct LinkPicker: Equatable, Sendable {
         guard i > 0 else { return nil }
         let open = i - 1
         guard open == 0 || chars[open - 1] != "!" else { return nil }
+        // The last line must be prose, and the brackets outside its code spans.
+        let lineStart = (chars[..<open].lastIndex(of: "\n") ?? -1) + 1
+        guard let last = BudLinks.prose(body).last, last.written == Array(chars[lineStart...]),
+              last.blank[open - lineStart] == "[" else { return nil }
         query = String(chars[(open + 2)...])
         range = open..<chars.count
         guard query.count <= 80 else { return nil }
     }
 
+    /// A title a link can carry as it is: `#`, `|` and brackets would cut it.
+    public static func linkable(_ title: String) -> Bool {
+        !title.contains { "#|[]".contains($0) }
+    }
+
     /// The buds whose title holds the query, those it starts first, at most `limit`. A bud never
-    /// links to itself.
+    /// links to itself, and a title a link cannot carry is left out.
     public func candidates(in tree: Tree, excluding id: UUID, limit: Int = 6) -> [Bud] {
         let q = BudLinks.fold(query.trimmingCharacters(in: .whitespaces))
-        let found = tree.buds.filter { $0.id != id && (q.isEmpty || BudLinks.fold($0.text).contains(q)) }
+        let found = tree.buds.filter {
+            $0.id != id && Self.linkable($0.text) && (q.isEmpty || BudLinks.fold($0.text).contains(q))
+        }
         return found
             .sorted { a, b in
                 let (sa, sb) = (BudLinks.fold(a.text).hasPrefix(q), BudLinks.fold(b.text).hasPrefix(q))
@@ -302,12 +314,24 @@ public struct LinkPicker: Equatable, Sendable {
             .map { $0 }
     }
 
-    /// `body` with the link being typed made a link to `title`; with a label, the query becomes it.
-    public func complete(_ body: String, with title: String, labelled: Bool = false) -> String {
+    /// What a link to `bud` says: its title, or its path when another bud has that title too.
+    public static func target(for bud: Bud, in tree: Tree) -> String {
+        tree.resolve(bud.text) == bud.id ? bud.text : tree.linkPath(of: bud.id)
+    }
+
+    /// `body` with the link being typed made a link to `target`; with a label, the query becomes it.
+    public func complete(_ body: String, with target: String, labelled: Bool = false) -> String {
         var chars = Array(body)
         let label = query.trimmingCharacters(in: .whitespaces)
-        let link = labelled && !label.isEmpty && label != title ? "[[\(title)|\(label)]]" : "[[\(title)]]"
+        let link = labelled && !label.isEmpty && label != target ? "[[\(target)|\(label)]]" : "[[\(target)]]"
         chars.replaceSubrange(range, with: Array(link))
         return String(chars)
+    }
+
+    /// Whether an edit from `old` to `new` was made at this link: it changed nothing before the
+    /// open `[[`. Only then do the picker's keys stand in for the editor's.
+    public func edited(from old: String, to new: String) -> Bool {
+        let shared = zip(old, new).prefix { $0 == $1 }.count
+        return shared >= range.lowerBound && old != new
     }
 }
