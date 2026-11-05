@@ -11,6 +11,7 @@ use crate::scan;
 use crate::{
     insert_row, links, tags, Error, Kind, Place, Placement, Properties, Result, State, Vault,
 };
+use crate::{read_bud, Bud, SELECT};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -413,7 +414,38 @@ impl Vault {
             pinned: bud.pinned,
             created: bud.created,
             source: bud.source,
+            from: bud.from,
         })
+    }
+
+    /// The bud planted from a source item, by its `from:` key (`mail:M1234`), if there is one
+    /// outside the trash.
+    pub fn planted(&self, from: &str) -> Result<Option<Bud>> {
+        let conn = lock(&self.conn);
+        let mut stmt = conn.prepare(&format!(
+            "{SELECT} WHERE planted_from = ?1 AND place != 'trash' ORDER BY path LIMIT 1"
+        ))?;
+        Ok(stmt.query_row(params![from], read_bud).optional()?)
+    }
+
+    /// Plant a source item: a new bud under `parent` (as in [`Vault::create`]) that carries
+    /// `from:`. An item already planted is not planted twice: the bud that has it is returned
+    /// instead. Returns the bud's path and whether it is new.
+    pub fn plant(
+        &mut self,
+        parent: Option<&str>,
+        title: &str,
+        kind: Kind,
+        from: &str,
+    ) -> Result<(String, bool)> {
+        if let Some(bud) = self.planted(from)? {
+            return Ok((bud.path, false));
+        }
+        let path = self.create(parent, title, kind, None)?;
+        let mut props = self.properties_of(&path)?;
+        props.from = Some(from.to_string());
+        self.set_properties(&path, &props)?;
+        Ok((path, true))
     }
 
     /// The folder that holds the children of `parent`.

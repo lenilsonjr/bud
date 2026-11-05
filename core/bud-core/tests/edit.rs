@@ -638,3 +638,28 @@ fn atomic_writes_leave_no_temp_file_in_view() {
         .collect();
     assert_eq!(names, vec!["Note.md".to_string()]);
 }
+
+#[test]
+fn planting_an_item_twice_finds_the_bud_it_made() {
+    let (mut vault, _dir, _index) = vault_with(&[("Gift ideas.md", "Scarf\n")]);
+    let (path, new) = vault
+        .plant(None, "Lease draft", Kind::Note, "mail:M-1")
+        .unwrap();
+    assert!(new);
+    assert_eq!(path, "Lease draft.md");
+    let bud = vault.bud(&path).unwrap().unwrap();
+    assert_eq!(bud.from.as_deref(), Some("mail:M-1"));
+
+    let again = vault
+        .plant(Some("Gift ideas.md"), "Lease draft", Kind::Note, "mail:M-1")
+        .unwrap();
+    assert_eq!(again, (path.clone(), false));
+    assert_eq!(vault.planted("mail:M-1").unwrap().unwrap().path, path);
+    assert!(vault.planted("mail:M-2").unwrap().is_none());
+
+    vault.trash(&path).unwrap();
+    assert!(
+        vault.planted("mail:M-1").unwrap().is_none(),
+        "a trashed bud is planted again"
+    );
+}

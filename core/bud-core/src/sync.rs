@@ -29,7 +29,9 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-const KEYS: [&str; 6] = ["state", "when", "due", "pinned", "created", "source"];
+const KEYS: [&str; 7] = [
+    "state", "when", "due", "pinned", "created", "source", "from",
+];
 
 /// A middle part longer than this (in characters, both sides multiplied) is replaced in one
 /// operation instead of diffed.
@@ -126,7 +128,7 @@ fn flag_of(value: Option<ValueOrContainer>) -> bool {
 }
 
 /// The text of each key as the document keeps it; none means the key is absent.
-fn wanted(props: &Properties) -> [Option<String>; 6] {
+fn wanted(props: &Properties) -> [Option<String>; 7] {
     [
         props.state.map(|s| s.as_str().to_string()),
         props.when.clone(),
@@ -134,6 +136,7 @@ fn wanted(props: &Properties) -> [Option<String>; 6] {
         props.pinned.then(|| "true".to_string()),
         props.created.clone(),
         props.source.clone(),
+        props.from.clone(),
     ]
 }
 
@@ -146,6 +149,7 @@ fn props_of(map: &LoroMap) -> Properties {
         pinned: get("pinned").is_some(),
         created: get("created"),
         source: get("source"),
+        from: get("from"),
     }
 }
 

@@ -84,10 +84,19 @@ pub struct BudRecord {
     pub pinned: bool,
     pub created: Option<String>,
     pub source: Option<String>,
+    /// Where a planted bud came from, as in `mail:M1234`.
+    pub from: Option<String>,
     pub body: String,
     pub place: BudPlace,
     /// The tags of its frontmatter list; the `#tags` in its body are read from the body.
     pub tags: Vec<String>,
+}
+
+/// Where a planted item went, and whether planting made that bud or found it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PlantRecord {
+    pub path: String,
+    pub new: bool,
 }
 
 /// A bud with the titles of the buds above it, root first.
@@ -605,6 +614,25 @@ impl Vault {
             .create(parent.as_deref(), &title, kind.into(), source.as_deref())?)
     }
 
+    /// Plants a source item under `parent`, or finds the bud it was planted as before.
+    pub fn plant(
+        &self,
+        parent: Option<String>,
+        title: String,
+        kind: BudKind,
+        from: String,
+    ) -> Result<PlantRecord> {
+        let (path, new) = self
+            .core()
+            .plant(parent.as_deref(), &title, kind.into(), &from)?;
+        Ok(PlantRecord { path, new })
+    }
+
+    /// The bud planted from a source item, by its `from:` key.
+    pub fn planted(&self, from: String) -> Result<Option<BudRecord>> {
+        Ok(self.core().planted(&from)?.map(Into::into))
+    }
+
     pub fn set_body(&self, path: String, text: String) -> Result<()> {
         Ok(self.core().set_body(&path, &text)?)
     }
@@ -874,6 +902,7 @@ impl From<bud_core::Bud> for BudRecord {
             pinned: bud.pinned,
             created: bud.created,
             source: bud.source,
+            from: bud.from,
             body: bud.body,
             place: bud.place.into(),
             tags: bud.tags,
