@@ -523,7 +523,9 @@ impl Vault {
             let Some(folder) = path.strip_suffix(".md") else {
                 continue;
             };
-            let lost = !live.contains(path.as_str())
+            // In the trash a folder only holds what was trashed inside it.
+            let lost = !path.starts_with(".trash/")
+                && !live.contains(path.as_str())
                 && live.contains(folder)
                 && self.root.join(folder).is_dir();
             if lost && !documented.contains(folder) && !followed.contains(path) {
@@ -949,6 +951,18 @@ impl Vault {
     }
 
     /// Reconcile one bud with its document.
+    /// Whether `path` is a folder's file holding nothing, with no document of the folder's own.
+    fn emptied_folder_file(&self, path: &str, text: &str) -> Result<bool> {
+        let Some(folder) = path.strip_suffix(".md") else {
+            return Ok(false);
+        };
+        let (yaml, body) = frontmatter::split(text);
+        if !yaml.is_none_or(|y| y.trim().is_empty()) || !body.trim().is_empty() {
+            return Ok(false);
+        }
+        Ok(self.root.join(folder).is_dir() && self.doc_id(folder)?.is_none())
+    }
+
     fn sync_path(&mut self, path: &str) -> Result<SyncReport> {
         let mut report = SyncReport::default();
         let is_file = path.ends_with(".md");
@@ -1007,6 +1021,19 @@ impl Vault {
         } else {
             file
         };
+        // A folder's file emptied by a merge, because another replica's file was deleted while
+        // its folder stayed, goes too: the bud is its folder again, as it is there.
+        if wrote && self.emptied_folder_file(&path, &known)? {
+            let folder = path.trim_end_matches(".md").to_string();
+            std::fs::remove_file(self.root.join(&path))?;
+            lock(&self.conn).execute(
+                "UPDATE docs SET path = ?1, known_text = '' WHERE path = ?2",
+                params![folder, path],
+            )?;
+            self.rescan()?;
+            report.written = 1;
+            return Ok(report);
+        }
         lock(&self.conn).execute(
             "UPDATE docs SET known_text = ?1 WHERE path = ?2",
             params![known, path],
