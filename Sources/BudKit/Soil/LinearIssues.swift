@@ -9,8 +9,9 @@ public struct LinearIssues: Sendable {
     public let token: String
     public let http: HTTP
     public var endpoint = URL(string: "https://api.linear.app/graphql")!
-    /// How many issues the window holds.
-    public var limit = 50
+    /// How many issues the window holds: the most Linear gives in one page, so issues due soon are
+    /// not left out for being untouched lately.
+    public var limit = 250
 
     public init(token: String, http: HTTP = NetworkHTTP()) {
         self.token = token
@@ -39,25 +40,28 @@ public struct LinearIssues: Sendable {
         return (nodes.compactMap(Self.item), updated)
     }
 
-    /// Whether an issue assigned to you was updated after `since`.
-    public func changed(since: Date) async throws -> Bool {
+    /// When the newest update after `since` to an issue assigned to you was made, closed ones
+    /// included; nil when there was none. A reply Bud cannot read counts as an update now.
+    public func changed(since: Date) async throws -> Date? {
         let data = try await query("""
-        query { viewer { assignedIssues(first: 1, includeArchived: true, \
-        filter: { updatedAt: { gt: "\(Self.stamp(since))" } }) { nodes { id } } } }
+        query { viewer { assignedIssues(first: 1, includeArchived: true, orderBy: updatedAt, \
+        filter: { updatedAt: { gt: "\(Self.stamp(since))" } }) { nodes { updatedAt } } } }
         """)
-        guard let nodes = ((data["viewer"] as? [String: Any])?["assignedIssues"] as? [String: Any])?["nodes"] as? [Any] else {
-            return true
+        guard let nodes = ((data["viewer"] as? [String: Any])?["assignedIssues"] as? [String: Any])?["nodes"] as? [[String: Any]] else {
+            return Date()
         }
-        return !nodes.isEmpty
+        guard let newest = nodes.first else { return nil }
+        return (newest["updatedAt"] as? String).flatMap(Self.instant) ?? Date()
     }
 
     /// Particular issues by identifier, whatever their state or assignee now: the ones found, and
-    /// the identifiers this workspace no longer has, deleted or never its own.
+    /// the identifiers this workspace no longer has, deleted or never its own. Archived ones count:
+    /// Linear archives closed issues after a while.
     public func issues(_ identifiers: [String]) async throws -> (found: [SourceItem], missing: [String]) {
         let wanted = identifiers.compactMap(Self.split)
         guard !wanted.isEmpty else { return ([], identifiers) }
         let any = wanted.map { "{ team: { key: { eq: \"\($0.team)\" } }, number: { eq: \($0.number) } }" }.joined(separator: ", ")
-        let data = try await query("query { issues(first: \(wanted.count), filter: { or: [\(any)] }) { nodes { \(Self.fields) } } }")
+        let data = try await query("query { issues(first: \(wanted.count), includeArchived: true, filter: { or: [\(any)] }) { nodes { \(Self.fields) } } }")
         guard let nodes = (data["issues"] as? [String: Any])?["nodes"] as? [[String: Any]] else {
             throw SourceError.unreadable("issues")
         }

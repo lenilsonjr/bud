@@ -231,11 +231,16 @@ public final class SourceStore: ObservableObject {
             case .linear:
                 let linear = LinearIssues(token: token, http: http)
                 let now = clock()
-                if let last = linearSeen[config.id], let since = last.updated, now.timeIntervalSince(last.at) < 3600,
-                   !(try await linear.changed(since: since)) { break }
+                var newest = linearSeen[config.id]?.updated
+                if let last = linearSeen[config.id], let since = last.updated, now.timeIntervalSince(last.at) < 3600 {
+                    guard let update = try await linear.changed(since: since) else { break }
+                    newest = update
+                }
                 let window = try await linear.window()
                 items[config.id] = window.items
-                linearSeen[config.id] = (window.updated ?? linearSeen[config.id]?.updated, now)
+                // The later of the two: a closed issue's update is newer than any open one's.
+                let updated = [newest, window.updated].compactMap { $0 }.max()
+                linearSeen[config.id] = (updated, now)
             case .github:
                 break
             }
