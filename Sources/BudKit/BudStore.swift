@@ -101,6 +101,9 @@ public final class BudStore: ObservableObject {
         didSet { UserDefaults.standard.set(soilFolded, forKey: Self.soilFoldedKey) }
     }
     static let soilFoldedKey = "soilFolded"
+    /// How each planted bud stands with its source, by its `from` key, as the device that keeps
+    /// it live last saw it.
+    @Published public var marks: [String: SourceMark] = [:]
 
     /// One root per account, in the order the accounts were connected.
     public func roots(now: Date = Date()) -> [Root] {
