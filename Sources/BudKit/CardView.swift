@@ -130,9 +130,13 @@ struct CardView: View {
                     .textRole(.cardTitle)
                     .lineLimit(2)
                     .foregroundStyle(bud.isDone ? style.meta : style.ink)
-                Text(CardStyle.caption(for: bud, in: store.tree))
-                    .textRole(.caption)
-                    .foregroundStyle(style.meta)
+                if let from = bud.from {
+                    SourceRow(from: from, mark: store.marks[from], fallback: style.meta)
+                } else {
+                    Text(CardStyle.caption(for: bud, in: store.tree))
+                        .textRole(.caption)
+                        .foregroundStyle(style.meta)
+                }
             }
             Spacer(minLength: 0)
             Button(action: onAdd) {
