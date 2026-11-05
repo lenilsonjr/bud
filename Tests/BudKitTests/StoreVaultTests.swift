@@ -400,5 +400,35 @@ final class StoreVaultTests: XCTestCase {
         let records = try await vault.snapshot()
         XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
     }
+
+    // MARK: keeping planted buds live
+
+    func testAMovedEventMovesItsPlantedBudAndMarksIt() async throws {
+        let (store, vault) = await loaded()
+        let uid = UUID().uuidString
+        let first = Date(timeIntervalSinceNow: 3 * 86_400)
+        let calendar = SourceAccount(id: "cal", kind: .calendar, name: "Home")
+        let bud = store.plant(SourceItem(id: uid, title: "Flat viewing", date: first), from: calendar, at: .inbox)
+        await store.settle()
+        XCTAssertNotNil(store.tree.bud(bud.id)?.when, "a planted event starts with its day")
+
+        let moved = CalDAV.stamp(Date(timeIntervalSinceNow: 5 * 86_400))
+        let token = "<d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><d:sync-token>1</d:sync-token></d:prop></d:propstat></d:response></d:multistatus>"
+        let report = "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:propstat><d:prop><c:calendar-data>BEGIN:VEVENT\nUID:\(uid)\nSUMMARY:Flat viewing\nDTSTART:\(moved)\nEND:VEVENT</c:calendar-data></d:prop></d:propstat></d:response></d:multistatus>"
+        let soil = SourceStore(
+            defaults: UserDefaults(suiteName: "live-\(UUID().uuidString)")!, tokens: MemoryTokens(),
+            http: ScriptedHTTP([(token, 207), (report, 207)]))
+        await soil.connectCalendar(
+            name: "Home", server: URL(string: "https://cal.example.org/")!, user: "sam", password: "p",
+            calendar: URL(string: "https://cal.example.org/home/")!)
+        await store.keepLive(soil)
+        await store.settle()
+        let now = try XCTUnwrap(store.tree.bud(bud.id))
+        XCTAssertEqual(now.when.map { Calendar.current.startOfDay(for: $0) }, Calendar.current.startOfDay(for: Date(timeIntervalSinceNow: 5 * 86_400)))
+        XCTAssertTrue(now.fromState?.hasPrefix("moved ") ?? false)
+        XCTAssertEqual(store.mark(of: now)?.device, BudStore.deviceName)
+        let record = try await vault.snapshot().first { $0.from == "calendar:\(uid)" }
+        XCTAssertTrue(record?.fromState?.hasPrefix("moved ") ?? false)
+    }
 }
 #endif

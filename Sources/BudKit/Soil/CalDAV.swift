@@ -57,7 +57,7 @@ public struct CalDAV: Sendable {
         return tree.first("sync-token")?.text ?? tree.first("getctag")?.text
     }
 
-    /// The events from `now` to `days` ahead, repeats expanded by the server, cancelled ones left out.
+    /// The events from `now` to `days` ahead, repeats expanded by the server, cancelled ones marked.
     public func window(of calendar: URL, now: Date) async throws -> [SourceItem] {
         let start = Self.stamp(now), end = Self.stamp(now.addingTimeInterval(Double(days) * 86_400))
         let body = """
@@ -70,7 +70,7 @@ public struct CalDAV: Sendable {
         </c:calendar-query>
         """
         let tree = try await xml("REPORT", at: calendar, depth: 1, body: body)
-        return tree.all("calendar-data").flatMap { ICS.events(in: $0.text) }.filter { !$0.cancelled }.map(\.item)
+        return tree.all("calendar-data").flatMap { ICS.events(in: $0.text) }.map(\.item)
     }
 
     // MARK: requests
@@ -186,7 +186,7 @@ enum ICS {
         /// One occurrence is one item: a repeat carries its occurrence in the id.
         var item: SourceItem {
             let id = recurrence.map { "\(uid)/\($0)" } ?? uid
-            return SourceItem(id: id, title: summary, detail: location, date: start)
+            return SourceItem(id: id, title: summary, detail: location, date: start, cancelled: cancelled)
         }
     }
 
