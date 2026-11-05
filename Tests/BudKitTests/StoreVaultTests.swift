@@ -46,7 +46,7 @@ final class StoreVaultTests: XCTestCase {
         let records = try await vault.snapshot()
         XCTAssertEqual(records.first { $0.path == other.id.uuidString }?.body, "See [[Ship the newsletter|the launch]].")
         store.toasts.current?.action.undo?()
-        for _ in 0..<5 { await Task.yield() }
+        for _ in 0..<100 where store.tree.bud(thread.id)?.text != thread.text { await Task.yield() }
         await store.settle()
         XCTAssertEqual(store.tree.bud(thread.id)?.text, thread.text)
         XCTAssertEqual(store.tree.bud(other.id)?.body, "See [[\(thread.text)|the launch]].")
