@@ -49,23 +49,39 @@ struct LensMenu: View {
         return VStack(alignment: .leading, spacing: 2) {
             if !picked.isEmpty { section("Links", picked) }
             if linking {
-                TextField("Linked to…", text: $linkQuery)
-                    .textFieldStyle(.plain)
-                    .focused($typing)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
-                    .onSubmit { if let first = candidates.first { pick(first) } }
-                    .onAppear { typing = true }
-                    .accessibilityIdentifier("lens-linked-search")
-                ForEach(candidates) { bud in
-                    Button { pick(bud) } label: {
+                let candidates = candidates
+                HStack(spacing: 6) {
+                    TextField("Linked to…", text: $linkQuery)
+                        .textFieldStyle(.plain)
+                        .focused($typing)
+                        .onSubmit { if let first = candidates.first { pick(first.bud) } }
+                        .accessibilityIdentifier("lens-linked-search")
+                    Button {
+                        linking = false
+                        linkQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.text3)
+                            .contentShape(Rectangle().inset(by: -6))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityLabel("Stop picking a bud")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
+                // A hop past the field's first frame, which a popover would otherwise drop.
+                .task { typing = true }
+                ForEach(candidates, id: \.bud.id) { candidate in
+                    let count = candidate.count
+                    Button { pick(candidate.bud) } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "link").foregroundStyle(Theme.text2).frame(width: 16)
-                            Text(bud.text).lineLimit(1).foregroundStyle(Theme.text)
+                            Text(candidate.bud.text).lineLimit(1).foregroundStyle(Theme.text)
                             Spacer(minLength: 8)
-                            Text("\(linkCount(bud.id))")
+                            Text("\(count)")
                                 .textRole(.caption)
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.text3)
@@ -76,7 +92,7 @@ struct LensMenu: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Linked to \(bud.text), \(linkCount(bud.id) == 1 ? "1 bud" : "\(linkCount(bud.id)) buds")")
+                    .accessibilityLabel("Linked to \(candidate.bud.text), \(count == 1 ? "1 bud" : "\(count) buds")")
                 }
                 if candidates.isEmpty {
                     Text(linkQuery.isEmpty ? "No links yet." : "Nothing matches.")
@@ -106,21 +122,23 @@ struct LensMenu: View {
         }
     }
 
-    /// Buds with links, not picked yet, whose title has what is typed, the most linked first.
-    private var candidates: [Bud] {
+    /// Buds with links, not picked yet, whose title has what is typed, the most linked first,
+    /// each with how many buds on the canvas it is linked with: what ticking it would light.
+    private var candidates: [(bud: Bud, count: Int)] {
         let typed = BudLinks.fold(linkQuery.trimmingCharacters(in: .whitespaces))
         let picked = Set(store.canvasFacets.compactMap { facet -> UUID? in
             if case .linked(let id, _) = facet { return id } else { return nil }
         })
-        return store.tree.walk(under: rootID)
-            .filter { linkCount($0.id) > 0 && !picked.contains($0.id) }
-            .filter { typed.isEmpty || BudLinks.fold($0.text).contains(typed) }
-            .sorted { linkCount($0.id) != linkCount($1.id) ? linkCount($0.id) > linkCount($1.id) : $0.text < $1.text }
+        let canvas = store.tree.walk(under: rootID)
+        let onCanvas = Set(canvas.map(\.id))
+        return canvas
+            .filter { !picked.contains($0.id) && (typed.isEmpty || BudLinks.fold($0.text).contains(typed)) }
+            .map { bud in (bud, store.links.around(bud.id).filter { onCanvas.contains($0.other) }.count) }
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.text < $1.0.text }
             .prefix(Self.linkLimit)
-            .map { $0 }
+            .map { (bud: $0.0, count: $0.1) }
     }
-
-    private func linkCount(_ id: UUID) -> Int { store.links.around(id).count }
 
     private func pick(_ bud: Bud) {
         withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets.append(.linked(bud.id, title: bud.text)) }
@@ -130,7 +148,7 @@ struct LensMenu: View {
 
     private func row(_ facet: LensFacet) -> some View {
         let ticked = store.canvasFacets.contains(facet)
-        let count = facet.query.hits(store.tree).count
+        let count = facet.query.hits(store.tree, links: store.links).count
         return Button {
             withAnimation(.easeOut(duration: 0.35)) {
                 if ticked { store.canvasFacets.removeAll { $0 == facet } } else { store.canvasFacets.append(facet) }
@@ -144,7 +162,8 @@ struct LensMenu: View {
                         .foregroundStyle(Theme.text2)
                         .frame(width: 16)
                 }
-                Text(facet.name)
+                Text(store.facetName(facet))
+                    .lineLimit(1)
                     .fontWeight(ticked ? .semibold : .regular)
                     .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
@@ -160,7 +179,7 @@ struct LensMenu: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(facet.name), \(count == 1 ? "1 bud" : "\(count) buds")")
+        .accessibilityLabel("\(store.facetName(facet)), \(count == 1 ? "1 bud" : "\(count) buds")")
         .accessibilityAddTraits(ticked ? .isSelected : [])
     }
 
@@ -169,7 +188,7 @@ struct LensMenu: View {
             if store.canvasFacets.isEmpty {
                 Text("Tick rows to light what matches")
             } else {
-                let hits = store.canvasLens?.hits(store.tree).count ?? 0
+                let hits = store.canvasLens?.hits(store.tree, links: store.links).count ?? 0
                 Text(Self.footerText(hits: hits, rows: store.canvasFacets.count))
                 Spacer()
                 Button("Clear") {

@@ -28,7 +28,10 @@ public enum Place: String, CaseIterable, Sendable {
 @MainActor
 public final class BudStore: ObservableObject {
     @Published public private(set) var tree: Tree {
-        didSet { links = LinkGraph(tree) }
+        didSet {
+            links = LinkGraph(tree)
+            dropGoneFacets()
+        }
     }
     /// Which buds link to which, read again whenever the tree changes.
     @Published public private(set) var links = LinkGraph()
@@ -698,8 +701,25 @@ public final class BudStore: ObservableObject {
     }
 
     /// The lens reads the tree alone, so a new center leaves it as it is.
+    /// What a lens row is called now: a linked bud by its title today, the one it had when it was
+    /// picked once it is gone.
+    public func facetName(_ facet: LensFacet) -> String {
+        if case .linked(let id, _) = facet, let bud = tree.bud(id) { return "Linked to \(bud.text)" }
+        return facet.name
+    }
+
+    /// A linked row whose bud is neither in the tree nor in the Trash (deleted, or renamed into a
+    /// new file elsewhere) can match nothing again, so it goes.
+    private func dropGoneFacets() {
+        let gone = canvasFacets.filter { facet in
+            guard case .linked(let id, _) = facet, tree.bud(id) == nil else { return false }
+            return !tree.trashed.contains { $0.buds.contains { $0.id == id } }
+        }
+        if !gone.isEmpty { canvasFacets.removeAll { gone.contains($0) } }
+    }
+
     private func relight() {
-        canvasLight = canvasLens?.light(tree) ?? [:]
+        canvasLight = canvasLens?.light(tree, links: links) ?? [:]
     }
 }
 

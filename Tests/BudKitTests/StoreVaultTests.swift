@@ -120,6 +120,22 @@ final class StoreVaultTests: XCTestCase {
         await store.settle()
     }
 
+    func testALinkedRowTakesItsBudsNewTitleAndGoesWithTheBud() async throws {
+        let (store, _) = await loaded()
+        let a = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let facet = LensFacet.linked(a.id, title: a.text)
+        store.canvasFacets = [facet]
+        store.update(a.id, text: "Renamed here", todo: a.isTodo)
+        await store.settle()
+        XCTAssertEqual(store.facetName(facet), "Linked to Renamed here")
+        store.trash(a.id)
+        await store.settle()
+        XCTAssertEqual(store.canvasFacets, [facet], "a bud in the Trash can come back")
+        store.freshStart(sample: false)
+        await store.settle()
+        XCTAssertEqual(store.canvasFacets, [], "a bud gone for good takes its row with it")
+    }
+
     func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
         let (store, vault) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)

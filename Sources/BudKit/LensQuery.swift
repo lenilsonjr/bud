@@ -70,14 +70,14 @@ public struct LensQuery: Hashable, Sendable {
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
-        return matches(bud, holders: holders, around: around(in: tree), start: calendar.startOfDay(for: now))
+        return matches(bud, holders: holders, around: around(in: tree, links: nil), start: calendar.startOfDay(for: now))
     }
 
-    /// For each bud the query asks to be linked with, the buds linked with it: one read of the
-    /// links per question.
-    private func around(in tree: Tree) -> [Set<UUID>] {
+    /// For each bud the query asks to be linked with, the buds linked with it: the links read
+    /// once per question, or handed over by a caller that holds them already.
+    private func around(in tree: Tree, links: LinkGraph?) -> [Set<UUID>] {
         guard !linked.isEmpty else { return [] }
-        let graph = LinkGraph(tree)
+        let graph = links ?? LinkGraph(tree)
         return linked.map { Set(graph.around($0).map(\.other)) }
     }
 
@@ -117,26 +117,39 @@ public struct LensQuery: Hashable, Sendable {
 
     /// Every bud under the root that is a hit or on the path to one; a bud left out is a miss.
     /// The root, an ancestor of every bud, is on the path whenever anything hits.
-    public func light(_ tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> [UUID: Match] {
+    /// A bud the question is linked with is on the path too, while anything hits: the answer
+    /// keeps what it was asked about in view.
+    public func light(
+        _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
+    ) -> [UUID: Match] {
         var out: [UUID: Match] = [:]
-        let hits = hits(tree, on: now, calendar: calendar)
+        let hits = hits(tree, links: links, on: now, calendar: calendar)
         for bud in hits { out[bud.id] = .hit }
         // Climb from each hit until a bud already lit: everything above it is lit already.
-        for bud in hits {
-            var cursor = tree.parent(of: bud.id)
+        func climb(from id: UUID) {
+            var cursor = tree.parent(of: id)
             while let above = cursor, out[above] != .path {
                 if out[above] == nil { out[above] = .path }
                 cursor = tree.parent(of: above)
+            }
+        }
+        for bud in hits { climb(from: bud.id) }
+        if !hits.isEmpty {
+            for id in linked where tree.bud(id) != nil {
+                if out[id] == nil { out[id] = .path }
+                climb(from: id)
             }
         }
         return out
     }
 
     /// The hits in reading order.
-    public func hits(_ tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> [Bud] {
+    public func hits(
+        _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
+    ) -> [Bud] {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
         let start = calendar.startOfDay(for: now)
-        let around = around(in: tree)
+        let around = around(in: tree, links: links)
         return tree.walk(under: rootID).filter { matches($0, holders: holders, around: around, start: start) }
     }
 }

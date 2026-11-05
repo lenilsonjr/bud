@@ -288,7 +288,7 @@ struct TopBar: View {
     private var lensSpoken: String {
         let count = store.canvasFacets.count
         guard count > 0 else { return "Lens" }
-        let names = store.canvasFacets.map(\.name).joined(separator: ", ")
+        let names = store.canvasFacets.map(store.facetName).joined(separator: ", ")
         return "Lens: \(names)" + (nothingMatches ? ", no matches" : "")
     }
 
@@ -330,7 +330,10 @@ struct TopBar: View {
         HStack(spacing: 6) {
             ForEach(store.canvasFacets, id: \.self) { facet in
                 HStack(spacing: 4) {
-                    Text(facet.name)
+                    Text(store.facetName(facet))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 180)
                         .textRole(.label)
                         .foregroundStyle(Theme.leaf)
                     Button {
@@ -343,7 +346,7 @@ struct TopBar: View {
                             .contentShape(Rectangle().inset(by: -8))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(facet.name) from the lens")
+                    .accessibilityLabel("Remove \(store.facetName(facet)) from the lens")
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 4)
