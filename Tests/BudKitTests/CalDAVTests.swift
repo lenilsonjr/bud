@@ -60,7 +60,7 @@ final class CalDAVTests: XCTestCase {
         XCTAssertEqual(http.asked[0].value(forHTTPHeaderField: "Authorization"), "Basic " + Data("sam:app-pass".utf8).base64EncodedString())
     }
 
-    func testTheWindowLeavesCancelledEventsOut() async throws {
+    func testTheWindowMarksCancelledEvents() async throws {
         let report = """
         <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
           <d:response><d:href>/calendars/sam/home/a.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR
@@ -83,7 +83,8 @@ final class CalDAVTests: XCTestCase {
         let http = ScriptedHTTP([(report, 207)])
         let cal = CalDAV(server: server, user: "sam", password: "p", http: http)
         let items = try await cal.window(of: URL(string: "https://cal.example.org/calendars/sam/home/")!, now: Date(timeIntervalSince1970: 1_793_900_000))
-        XCTAssertEqual(items.map(\.title), ["Flight to Lisbon"])
+        XCTAssertEqual(items.map(\.title), ["Flight to Lisbon", "Flat viewing"])
+        XCTAssertEqual(items.map(\.cancelled), [false, true])
         XCTAssertEqual(http.asked.first?.httpMethod, "REPORT")
         let body = String(data: http.asked.first?.httpBody ?? Data(), encoding: .utf8) ?? ""
         let start = CalDAV.stamp(Date(timeIntervalSince1970: 1_793_900_000))
