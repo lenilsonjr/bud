@@ -38,6 +38,10 @@ enum Launch {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
         guard let vault = try? RustVault(paths: paths) else { return BudStore() }
         let store = BudStore(vault: vault)
+        #if !os(tvOS)
+        // The TV shows no soil, only the source rows of buds planted elsewhere.
+        store.follow(SourceStore.shared)
+        #endif
         let devices = store.devices
         let platform = platform
         let kind = BudStore.platformSource

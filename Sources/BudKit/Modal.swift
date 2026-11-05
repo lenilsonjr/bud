@@ -17,6 +17,8 @@ enum Modal: Hashable, Identifiable {
     case rotateKey
     /// Settings › Start over: erase this device's vault, empty or with the sample world.
     case freshStart
+    /// Settings › Sources: connect a mail account, or sign this device in to one.
+    case connectMail(account: String?)
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
@@ -26,6 +28,7 @@ enum Modal: Hashable, Identifiable {
     static let removeDeviceID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D3")!
     static let rotateKeyID = UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!
     static let freshStartID = UUID(uuidString: "00000000-0000-0000-0000-0000000000F1")!
+    static let connectMailID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
 
     var id: UUID {
         switch self {
@@ -40,6 +43,7 @@ enum Modal: Hashable, Identifiable {
         case .removeDevice: return Self.removeDeviceID
         case .rotateKey: return Self.rotateKeyID
         case .freshStart: return Self.freshStartID
+        case .connectMail: return Self.connectMailID
         }
     }
 
@@ -121,6 +125,8 @@ struct ModalHost: View {
             case .rotateKey: RotateKeyDialog(devices: store.devices, close: { store.modal = .settings })
             case .freshStart:
                 FreshStartDialog(close: { store.modal = .settings }, perform: { store.freshStart(sample: $0) })
+            case let .connectMail(account):
+                ConnectMailSheet(sources: .shared, account: account, close: { store.modal = .settings })
             }
         }
         .modalCard()
