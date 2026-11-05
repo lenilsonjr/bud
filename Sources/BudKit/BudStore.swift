@@ -458,6 +458,56 @@ public final class BudStore: ObservableObject {
         write { [self] _ in try await edit(id) { try await $0.setPinned($1, pinned) } }
     }
 
+    // MARK: Tags
+
+    /// Adds a tag to a bud's own list, unless the bud carries it already.
+    public func addTag(_ id: UUID, _ tag: String) {
+        guard let tag = BudTags.clean(tag), let bud = tree.bud(id), !bud.carries(tag) else { return }
+        commit { $0.addTag(id, tag) }
+        write { [self] _ in try await edit(id) { try await $0.addTag($1, tag) } }
+    }
+
+    /// Takes a tag out of a bud's own list and offers to put it back.
+    public func removeTag(_ id: UUID, _ tag: String) {
+        guard let own = tree.bud(id)?.tags.first(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
+        commit { $0.removeTag(id, own) }
+        write { [self] _ in try await edit(id) { try await $0.removeTag($1, own) } }
+        toasts.show(Undoable(message: "Removed #\(own)", systemImage: "number") { [weak self] in
+            Task { @MainActor in self?.addTag(id, own) }
+        })
+    }
+
+    /// Renames or merges a tag in every bud outside the Trash and offers to take it back.
+    public func renameTag(_ from: String, to: String) {
+        guard let from = BudTags.clean(from), let to = BudTags.clean(to), from != to else { return }
+        var changed: [UUID] = []
+        commit { changed = $0.renameTag(from, to: to) }
+        guard !changed.isEmpty else { return }
+        let after = Dictionary(uniqueKeysWithValues: changed.compactMap { id in tree.bud(id).map { (id, $0) } })
+        let edits = TagEdits()
+        write { [self] vault in
+            let records = try await vault.renameTag(from, to: to)
+            edits.byID = Dictionary(records.map { (book.id(for: $0.path), $0) }) { a, _ in a }
+        }
+        let count = changed.count
+        let message = count == 1 ? "Renamed #\(from) to #\(to) in 1 bud" : "Renamed #\(from) to #\(to) in \(count) buds"
+        toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
+            Task { @MainActor in self?.undoRenameTag(after: after, edits: edits) }
+        })
+    }
+
+    /// Puts back each bud a tag rename changed, where nothing has changed it since.
+    private func undoRenameTag(after: [UUID: Bud], edits: TagEdits) {
+        let untouched = after.filter { id, bud in
+            tree.bud(id).map { $0.tags == bud.tags && $0.body == bud.body } ?? false
+        }
+        let restore = untouched.keys.compactMap { id in edits.byID[id].map { (id, $0.before) } }
+        guard !restore.isEmpty else { return }
+        write { [self] _ in
+            for (id, text) in restore { try await edit(id) { try await $0.setText($1, text) } }
+        }
+    }
+
     /// Trades the places of two siblings in the orbit and offers to trade them back.
     @discardableResult
     public func swap(_ a: UUID, _ b: UUID, message: String = "Swapped") -> Bool {
@@ -604,5 +654,11 @@ public final class BudStore: ObservableObject {
     private func relight() {
         canvasLight = canvasLens?.light(tree) ?? [:]
     }
+}
+
+/// What a tag rename wrote, by bud, filled in once the vault has done it, for the undo.
+@MainActor
+private final class TagEdits {
+    var byID: [UUID: TagEditRecord] = [:]
 }
 #endif
