@@ -103,7 +103,7 @@ private actor FolderVault: Vault {
         return i
     }
 
-    func plant(parent: String?, title: String, kind: BudKind, from: String) async throws -> Planting {
+    func plant(parent: String?, title: String, kind: BudKind, from: String, preferredPath: String?) async throws -> Planting {
         if let found = records.first(where: { $0.from == from && $0.place != .trash }) { return Planting(path: found.path, new: false) }
         let path = try await create(parent: parent, title: title, kind: kind, source: nil, preferredPath: nil)
         records[try file(path)].from = from

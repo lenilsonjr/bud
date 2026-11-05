@@ -324,5 +324,60 @@ final class StoreVaultTests: XCTestCase {
         let again = BudStore(fileURL: url)
         XCTAssertEqual(again.tree.bud(bud.id)?.text, "Plan the spring issue")
     }
+
+    // MARK: planting from a source
+
+    private let account = SourceAccount(id: "work", kind: .mail, name: "Work mail")
+    private let item = SourceItem(id: "M-7", title: "Lease renewal draft", detail: "Harbor Lettings", todo: true)
+
+    func testDroppingOnABudPlantsItAsAChild() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let bud = store.plant(item, from: account, at: .under(thread.id))
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(bud.id)?.parent, thread.id)
+        XCTAssertEqual(store.toasts.current?.action.message, "Planted in \(thread.text), from Work mail")
+        let record = try await vault.snapshot().first { $0.from == "mail:M-7" }
+        XCTAssertEqual(record?.title, "Lease renewal draft")
+        XCTAssertEqual(record?.kind, .todo)
+        XCTAssertEqual(record?.parent, thread.id.uuidString)
+    }
+
+    func testDroppingOnEmptyCanvasPlantsItInTheInbox() async throws {
+        let (store, vault) = await loaded()
+        let bud = store.plant(item, from: account, at: .inbox)
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(bud.id)?.parent, inboxID)
+        XCTAssertEqual(store.toasts.current?.action.message, "Planted in Inbox, from Work mail")
+        let record = try await vault.snapshot().first { $0.from == "mail:M-7" }
+        XCTAssertEqual(record?.place, .inbox)
+    }
+
+    func testUndoTakesThePlantedBudAway() async throws {
+        let (store, vault) = await loaded()
+        let bud = store.plant(item, from: account, at: .inbox)
+        await store.settle()
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where store.tree.bud(bud.id) != nil { await Task.yield() }
+        await store.settle()
+        XCTAssertNil(store.tree.bud(bud.id))
+        let records = try await vault.snapshot()
+        XCTAssertNil(records.first { $0.from == "mail:M-7" })
+    }
+
+    func testPlantingAgainGoesToTheBudItMade() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let first = store.plant(item, from: account, at: .under(thread.id))
+        await store.settle()
+        store.center = rootID
+        let again = store.plant(item, from: account, at: .inbox)
+        await store.settle()
+        XCTAssertEqual(again.id, first.id)
+        XCTAssertEqual(store.center, thread.id)
+        XCTAssertEqual(store.toasts.current?.action.message, "Already planted in \(thread.text)")
+        let records = try await vault.snapshot()
+        XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
+    }
 }
 #endif

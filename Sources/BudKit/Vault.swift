@@ -134,8 +134,8 @@ public protocol Vault: Sendable {
     /// caller would like the bud to have; a vault that names its own buds may ignore it.
     func create(parent: String?, title: String, kind: BudKind, source: String?, preferredPath: String?) async throws -> String
     /// Plants a source item under `parent` (nil is the top level) as a bud carrying `from`, or
-    /// finds the bud it was planted as before, outside the Trash.
-    func plant(parent: String?, title: String, kind: BudKind, from: String) async throws -> Planting
+    /// finds the bud it was planted as before, outside the Trash. `preferredPath` is as in `create`.
+    func plant(parent: String?, title: String, kind: BudKind, from: String, preferredPath: String?) async throws -> Planting
     func setBody(_ path: String, _ text: String) async throws
     /// A nil state makes the bud a note.
     func setState(_ path: String, _ state: BudState?) async throws
