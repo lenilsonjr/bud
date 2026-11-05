@@ -170,6 +170,8 @@ public enum PeersError: Error, Equatable, Sendable {
     case noSuchDevice(String)
     /// No key is on offer to answer.
     case nothingOffered
+    /// The node has stopped and takes no more calls.
+    case closed
 }
 
 /// How this node reaches peers that are not on the same network.
@@ -213,10 +215,13 @@ public struct SyncSummary: Hashable, Sendable {
 public struct RotationResult: Hashable, Sendable {
     public var reached: Int
     public var missed: [String]
+    /// The node could not make a new key at all, a closed one for instance: the old key stands.
+    public var failed: Bool
 
-    public init(reached: Int, missed: [String]) {
+    public init(reached: Int, missed: [String], failed: Bool = false) {
         self.reached = reached
         self.missed = missed
+        self.failed = failed
     }
 }
 

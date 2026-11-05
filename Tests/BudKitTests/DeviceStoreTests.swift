@@ -229,6 +229,35 @@ extension DeviceStoreTests {
         XCTAssertEqual(DevicesText.rotationCount(rotation), "4 of 5")
     }
 
+    func testARotationTheNodeCannotStartSaysItFailed() async {
+        let (store, peers, _) = await make()
+        await peers.setRotationFails(true)
+        var finished: [RotationResult] = []
+        store.onRotationFinished = { finished.append($0) }
+        await store.rotateKey()
+        XCTAssertNil(store.rotation)
+        XCTAssertNil(store.rotatedAt)
+        XCTAssertEqual(finished, [RotationResult(reached: 0, missed: [], failed: true)])
+        XCTAssertEqual(DevicesText.rotated(finished[0]), "Couldn't rotate the key · the old one still works")
+    }
+
+    func testANewNodeReplacesTheTicketAndRequestOnShow() async throws {
+        let (store, _, clock) = await make()
+        await store.openTicket()
+        await store.openRequest()
+        let ticket = try XCTUnwrap(store.currentTicket)
+        let request = try XCTUnwrap(store.currentRequest)
+        clock.advance(60)
+        await store.use(MemoryPeers(now: { clock.now }))
+        XCTAssertEqual(store.currentTicket?.madeAt, ticket.madeAt.addingTimeInterval(60), "a ticket from the node in charge")
+        XCTAssertEqual(store.currentRequest?.madeAt, request.madeAt.addingTimeInterval(60))
+        store.closeTicket()
+        store.closeRequest()
+        await store.use(MemoryPeers(now: { clock.now }))
+        XCTAssertNil(store.currentTicket, "a closed sheet stays closed")
+        XCTAssertNil(store.currentRequest)
+    }
+
     func testASyncThatFinishedIsReported() async {
         let clock = TestClock()
         let peers = MemoryPeers(now: { clock.now })
