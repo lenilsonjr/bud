@@ -9,6 +9,8 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
     private let name: String?
     private let lock = NSLock()
     private var node: PeerNode
+    /// A relay change could start no node, and `node` is the stopped one.
+    private var stopped = false
     private let hub = Hub()
 
     /// Starts a node for the vault with the relay last chosen, telling peers what this device is.
@@ -20,18 +22,26 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
         try node.listen(listener: hub)
     }
 
-    private var current: PeerNode {
+    /// The node, started again on the setting last chosen when a relay change left none
+    /// running, so the next call tries once more instead of finding it closed until relaunch.
+    /// Starting waits on the network: call it off the cooperative pool.
+    private func live() throws -> PeerNode {
         lock.lock()
         defer { lock.unlock() }
+        if stopped {
+            let fresh = try startNodeAs(vault: vault, relay: Self.core(Self.storedRelay), kind: kind, name: name)
+            try? fresh.listen(listener: hub)
+            node = fresh
+            stopped = false
+        }
         return node
     }
 
     /// Runs a call into the core off the cooperative pool: a sync waits on the network.
     private func off<T>(_ call: @escaping @Sendable (PeerNode) throws -> T) async throws -> T {
-        let node = current
-        return try await withCheckedThrowingContinuation { done in
+        try await withCheckedThrowingContinuation { done in
             DispatchQueue.global(qos: .userInitiated).async {
-                done.resume(with: Result { try call(node) })
+                done.resume(with: Result { try call(self.live()) })
             }
         }
     }
@@ -84,13 +94,14 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
     /// with every peer missed, so the dialog never waits for good.
     func rotateKey() async throws -> AsyncStream<RotationStep> {
         let events = hub.subscribe()
-        let node = current
         return AsyncStream { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
+                var node: PeerNode?
                 do {
-                    _ = try node.rotateKey()
+                    node = try self.live()
+                    _ = try node?.rotateKey()
                 } catch {
-                    let missed = (try? node.peers().map(\.id)) ?? []
+                    let missed = (try? node?.peers().map(\.id)) ?? []
                     continuation.yield(.done(RotationResult(reached: 0, missed: missed, failed: true)))
                     continuation.finish()
                 }
@@ -131,15 +142,22 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
 
     /// Starts the node again on the setting and remembers it; the pairings are the vault's and
     /// stay. The old node stops first, since both would speak for this device; a new one that
-    /// will not start gives way to the old setting again.
+    /// will not start gives way to the old setting again, and if that will not start either,
+    /// the next call tries it again.
     func setRelay(_ relay: BudKit.RelaySetting) async throws {
         try await Task.detached { [self] in
-            current.stop()
+            try live().stop()
             let fresh: PeerNode
             do {
                 fresh = try startNodeAs(vault: vault, relay: Self.core(relay), kind: kind, name: name)
             } catch {
-                adopt(try startNodeAs(vault: vault, relay: Self.core(Self.storedRelay), kind: kind, name: name))
+                do {
+                    adopt(try startNodeAs(vault: vault, relay: Self.core(Self.storedRelay), kind: kind, name: name))
+                } catch {
+                    lock.lock()
+                    stopped = true
+                    lock.unlock()
+                }
                 throw error
             }
             adopt(fresh)
@@ -151,6 +169,7 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
         try? fresh.listen(listener: hub)
         lock.lock()
         node = fresh
+        stopped = false
         lock.unlock()
     }
 
