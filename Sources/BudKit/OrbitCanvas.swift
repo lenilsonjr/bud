@@ -25,6 +25,8 @@ public struct OrbitCanvas: View {
     @State private var linkHeld: UUID? = nil
     /// Whether the pointer rests on a link chip: the links hold still while it does.
     @State private var overChip = false
+    /// Which match ⌘G last went to, under the lens; none until it is pressed.
+    @State private var matchAt: Int? = nil
     @FocusState private var focused: Bool
     @State private var motion: MotionState
     @GestureState private var gripped = false
@@ -83,6 +85,8 @@ public struct OrbitCanvas: View {
                 dragStart = nil
                 animating = true
             }
+            .overlay(alignment: .top) { matchPill.padding(.top, 12) }
+            .onChange(of: store.canvasLens) { _, _ in matchAt = nil }
             .onAppear { viewport = size }
             .onChange(of: size) { _, now in viewport = now }
             .onContinuousHover(coordinateSpace: .local) { phase in
@@ -238,6 +242,58 @@ public struct OrbitCanvas: View {
 
     /// A ghost chip's bud, brought onto the canvas: centered when it holds buds, otherwise in
     /// its parent's ring.
+    // MARK: matches
+
+    /// Under a lens, how many buds match and which one ⌘G went to; ⌘G and ⇧⌘G step through
+    /// them, bringing each onto the canvas.
+    @ViewBuilder private var matchPill: some View {
+        if let lens = store.canvasLens {
+            let hits = lens.hits(store.tree).map(\.id)
+            let shape = Capsule()
+            HStack(spacing: 8) {
+                Text(pillText(count: hits.count))
+                    .textRole(.label)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.text)
+                if !hits.isEmpty {
+                    Button { step(-1, in: hits) } label: { Image(systemName: "chevron.left") }
+                        .keyboardShortcut("g", modifiers: [.command, .shift])
+                        .accessibilityLabel("Previous match")
+                    Button { step(1, in: hits) } label: { Image(systemName: "chevron.right") }
+                        .keyboardShortcut("g", modifiers: .command)
+                        .accessibilityLabel("Next match")
+                    #if os(macOS)
+                    Keycap("⌘G")
+                    #endif
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Theme.text2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.raised, in: shape)
+            .overlay(shape.stroke(Theme.line, lineWidth: 1))
+            .shadow(color: Theme.shadowStrong.opacity(0.4), radius: 8, y: 3)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("match-pill")
+        }
+    }
+
+    private func pillText(count: Int) -> String {
+        switch count {
+        case 0: return "No matches"
+        case 1: return matchAt == nil ? "1 match" : "1 match · 1 of 1"
+        default: return matchAt.map { "\(count) matches · \($0 + 1) of \(count)" } ?? "\(count) matches"
+        }
+    }
+
+    private func step(_ by: Int, in hits: [UUID]) {
+        guard !hits.isEmpty else { return }
+        let next = matchAt.map { ($0 + by + hits.count) % hits.count } ?? (by > 0 ? 0 : hits.count - 1)
+        matchAt = next
+        goTo(hits[next])
+    }
+
     private func goTo(_ id: UUID) {
         let target = store.tree.hasChildren(id) ? id : (store.tree.parent(of: id) ?? rootID)
         overChip = false
