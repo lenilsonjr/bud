@@ -123,3 +123,28 @@ final class CalendarSourceTests: XCTestCase {
         XCTAssertEqual(store.accounts.first?.kind, .calendar)
     }
 }
+
+@MainActor
+final class SightingTests: XCTestCase {
+    func testMailOutsideTheWindowIsAskedForByIdAndMissingMailIsGone() async {
+        let session = URL(string: "https://mail.example.org/jmap/session")!
+        let sessionReply = """
+        {"apiUrl": "https://mail.example.org/jmap/api/", "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"}}
+        """
+        let window = """
+        {"methodResponses": [["Email/query", {}, "q"], ["Email/get", {"state": "S1", "list": [
+            {"id": "e1", "subject": "In the window", "keywords": {}}]}, "g"]]}
+        """
+        let byId = """
+        {"methodResponses": [["Email/get", {"list": [{"id": "e2", "subject": "Filed away", "keywords": {"$seen": true}}], "notFound": ["e3"]}, "g"]]}
+        """
+        let http = ScriptedHTTP([(sessionReply, 200), (window, 200), (byId, 200)])
+        let store = SourceStore(defaults: UserDefaults(suiteName: "s-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
+        await store.connectMail(name: "Mail", session: session, token: "t", mailbox: "b1")
+        let found = await store.sightings(for: [("mail:e1", nil), ("mail:e2", nil), ("mail:e3", nil), ("calendar:x", nil)])
+        XCTAssertEqual(found["mail:e1"], .seen(SourceItem(id: "e1", title: "In the window", unread: true)))
+        if case .seen(let item) = found["mail:e2"] { XCTAssertEqual(item.title, "Filed away") } else { XCTFail("e2 not seen") }
+        XCTAssertEqual(found["mail:e3"], .gone)
+        XCTAssertNil(found["calendar:x"], "no calendar here: nothing is said")
+    }
+}

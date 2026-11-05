@@ -36,6 +36,8 @@ public struct SourceItem: Hashable, Codable, Sendable, Identifiable {
     public var priority: Int?
     /// Whether it plants as a to-do: flagged mail, issues, pull requests.
     public var todo: Bool
+    /// Calendar: the event was cancelled. The soil leaves it out; a bud planted from it says so.
+    public var cancelled: Bool
     public var url: URL?
 
     /// Why a GitHub item is in front of you, most pressing first.
@@ -47,8 +49,9 @@ public struct SourceItem: Hashable, Codable, Sendable, Identifiable {
 
     public init(
         id: String, title: String, detail: String? = nil, date: Date? = nil, unread: Bool = false,
-        role: Role? = nil, priority: Int? = nil, todo: Bool = false, url: URL? = nil
+        role: Role? = nil, priority: Int? = nil, todo: Bool = false, cancelled: Bool = false, url: URL? = nil
     ) {
+        self.cancelled = cancelled
         self.id = id
         self.title = title
         self.detail = detail

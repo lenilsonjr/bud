@@ -117,7 +117,7 @@ struct TVReadScreen: View {
                     .foregroundStyle(Theme.text2)
                 if let from = bud.from {
                     // Read-only here: the TV shows where the bud came from and nothing to open.
-                    SourcePageRow(from: from, mark: store.marks[from])
+                    SourcePageRow(from: from, mark: store.mark(of: bud))
                 }
             }
             .padding(.horizontal, 24)

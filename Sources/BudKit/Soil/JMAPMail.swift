@@ -96,6 +96,18 @@ public struct JMAPMail: Sendable {
         return (list.compactMap(Self.item), result["g"]?["state"] as? String)
     }
 
+    /// Particular emails by id, wherever they are now: the ones found, and the ids the server no
+    /// longer has.
+    public func emails(at endpoint: Endpoint, ids: [String]) async throws -> (found: [SourceItem], missing: [String]) {
+        guard !ids.isEmpty else { return ([], []) }
+        let get: [String: Any] = [
+            "accountId": endpoint.account, "ids": ids, "properties": ["subject", "from", "receivedAt", "keywords"],
+        ]
+        let result = try await call(endpoint, [["Email/get", get, "g"]])
+        guard let list = result["g"]?["list"] as? [[String: Any]] else { throw SourceError.unreadable("Email/get") }
+        return (list.compactMap(Self.item), result["g"]?["notFound"] as? [String] ?? [])
+    }
+
     /// Whether anything changed since `state`. A server that cannot say counts as a change.
     public func changed(at endpoint: Endpoint, since state: String) async throws -> Bool {
         let result = try await call(endpoint, [["Email/changes", ["accountId": endpoint.account, "sinceState": state], "c"]])
