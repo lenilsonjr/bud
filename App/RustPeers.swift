@@ -91,7 +91,7 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
                     _ = try node.rotateKey()
                 } catch {
                     let missed = (try? node.peers().map(\.id)) ?? []
-                    continuation.yield(.done(RotationResult(reached: 0, missed: missed)))
+                    continuation.yield(.done(RotationResult(reached: 0, missed: missed, failed: true)))
                     continuation.finish()
                 }
             }

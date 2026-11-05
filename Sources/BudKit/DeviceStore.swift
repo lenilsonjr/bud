@@ -101,9 +101,13 @@ public final class DeviceStore: ObservableObject {
     public func shortID(_ id: String) -> String { PeerText.shortID(id) }
 
     /// Follows another node from now on: the app's own, once it has started.
+    /// A ticket or request on show came from the node before, which cannot pair: the new node
+    /// makes its own.
     public func use(_ peers: Peers) async {
         self.peers = peers
         await start()
+        if sheetOpen { await renewTicket() }
+        if requestOpen { await renewRequest() }
     }
 
     /// Loads the devices and starts following what the node says.
@@ -305,6 +309,7 @@ public final class DeviceStore: ObservableObject {
         rotation = RotationProgress(total: total)
         guard let steps = try? await peers.rotateKey() else {
             rotation = nil
+            onRotationFinished?(RotationResult(reached: 0, missed: [], failed: true))
             return
         }
         for await step in steps {
@@ -314,7 +319,8 @@ public final class DeviceStore: ObservableObject {
                 rotation?.reports[id] = reached
             case let .done(result):
                 rotation?.result = result
-                if !result.missed.isEmpty { rotatedAt = now() }
+                if result.failed { rotation = nil }
+                if !result.failed && !result.missed.isEmpty { rotatedAt = now() }
                 onRotationFinished?(result)
             }
         }

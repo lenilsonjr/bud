@@ -73,6 +73,7 @@ public actor MemoryPeers: Peers {
         "river", "saffron", "thistle", "violet", "walnut", "zephyr", "indigo", "juniper",
     ]
     private var listeners: [UUID: AsyncStream<PeerEvent>.Continuation] = [:]
+    private var rotationFails = false
 
     public init(
         devices: [Device]? = nil, lifetime: TimeInterval = Ticket.lifetime, missing: Set<String> = [],
@@ -88,6 +89,9 @@ public actor MemoryPeers: Peers {
 
     /// The ids that miss the next key rotation.
     public func setMissing(_ ids: Set<String>) { missing = ids }
+
+    /// Whether the next key rotations fail outright, as on a closed node.
+    public func setRotationFails(_ value: Bool) { rotationFails = value }
 
     /// Whether a ticket this vault issued can be reached; when not, `accept` throws `unreachable`.
     public func setReachable(_ value: Bool) { reachable = value }
@@ -269,6 +273,7 @@ public actor MemoryPeers: Peers {
     }
 
     public func rotateKey() async throws -> AsyncStream<RotationStep> {
+        if rotationFails { throw PeersError.closed }
         var reached = 0
         var missed: [String] = []
         var steps: [RotationStep] = []
