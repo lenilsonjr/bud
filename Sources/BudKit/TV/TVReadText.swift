@@ -21,7 +21,7 @@ public enum TVReadText {
     public static func insideLine(in tree: Tree, under id: UUID) -> String {
         let count = tree.children(of: id).count
         guard count > 0 else { return "Nothing inside yet" }
-        let open = tree.openCount(under: id)
+        let open = tree.openChildren(of: id)
         return "\(count) inside" + (open > 0 ? " · \(open) open" : "")
     }
 

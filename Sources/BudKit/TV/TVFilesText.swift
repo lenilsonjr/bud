@@ -128,7 +128,7 @@ public enum TVFilesText {
         let line = caption ?? (crumbs.isEmpty ? kind(bud) : crumbs.joined(separator: " › "))
         let finalTag: TVFilesRow.Tag
         if case .none = tag, !kids.isEmpty {
-            finalTag = .inside(kids.count, open: tree.openCount(under: bud.id))
+            finalTag = .inside(kids.count, open: tree.openChildren(of: bud.id))
         } else {
             finalTag = tag
         }

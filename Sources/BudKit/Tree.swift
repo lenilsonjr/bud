@@ -165,6 +165,12 @@ public struct Tree: Codable, Equatable, Sendable {
         descendants(of: id).compactMap(bud).filter { $0.state == .open }.count
     }
 
+    /// The open to-dos among a bud's own children: the count beside "n inside", so it never
+    /// tops it.
+    public func openChildren(of id: UUID) -> Int {
+        children(of: id).filter { $0.state == .open }.count
+    }
+
     /// Descendants in reading order: each bud before its children, siblings in their order.
     public func walk(under id: UUID) -> [Bud] {
         var out: [Bud] = []
