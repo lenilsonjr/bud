@@ -110,3 +110,187 @@ fn a_rescan_rebuilds_the_same_tags() {
     vault.rescan().unwrap();
     assert_eq!(vault.tags().unwrap(), before);
 }
+
+fn read(dir: &tempfile::TempDir, name: &str) -> String {
+    std::fs::read_to_string(dir.path().join(name)).unwrap()
+}
+
+#[test]
+fn adding_a_tag_keeps_the_way_the_file_writes_its_list() {
+    let (mut vault, dir, _index) = vault_with(&[
+        (
+            "Flow.md",
+            "---\nstate: open\ntags: [home, 'launch']\n---\nBody\n",
+        ),
+        (
+            "Block.md",
+            "---\ntags:\n    - home\n    - \"launch\"\nwhen: 2026-11-02\n---\nBody\n",
+        ),
+        ("Words.md", "---\ntags: home work\n---\n"),
+        ("Commas.md", "---\ntags: home, work\n---\n"),
+        ("Bare.md", "Just a body\n"),
+        ("Other.md", "---\n# kept\nstate: open\n---\nBody\n"),
+        ("Windows.md", "---\r\nstate: open\r\n---\r\nBody\r\n"),
+    ]);
+    for name in [
+        "Flow.md",
+        "Block.md",
+        "Words.md",
+        "Commas.md",
+        "Bare.md",
+        "Other.md",
+        "Windows.md",
+    ] {
+        vault.add_tag(name, "#Garden").unwrap();
+    }
+    assert_eq!(
+        read(&dir, "Flow.md"),
+        "---\nstate: open\ntags: [home, 'launch', Garden]\n---\nBody\n"
+    );
+    assert_eq!(
+        read(&dir, "Block.md"),
+        "---\ntags:\n    - home\n    - \"launch\"\n    - Garden\nwhen: 2026-11-02\n---\nBody\n"
+    );
+    assert_eq!(read(&dir, "Words.md"), "---\ntags: home work Garden\n---\n");
+    assert_eq!(
+        read(&dir, "Commas.md"),
+        "---\ntags: home, work, Garden\n---\n"
+    );
+    assert_eq!(
+        read(&dir, "Bare.md"),
+        "---\ntags: [Garden]\n---\nJust a body\n"
+    );
+    assert_eq!(
+        read(&dir, "Other.md"),
+        "---\n# kept\nstate: open\ntags: [Garden]\n---\nBody\n"
+    );
+    assert_eq!(
+        read(&dir, "Windows.md"),
+        "---\r\nstate: open\r\ntags: [Garden]\r\n---\r\nBody\r\n"
+    );
+    assert_eq!(
+        vault.tags_of("Block.md").unwrap(),
+        ["home", "launch", "Garden"]
+    );
+    assert_eq!(
+        vault.bud("Flow.md").unwrap().unwrap().state,
+        Some(State::Open)
+    );
+}
+
+#[test]
+fn adding_a_tag_a_bud_carries_in_any_case_changes_nothing() {
+    let (mut vault, dir, _index) = vault_with(WORLD);
+    vault.add_tag("Groceries.md", "HOME").unwrap();
+    vault.add_tag("Garden.md", "garden/Roses").unwrap();
+    assert_eq!(read(&dir, "Groceries.md"), WORLD[0].1);
+    assert_eq!(
+        read(&dir, "Garden.md"),
+        WORLD[1].1,
+        "a #tag in the body counts"
+    );
+    assert!(vault.add_tag("Garden.md", "#1").is_err(), "not a tag");
+}
+
+#[test]
+fn a_number_like_tag_is_quoted_so_it_reads_back_as_text() {
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", "Body\n")]);
+    vault.add_tag("Note.md", "1e3").unwrap();
+    assert_eq!(read(&dir, "Note.md"), "---\ntags: [\"1e3\"]\n---\nBody\n");
+    assert_eq!(vault.tags_of("Note.md").unwrap(), ["1e3"]);
+}
+
+#[test]
+fn removing_a_tag_rewrites_the_list_and_leaves_body_tags_alone() {
+    let (mut vault, dir, _index) = vault_with(&[
+        (
+            "Flow.md",
+            "---\nstate: open\ntags: [home, errands]\n---\nMilk for the #home fridge.\n",
+        ),
+        ("Block.md", "---\ntags:\n- home\n- errands\n---\n"),
+        ("Only.md", "---\ntags: [home]\n---\nBody\n"),
+        ("Last.md", "---\nstate: open\ntags: home\n---\n"),
+    ]);
+    vault.remove_tag("Flow.md", "Home").unwrap();
+    vault.remove_tag("Block.md", "errands").unwrap();
+    vault.remove_tag("Only.md", "home").unwrap();
+    vault.remove_tag("Last.md", "home").unwrap();
+    assert_eq!(
+        read(&dir, "Flow.md"),
+        "---\nstate: open\ntags: [errands]\n---\nMilk for the #home fridge.\n"
+    );
+    assert_eq!(
+        vault.tags_of("Flow.md").unwrap(),
+        ["errands", "home"],
+        "the body still says #home"
+    );
+    assert_eq!(read(&dir, "Block.md"), "---\ntags:\n- home\n---\n");
+    assert_eq!(read(&dir, "Only.md"), "Body\n", "an empty block goes");
+    assert_eq!(read(&dir, "Last.md"), "---\nstate: open\n---\n");
+    vault.remove_tag("Only.md", "home").unwrap();
+    assert_eq!(read(&dir, "Only.md"), "Body\n");
+}
+
+#[test]
+fn renaming_a_tag_reaches_lists_bodies_and_nested_tags_outside_the_trash() {
+    let (mut vault, dir, _index) = vault_with(&[
+        ("Groceries.md", "---\ntags: [Home, errands]\n---\nMilk for the #home fridge, #home/kitchen, not #homely or `#home`.\n"),
+        ("Plain.md", "#HOME first\n"),
+        ("Away.md", "Nothing here\n"),
+        (".trash/Old.md", "#home but thrown away\n"),
+    ]);
+    let edits = vault.rename_tag("home", "house").unwrap();
+    assert_eq!(
+        edits.iter().map(|e| e.path.as_str()).collect::<Vec<_>>(),
+        ["Groceries.md", "Plain.md"]
+    );
+    assert_eq!(
+        read(&dir, "Groceries.md"),
+        "---\ntags: [house, errands]\n---\nMilk for the #house fridge, #house/kitchen, not #homely or `#home`.\n"
+    );
+    assert_eq!(read(&dir, "Plain.md"), "#house first\n");
+    assert_eq!(read(&dir, ".trash/Old.md"), "#home but thrown away\n");
+    assert!(vault.tagged("home").unwrap().is_empty());
+    assert_eq!(
+        vault.tags_of("Groceries.md").unwrap(),
+        ["house", "errands", "house/kitchen", "homely"]
+    );
+    assert_eq!(edits[1].before, "#HOME first\n");
+    assert_eq!(edits[1].after, "#house first\n");
+}
+
+#[test]
+fn renaming_onto_a_tag_in_use_merges_them_and_undo_puts_the_text_back() {
+    let (mut vault, dir, _index) = vault_with(&[(
+        "Groceries.md",
+        "---\ntags:\n  - errands\n  - home\n  - chores\n---\n#errands today\n",
+    )]);
+    let edits = vault.rename_tag("errands", "chores").unwrap();
+    assert_eq!(
+        read(&dir, "Groceries.md"),
+        "---\ntags:\n  - chores\n  - home\n---\n#chores today\n"
+    );
+    assert_eq!(
+        vault.tags().unwrap(),
+        vec![count("chores", 1), count("home", 1)]
+    );
+    for edit in &edits {
+        vault.set_text(&edit.path, &edit.before).unwrap();
+    }
+    assert_eq!(
+        read(&dir, "Groceries.md"),
+        "---\ntags:\n  - errands\n  - home\n  - chores\n---\n#errands today\n"
+    );
+    assert_eq!(
+        vault.tags_of("Groceries.md").unwrap(),
+        ["errands", "home", "chores"]
+    );
+}
+
+#[test]
+fn renaming_only_the_case_of_a_tag_rewrites_it() {
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", "---\ntags: [home]\n---\n#home\n")]);
+    vault.rename_tag("home", "Home").unwrap();
+    assert_eq!(read(&dir, "Note.md"), "---\ntags: [Home]\n---\n#Home\n");
+    assert!(vault.rename_tag("home", "no way").is_err());
+}

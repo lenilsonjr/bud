@@ -190,7 +190,7 @@ fn wanted(props: &Properties) -> [Option<String>; 6] {
 }
 
 /// A YAML scalar for `value`: plain when that reads back as the same string, else double-quoted.
-fn scalar(value: &str) -> String {
+pub(crate) fn scalar(value: &str) -> String {
     let plain = value.chars().next().is_some_and(|c| c.is_alphanumeric())
         && !value.contains(": ")
         && !value.contains(" #")
