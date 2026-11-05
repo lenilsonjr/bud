@@ -182,22 +182,29 @@ extension Tree {
         return ancestors(of: id).contains(inboxID) ? above : ["Everything"] + above
     }
 
-    /// The bodies that change when bud `id` is renamed to `title`: each link that names it now
-    /// names it by the new title, or by its path when another bud has that title too. Links that
-    /// named no bud, or another, are left alone.
+    /// The bodies that change when bud `id` is renamed to `title`: every link the rename would
+    /// break names its bud again, by title, or by path when another bud has that title too. That
+    /// covers the renamed bud, a bud whose title it takes, and the buds under it named by path.
+    /// Links that named no bud are left alone, and so is a title a link cannot carry or the vault
+    /// would save differently.
     public func relinked(renaming id: UUID, to title: String) -> [UUID: String] {
-        guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].text != title else { return [:] }
+        guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].text != title,
+              LinkPicker.linkable(title), !title.contains("/") else { return [:] }
         var after = self
         after.buds[i].text = title
-        let target = LinkPicker.target(for: after.buds[i], in: after)
-        var names: [String: Bool] = [:]
+        var targets: [String: String?] = [:]
+        func retarget(_ written: String) -> String? {
+            if let known = targets[written] { return known }
+            var found: String?
+            if let was = resolve(written), after.resolve(written) != was, let bud = after.bud(was) {
+                found = LinkPicker.target(for: bud, in: after)
+            }
+            targets[written] = found
+            return found
+        }
         var out: [UUID: String] = [:]
         for bud in buds where bud.body.contains("[[") {
-            let body = BudLinks.rewrite(bud.body) { link in
-                if names[link.target] == nil { names[link.target] = resolve(link.target) == id }
-                return names[link.target] == true ? target : nil
-            }
-            if let body { out[bud.id] = body }
+            if let body = BudLinks.rewrite(bud.body, { retarget($0.target) }) { out[bud.id] = body }
         }
         return out
     }
