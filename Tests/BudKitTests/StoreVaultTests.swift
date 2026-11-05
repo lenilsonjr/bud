@@ -431,5 +431,37 @@ final class StoreVaultTests: XCTestCase {
         let record = try await vault.snapshot().first { $0.from == "calendar:\(uid)" }
         XCTAssertTrue(record?.fromState?.hasPrefix("moved ") ?? false)
     }
+
+    func testAPlantedIssueCarriesItsDueDateAndTeamAndIsTickedWhenCompleted() async throws {
+        let (store, vault) = await loaded()
+        let due = try XCTUnwrap(LinearIssues.day("2026-12-01"))
+        let linear = SourceAccount(id: "lin", kind: .linear, name: "Work")
+        let issue = SourceItem(id: "ENG-41", title: "Draft the onboarding copy", detail: "ENG · Todo", date: due, priority: 2, todo: true)
+        let bud = store.plant(issue, from: linear, at: .inbox)
+        await store.settle()
+        var record = try await vault.snapshot().first { $0.from == "linear:ENG-41" }
+        XCTAssertEqual(record?.kind, .todo)
+        XCTAssertNotNil(record?.due, "the issue's due date is the bud's")
+        XCTAssertEqual(store.tree.bud(bud.id)?.due, due)
+        XCTAssertEqual(record?.body.trimmingCharacters(in: .whitespacesAndNewlines), "ENG · Todo")
+
+        // The issue was completed: it left the window and is looked up by its identifier.
+        let empty = "{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": []}}}}"
+        let done = """
+        {"data": {"issues": {"nodes": [{"identifier": "ENG-41", "title": "Draft the onboarding copy", "dueDate": "2026-12-01", \
+        "priority": 2, "url": null, "updatedAt": "2026-11-05T10:00:00.000Z", "team": {"key": "ENG"}, "state": {"name": "Done", "type": "completed"}}]}}}
+        """
+        let soil = SourceStore(
+            defaults: UserDefaults(suiteName: "live-\(UUID().uuidString)")!, tokens: MemoryTokens(),
+            http: ScriptedHTTP([(empty, 200), (done, 200)]))
+        await soil.connectLinear(name: "Work", token: "k")
+        await store.keepLive(soil)
+        await store.settle()
+        let now = try XCTUnwrap(store.tree.bud(bud.id))
+        XCTAssertTrue(now.isDone)
+        XCTAssertEqual(now.fromState, "closed")
+        record = try await vault.snapshot().first { $0.from == "linear:ENG-41" }
+        XCTAssertEqual(record?.state, .done)
+    }
 }
 #endif

@@ -22,6 +22,9 @@ struct SourcesSection: View {
                 Button { present(.connectCalendar) } label: {
                     BudButtonLabel(title: "Connect calendar…", systemImage: "calendar")
                 }
+                Button { present(.connectLinear) } label: {
+                    BudButtonLabel(title: "Connect Linear…", systemImage: SoilView.symbol(.linear))
+                }
             }
             .buttonStyle(.budSecondary)
             Text(SourcesText.caption)
@@ -233,6 +236,55 @@ struct ConnectCalendarSheet: View {
         }
     }
 }
+
+/// Connect Linear with a personal API key; the soil shows the open issues assigned to you.
+struct ConnectLinearSheet: View {
+    @ObservedObject var sources: SourceStore
+    let close: () -> Void
+
+    @State private var name = ""
+    @State private var token = ""
+    @State private var busy = false
+    @State private var problem: String?
+
+    var body: some View {
+        DialogBody(title: "Connect Linear", text: SourcesText.linearBody) {
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Name, as in Work", text: $name)
+                SecureField("Personal API key", text: $token)
+                    .accessibilityIdentifier("source-token")
+                if let problem {
+                    Text(problem).textRole(.caption).foregroundStyle(Theme.rose)
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+        } actions: {
+            Button(action: close) { BudButtonLabel(title: "Cancel") }
+                .buttonStyle(.budSecondary)
+                .keyboardShortcut(.cancelAction)
+            Button(action: connect) { BudButtonLabel(title: busy ? "Checking…" : "Connect") }
+                .buttonStyle(.budPrimary)
+                .keyboardShortcut(.defaultAction)
+                .disabled(busy || token.isEmpty)
+        }
+    }
+
+    private func connect() {
+        busy = true
+        problem = nil
+        let key = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                let workspace = try await sources.linearWorkspace(token: key)
+                await sources.connectLinear(name: name.isEmpty ? workspace : name, token: key)
+                close()
+            } catch {
+                problem = SourcesText.problem(error)
+            }
+            busy = false
+        }
+    }
+}
 #endif
 
 /// The words of Settings › Sources, kept pure so a test reads them on any platform.
@@ -242,6 +294,7 @@ public enum SourcesText {
     public static let defaultSession = "https://api.fastmail.com/jmap/session"
     public static let badAddress = "The address starts with https://."
     public static let calendarBody = "Bud reads the next 14 days of one calendar over CalDAV. Use an app password, not your account password."
+    public static let linearBody = "Bud shows the open issues assigned to you. Make a personal API key in Linear under Settings › Security & access."
     public static let noCalendars = "No calendar with events was found there."
     /// The servers most people use, ready to pick.
     public static let servers: [(name: String, caption: String, url: String)] = [

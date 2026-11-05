@@ -180,6 +180,7 @@ public final class BudStore: ObservableObject {
             switch change {
             case .rename(let title): update(bud.id, text: title, todo: bud.isTodo)
             case .when(let when): setWhen(bud.id, when)
+            case .due(let due): setDue(bud.id, due)
             case .state(.open):
                 if !bud.isTodo { update(bud.id, text: tree.bud(bud.id)?.text ?? bud.text, todo: true) }
                 else if bud.isDone { set(.open, on: [bud.id]) }
@@ -434,6 +435,11 @@ public final class BudStore: ObservableObject {
         }
         // A calendar owns the event's day: the bud starts with it.
         if account.kind == .calendar, let date = item.date { setWhen(id, date) }
+        // Linear owns the issue's due date, and the body says its team and state.
+        if account.kind == .linear {
+            if let date = item.date { setDue(id, date) }
+            if let detail = item.detail { setBody(id, detail) }
+        }
         lastSeen[key] = SourceSnapshot(item, at: Date())
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
