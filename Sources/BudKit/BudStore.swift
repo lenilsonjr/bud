@@ -347,13 +347,36 @@ public final class BudStore: ObservableObject {
         return true
     }
 
+    /// A new title rewrites the links that named the bud, and offers to take both back.
     public func update(_ id: UUID, text: String, todo: Bool) {
         guard let before = tree.bud(id) else { return }
+        let relinked = text != before.text ? tree.relinked(renaming: id, to: text) : [:]
+        let bodies = relinked.keys.reduce(into: [UUID: String]()) { $0[$1] = tree.bud($1)?.body }
         commit { $0.update(id, text: text, todo: todo) }
         write { [self] vault in
             if text != before.text { try await relocate(id) { try await $0.rename($1, to: text) } }
             if todo, before.state == nil { try await edit(id) { try await $0.setState($1, .open) } }
             if !todo, before.state != nil { try await edit(id) { try await $0.setState($1, nil) } }
+        }
+        guard !relinked.isEmpty else { return }
+        rewrite(relinked)
+        let count = relinked.count
+        toasts.show(Undoable(message: count == 1 ? "Updated links in 1 bud" : "Updated links in \(count) buds", systemImage: "link") {
+            [weak self] in
+            Task { @MainActor in
+                guard let self, let now = self.tree.bud(id) else { return }
+                self.commit { $0.update(id, text: before.text, todo: now.isTodo) }
+                self.write { [self] _ in try await self.relocate(id) { try await $0.rename($1, to: before.text) } }
+                self.rewrite(bodies)
+            }
+        })
+    }
+
+    /// Sets several bodies at once, here and in the vault.
+    private func rewrite(_ bodies: [UUID: String]) {
+        commit { tree in for (id, body) in bodies { tree.setBody(id, body) } }
+        write { [self] _ in
+            for (id, body) in bodies { try await edit(id) { try await $0.setBody($1, body) } }
         }
     }
 
