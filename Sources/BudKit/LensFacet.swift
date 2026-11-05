@@ -3,8 +3,16 @@ import Foundation
 /// One row of the canvas lens menu. Ticked rows combine: a bud must answer every one.
 public enum LensFacet: Hashable, Sendable {
     case openTodos, dueToday, pinned, done
-    /// A tag, by the way the menu shows it.
+    /// A tag, by the way the menu shows it; two spellings of one tag are the same row.
     case tag(String)
+
+    public static func == (a: LensFacet, b: LensFacet) -> Bool { a.identity == b.identity }
+    public func hash(into hasher: inout Hasher) { hasher.combine(identity) }
+
+    private var identity: String {
+        if case .tag(let tag) = self { return "#" + BudTags.key(tag) }
+        return name
+    }
 
     /// The built-in rows, in the menu's order.
     public static let builtIns: [LensFacet] = [.openTodos, .dueToday, .pinned, .done]

@@ -26,7 +26,7 @@ public struct OrbitCanvas: View {
     /// Whether the pointer rests on a link chip: the links hold still while it does.
     @State private var overChip = false
     /// Which match ⌘G last went to, under the lens; none until it is pressed.
-    @State private var matchAt: Int? = nil
+    @State private var matchAt: UUID? = nil
     @FocusState private var focused: Bool
     @State private var motion: MotionState
     @GestureState private var gripped = false
@@ -240,8 +240,6 @@ public struct OrbitCanvas: View {
         )
     }
 
-    /// A ghost chip's bud, brought onto the canvas: centered when it holds buds, otherwise in
-    /// its parent's ring.
     // MARK: matches
 
     /// Under a lens, how many buds match and which one ⌘G went to; ⌘G and ⇧⌘G step through
@@ -251,7 +249,7 @@ public struct OrbitCanvas: View {
             let hits = lens.hits(store.tree).map(\.id)
             let shape = Capsule()
             HStack(spacing: 8) {
-                Text(pillText(count: hits.count))
+                Text(pillText(hits))
                     .textRole(.label)
                     .monospacedDigit()
                     .foregroundStyle(Theme.text)
@@ -263,7 +261,7 @@ public struct OrbitCanvas: View {
                         .keyboardShortcut("g", modifiers: .command)
                         .accessibilityLabel("Next match")
                     #if os(macOS)
-                    Keycap("⌘G")
+                    Keycap("⌘G").accessibilityHidden(true)
                     #endif
                 }
             }
@@ -279,20 +277,27 @@ public struct OrbitCanvas: View {
         }
     }
 
-    private func pillText(count: Int) -> String {
-        switch count {
-        case 0: return "No matches"
-        case 1: return matchAt == nil ? "1 match" : "1 match · 1 of 1"
-        default: return matchAt.map { "\(count) matches · \($0 + 1) of \(count)" } ?? "\(count) matches"
-        }
+    /// The count, and where ⌘G last went among the hits while that bud still matches.
+    private func pillText(_ hits: [UUID]) -> String {
+        let count = hits.count
+        let total = count == 1 ? "1 match" : count == 0 ? "No matches" : "\(count) matches"
+        guard let at = matchAt.flatMap({ hits.firstIndex(of: $0) }) else { return total }
+        return "\(total) · \(at + 1) of \(count)"
     }
 
     private func step(_ by: Int, in hits: [UUID]) {
         guard !hits.isEmpty else { return }
-        let next = matchAt.map { ($0 + by + hits.count) % hits.count } ?? (by > 0 ? 0 : hits.count - 1)
-        matchAt = next
+        let at = matchAt.flatMap { hits.firstIndex(of: $0) }
+        let next = at.map { ($0 + by + hits.count) % hits.count } ?? (by > 0 ? 0 : hits.count - 1)
+        matchAt = hits[next]
         goTo(hits[next])
+        #if os(iOS) || os(macOS)
+        AccessibilityNotification.Announcement("\(next + 1) of \(hits.count)").post()
+        #endif
     }
+
+    /// A ghost chip's bud, brought onto the canvas: centered when it holds buds, otherwise in
+    /// its parent's ring.
 
     private func goTo(_ id: UUID) {
         let target = store.tree.hasChildren(id) ? id : (store.tree.parent(of: id) ?? rootID)
