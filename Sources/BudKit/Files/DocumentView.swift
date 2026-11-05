@@ -530,12 +530,16 @@ struct RenderedBody: View {
             case .link(let link):
                 var shown = AttributedString(link.shown)
                 if let id = tree?.resolve(link.target) {
-                    // The arrow is a character of the link, not an image beside it: an image
-                    // cannot carry the link, so a tap on it fell through to the editor.
-                    shown += AttributedString("\u{00A0}\u{2197}")
-                    shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
+                    // The arrow is characters carrying the link too, not an image beside it: an
+                    // image cannot carry the link, so a tap on it fell through to the editor.
+                    // VoiceOver reads the words alone.
+                    let url = URL(string: "\(Self.scheme)://\(id.uuidString)")
+                    var arrow = AttributedString("\u{00A0}\u{2197}")
+                    shown.link = url
+                    arrow.link = url
                     shown.foregroundColor = Theme.leaf
-                    out = out + Text(shown).fontWeight(.semibold)
+                    arrow.foregroundColor = Theme.leaf
+                    out = out + Text(shown).fontWeight(.semibold) + Text(arrow).fontWeight(.semibold).accessibilityLabel("")
                 } else {
                     shown.foregroundColor = Theme.text3
                     shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
