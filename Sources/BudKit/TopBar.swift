@@ -297,8 +297,8 @@ struct TopBar: View {
             .foregroundStyle(on ? Theme.onLeaf : Theme.text)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(on ? Theme.leaf : Theme.glass, in: shape)
-            .overlay(shape.stroke(on ? Theme.leaf : Theme.lineStrong, lineWidth: 1))
+            .background(on ? (nothingMatches ? Theme.text3 : Theme.leaf) : Theme.glass, in: shape)
+            .overlay(shape.stroke(on ? (nothingMatches ? Theme.text3 : Theme.leaf) : Theme.lineStrong, lineWidth: 1))
             .contentShape(shape)
         }
     }
@@ -318,7 +318,7 @@ struct TopBar: View {
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(Theme.leaf)
                             .frame(width: 14, height: 14)
-                            .contentShape(Rectangle())
+                            .contentShape(Rectangle().inset(by: -8))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove \(facet.name) from the lens")

@@ -128,4 +128,11 @@ final class LensQueryTests: XCTestCase {
         XCTAssertEqual(LensFacet.query(of: [.openTodos, .done])?.hits(tree).map(\.id), [], "open and done at once")
         XCTAssertEqual(LensFacet.query(of: [.tag("home"), .tag("work")])?.hits(tree).map(\.id), [])
     }
+
+    func testATickedTagStaysTickedWhenTheMenuSpellsItAnotherWay() {
+        XCTAssertEqual(LensFacet.tag("home"), .tag("Home"))
+        XCTAssertEqual(Set<LensFacet>([.tag("home"), .tag("HOME")]).count, 1)
+        XCTAssertNotEqual(LensFacet.tag("home"), .tag("home/garden"))
+        XCTAssertTrue([LensFacet.tag("home")].contains(.tag("Home")))
+    }
 }
