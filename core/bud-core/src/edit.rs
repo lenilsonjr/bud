@@ -171,6 +171,19 @@ impl Vault {
         kind: Kind,
         source: Option<&str>,
     ) -> Result<String> {
+        self.make(parent, title, kind, source, None)
+    }
+
+    /// `create` with the `from` key already in the first write, so a planted bud is never
+    /// on disk without it.
+    fn make(
+        &mut self,
+        parent: Option<&str>,
+        title: &str,
+        kind: Kind,
+        source: Option<&str>,
+        from: Option<&str>,
+    ) -> Result<String> {
         let dir = self.parent_dir(parent)?;
         let base = sanitize_filename(title);
         std::fs::create_dir_all(self.root.join(&dir))?;
@@ -185,6 +198,7 @@ impl Vault {
             state: (kind == Kind::Todo).then_some(State::Open),
             created: Some(now_iso()),
             source: source.map(str::to_string),
+            from: from.map(str::to_string),
             ..Default::default()
         };
         let text = frontmatter::write("", &props);
@@ -441,10 +455,7 @@ impl Vault {
         if let Some(bud) = self.planted(from)? {
             return Ok((bud.path, false));
         }
-        let path = self.create(parent, title, kind, None)?;
-        let mut props = self.properties_of(&path)?;
-        props.from = Some(from.to_string());
-        self.set_properties(&path, &props)?;
+        let path = self.make(parent, title, kind, None, Some(from))?;
         Ok((path, true))
     }
 
