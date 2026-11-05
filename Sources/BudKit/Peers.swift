@@ -215,7 +215,7 @@ public struct SyncSummary: Hashable, Sendable {
 public struct RotationResult: Hashable, Sendable {
     public var reached: Int
     public var missed: [String]
-    /// The node could not make a new key at all, a closed one for instance: the old key stands.
+    /// The rotation stopped before it was over, on a closed node for instance.
     public var failed: Bool
 
     public init(reached: Int, missed: [String], failed: Bool = false) {

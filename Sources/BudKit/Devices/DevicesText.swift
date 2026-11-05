@@ -81,7 +81,7 @@ public enum DevicesText {
 
     /// The toast after a key rotation: who missed it, or how many took it.
     public static func rotated(_ result: RotationResult) -> String {
-        if result.failed { return "Couldn't rotate the key · the old one still works" }
+        if result.failed { return "Couldn't finish rotating the key · try again" }
         switch result.missed.count {
         case 0: return result.reached == 1 ? "Key rotated · 1 device got it" : "Key rotated · \(result.reached) devices got it"
         case 1: return "Key rotated · 1 device missed it"

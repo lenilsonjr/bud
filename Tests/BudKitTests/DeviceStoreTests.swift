@@ -238,7 +238,7 @@ extension DeviceStoreTests {
         XCTAssertNil(store.rotation)
         XCTAssertNil(store.rotatedAt)
         XCTAssertEqual(finished, [RotationResult(reached: 0, missed: [], failed: true)])
-        XCTAssertEqual(DevicesText.rotated(finished[0]), "Couldn't rotate the key · the old one still works")
+        XCTAssertEqual(DevicesText.rotated(finished[0]), "Couldn't finish rotating the key · try again")
     }
 
     func testANewNodeReplacesTheTicketAndRequestOnShow() async throws {
