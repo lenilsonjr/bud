@@ -655,15 +655,6 @@ impl Vault {
         Ok(changed == 1)
     }
 
-    /// Note that a rotation could not move a peer: it holds the old key.
-    fn mark_missed(&self, id: &str) -> Result<()> {
-        lock(&self.conn).execute(
-            "INSERT OR IGNORE INTO peer_missed (node) VALUES (?1)",
-            params![id],
-        )?;
-        Ok(())
-    }
-
     fn pending_ticket(&self, node: &str) -> Result<Option<[u8; 16]>> {
         let found: Option<Vec<u8>> = lock(&self.conn)
             .query_row(
@@ -689,18 +680,26 @@ impl Vault {
         Ok(())
     }
 
-    /// Replace the vault key. Tickets issued under the old one are void.
-    fn replace_key(&self, key: &[u8; 32]) -> Result<()> {
-        let conn = lock(&self.conn);
-        conn.execute(
+    /// Replace the vault key and note the peers that still hold the old one, all at once: a key
+    /// that changed always comes with who missed it. Tickets issued under the old key are void.
+    fn replace_key(&self, key: &[u8; 32], missed: &[String]) -> Result<()> {
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO peer_key (id, key) VALUES (1, ?1)
              ON CONFLICT(id) DO UPDATE SET key = excluded.key",
             params![key.to_vec()],
         )?;
-        conn.execute("DELETE FROM tickets_issued", [])?;
-        // Whoever took the new key is not on the old one any more; a rotation marks the ones that
-        // did not, after this.
-        conn.execute("DELETE FROM peer_missed", [])?;
+        tx.execute("DELETE FROM tickets_issued", [])?;
+        // Whoever took the new key is not on the old one any more.
+        tx.execute("DELETE FROM peer_missed", [])?;
+        for id in missed {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_missed (node) VALUES (?1)",
+                params![id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 }
@@ -1294,12 +1293,7 @@ impl Shared {
                 report.missed.push(peer.id.clone());
             }
         }
-        let vault = self.vault();
-        vault.replace_key(&new)?;
-        for id in &report.missed {
-            vault.mark_missed(id)?;
-        }
-        drop(vault);
+        self.vault().replace_key(&new, &report.missed)?;
         self.emit(NodeEvent::RotationDone(report.clone()));
         Ok(report)
     }
@@ -1419,7 +1413,7 @@ impl Shared {
                     connection.close(1u32.into(), b"not paired");
                     return Err(peer_error("a stranger sent a new key"));
                 }
-                self.vault().replace_key(&new)?;
+                self.vault().replace_key(&new, &[])?;
                 self.reached(&remote_text);
                 if self.dropped_acks.load(Ordering::SeqCst) > 0 {
                     self.dropped_acks.fetch_sub(1, Ordering::SeqCst);
