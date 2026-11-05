@@ -28,7 +28,7 @@ struct LinkLayer: View {
             let around = graph.around(lit)
             // As many chips as fit down the side without overlapping; the rest wait on the page.
             let room = Int(size.height * 0.6 / (Self.chip.height + 6)) + 1
-            let off = Array(around.filter { layout.cards[$0.other] == nil }.prefix(max(room, 1)))
+            let off = Array(around.filter { shown($0.other) == nil }.prefix(max(room, 1)))
             let litPoint = screenPoint(placed.position)
             let slots = LinkGeometry.ghostSlots(count: off.count, lit: litPoint, in: size, inset: Self.inset)
             switch part {
@@ -37,7 +37,7 @@ struct LinkLayer: View {
                     let litSize = scaled(Metrics.size(hub: placed.hub))
                     for link in around {
                         let far: CGPoint, farSize: CGSize
-                        if let other = layout.cards[link.other] {
+                        if let other = shown(link.other) {
                             far = screenPoint(other.position)
                             farSize = scaled(Metrics.size(hub: other.hub))
                         } else if let i = off.firstIndex(where: { $0.other == link.other }) {
@@ -71,6 +71,14 @@ struct LinkLayer: View {
                 .frame(width: size.width, height: size.height)
             }
         }
+    }
+
+    /// A bud's card when it is on the canvas and in view; a card scrolled out of view gets a
+    /// chip like a bud with no card.
+    private func shown(_ id: UUID) -> Placed? {
+        guard let placed = layout.cards[id] else { return nil }
+        let p = screenPoint(placed.position)
+        return (0...size.width).contains(p.x) && (0...size.height).contains(p.y) ? placed : nil
     }
 
     private func scaled(_ s: CGSize) -> CGSize { CGSize(width: s.width * scale, height: s.height * scale) }
