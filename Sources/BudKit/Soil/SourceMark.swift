@@ -58,18 +58,18 @@ public enum SourceRowText {
         return mark.status
     }
 
-    /// The card's row: "Linear · live", "Calendar · moved 1h ago", "Calendar · cancelled at
-    /// source", "GitHub · closed at source", "Mail · gone from source".
+    /// The card's row, short enough for a card: "Linear · live" names the source; the others say
+    /// what happened there: "moved 1h ago", "cancelled at source", "closed at source", "gone
+    /// from source". The page names the source in full.
     public static func card(from: String, mark: SourceMark?, now: Date) -> String {
-        let source = name(from)
         switch status(mark, now: now) {
-        case .live: return "\(source) · live"
+        case .live: return "\(name(from)) · live"
         case .changed(let what):
-            guard let at = mark?.at else { return "\(source) · \(what)" }
-            return "\(source) · \(what) \(ago(at, now: now))"
-        case .closed: return "\(source) · closed at source"
-        case .cancelled: return "\(source) · cancelled at source"
-        case .gone: return "\(source) · gone from source"
+            guard let at = mark?.at else { return what }
+            return "\(what) \(ago(at, now: now))"
+        case .closed: return "closed at source"
+        case .cancelled: return "cancelled at source"
+        case .gone: return "gone from source"
         }
     }
 
