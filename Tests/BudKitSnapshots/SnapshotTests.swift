@@ -89,6 +89,8 @@ final class SnapshotTests: XCTestCase {
             XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
         }
         // The most linked bud, picked under "Linked to…": its row joins the menu under Links.
+        let threads = store.tree.children(of: rootID)
+        for from in threads.dropFirst().prefix(2) { store.setBody(from.id, "See [[\(threads[0].text)]]") }
         let linked = try XCTUnwrap(store.links.into.max { $0.value.count < $1.value.count }?.key)
         store.canvasFacets = [.linked(linked, title: store.tree.title(of: linked))]
         let menu = LensMenu(store: store).padding(24).background(Theme.raised)
