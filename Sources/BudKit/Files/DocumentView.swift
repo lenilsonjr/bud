@@ -39,11 +39,15 @@ struct DocumentView: View {
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
                 if bodyFocused {
-                    HStack {
-                        Spacer()
-                        Button("Done") { bodyFocused = false }
-                            .buttonStyle(.budGhost)
-                            .accessibilityIdentifier("body-done")
+                    // The keyboard covers the page, so the [[ picker rides above it with Done.
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let picker = linkPicker { pickerList(picker) }
+                        HStack {
+                            Spacer()
+                            Button("Done") { bodyFocused = false }
+                                .buttonStyle(.budGhost)
+                                .accessibilityIdentifier("body-done")
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -145,11 +149,9 @@ struct DocumentView: View {
                     .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
                         press.modifiers.isEmpty && pickerKey(press.key) ? .handled : .ignored
                     }
-                if let picker = linkPicker {
-                    LinkPickerList(
-                        rows: pickerRows(picker), pick: pick, tree: store.tree, here: store.tree.title(of: id)
-                    ) { row in choose(row, labelled: false) }
-                }
+                #if !os(iOS)
+                if let picker = linkPicker { pickerList(picker) }
+                #endif
             }
         } else {
             Group {
@@ -180,6 +182,12 @@ struct DocumentView: View {
     private var linkPicker: LinkPicker? {
         guard editing, let picker = LinkPicker(typing: draft), picker.range.lowerBound != closedAt else { return nil }
         return picker
+    }
+
+    private func pickerList(_ picker: LinkPicker) -> some View {
+        LinkPickerList(
+            rows: pickerRows(picker), pick: pick, tree: store.tree, here: store.tree.title(of: id)
+        ) { row in choose(row, labelled: false) }
     }
 
     /// The buds the link could name, then planting one when no title is the query.
@@ -502,7 +510,9 @@ struct RenderedBody: View {
                 if let id = tree?.resolve(link.target) {
                     shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
                     shown.foregroundColor = Theme.leaf
-                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf).accessibilityLabel("") + Text("\u{00A0}") + Text(shown).fontWeight(.semibold)
+                    // The icon follows the words: in front of them it shifts the link's tap area
+                    // and its spoken label off the words.
+                    out = out + Text(shown).fontWeight(.semibold) + Text("\u{00A0}") + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf).accessibilityLabel("")
                 } else {
                     shown.foregroundColor = Theme.text3
                     shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
