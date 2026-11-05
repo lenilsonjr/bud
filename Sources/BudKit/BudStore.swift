@@ -108,11 +108,16 @@ public final class BudStore: ObservableObject {
     private var soilFeed: AnyCancellable?
 
     private var liveFeed: AnyCancellable?
+    private weak var soil: SourceStore?
     private var keepingLive = false
 
     /// Shows what a source store reads below the soil, starts it reading, and keeps the buds
     /// planted from it live after each read.
     public func follow(_ soil: SourceStore) {
+        self.soil = soil
+        soil.deviceName = Self.deviceName
+        let vault = vault
+        Task { await soil.use(vault) }
         soilFeed = soil.$accounts.receive(on: RunLoop.main).sink { [weak self] in self?.sources = $0 }
         liveFeed = soil.$refreshed.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in
             Task { @MainActor in await self?.keepLive(soil) }
@@ -147,7 +152,17 @@ public final class BudStore: ObservableObject {
         guard !keepingLive else { return }
         keepingLive = true
         defer { keepingLive = false }
-        let planted = tree.buds.filter { $0.from != nil }
+        let kinds = await soil.holdLeases()
+        let all = tree.buds.filter { $0.from != nil }
+        // Every device shows the last sync, whichever device ran it.
+        for bud in all {
+            guard let from = bud.from, let kind = SourceRowText.origin(from).kind, let lease = soil.lastSync(of: kind) else { continue }
+            var mark = marks[from] ?? SourceMark()
+            mark.synced = lease.synced
+            mark.device = lease.name
+            marks[from] = mark
+        }
+        let planted = all.filter { $0.from.flatMap { SourceRowText.origin($0).kind }.map(kinds.contains) ?? false }
         guard !planted.isEmpty else { return }
         let sightings = await soil.sightings(for: planted.map { ($0.from!, $0.when) })
         for bud in planted {
@@ -156,11 +171,7 @@ public final class BudStore: ObservableObject {
             let result = LiveRules.changes(for: current, kind: kind, sighting: sighting, last: lastSeen[from], now: now)
             apply(result.changes, to: current)
             if let seen = result.seen, !(lastSeen[from]?.same(as: seen) ?? false) { lastSeen[from] = seen }
-            var mark = marks[from] ?? SourceMark()
-            mark.synced = now
-            mark.device = Self.deviceName
-            if case .seen(let item) = sighting, let url = item.url { mark.url = url }
-            marks[from] = mark
+            if case .seen(let item) = sighting, let url = item.url { marks[from, default: SourceMark()].url = url }
         }
     }
 
@@ -222,7 +233,10 @@ public final class BudStore: ObservableObject {
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
         self.devices.onSyncFinished = { [weak self] summary in
             // A sync writes the files itself, which the vault's watch does not report.
-            Task { @MainActor in await self?.reload() }
+            Task { @MainActor in
+                await self?.reload()
+                await self?.soil?.reloadShared()
+            }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
         }

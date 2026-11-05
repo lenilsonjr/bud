@@ -866,6 +866,51 @@ impl Vault {
         Ok(())
     }
 
+    /// The settings of each connected source, by account id, as the app wrote them: never a
+    /// token. They ride in the tree document, so every replica of the vault sees the same list.
+    pub fn sources(&self) -> Result<Vec<(String, String)>> {
+        self.shared("sources")
+    }
+
+    /// Keep one source's settings in the tree document; none forgets the source.
+    pub fn set_source(&mut self, id: &str, settings: Option<&str>) -> Result<()> {
+        self.set_shared("sources", id, settings)
+    }
+
+    /// Which device keeps each account's planted buds live, until when, and when it last synced,
+    /// by account id, as the app wrote it.
+    pub fn leases(&self) -> Result<Vec<(String, String)>> {
+        self.shared("leases")
+    }
+
+    /// Take, renew or drop one account's lease.
+    pub fn set_lease(&mut self, id: &str, lease: Option<&str>) -> Result<()> {
+        self.set_shared("leases", id, lease)
+    }
+
+    /// A map of text the tree document carries beside the buds, sorted by key.
+    fn shared(&self, name: &str) -> Result<Vec<(String, String)>> {
+        let tree = self.load_tree()?;
+        let map = tree.doc.get_map(name);
+        let mut found: Vec<(String, String)> = map
+            .keys()
+            .filter_map(|key| Some((key.to_string(), text_of(map.get(&key))?)))
+            .collect();
+        found.sort();
+        Ok(found)
+    }
+
+    fn set_shared(&mut self, name: &str, key: &str, value: Option<&str>) -> Result<()> {
+        let tree = self.load_tree()?;
+        let map = tree.doc.get_map(name);
+        match value {
+            Some(text) => map.insert(key, text).map_err(tree_fail)?,
+            None => map.delete(key).map_err(tree_fail)?,
+        }
+        tree.doc.commit();
+        self.store_tree(&tree.doc)
+    }
+
     fn load_tree(&self) -> Result<Tree> {
         let bytes: Option<Vec<u8>> = lock(&self.conn)
             .query_row("SELECT bytes FROM tree_doc WHERE id = 1", [], |r| r.get(0))

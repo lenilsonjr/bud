@@ -75,6 +75,14 @@ public actor MemoryVault: Vault {
         save()
     }
 
+    private var maps: [SharedMap: [String: String]] = [:]
+
+    public func shared(_ map: SharedMap) async throws -> [String: String] { maps[map] ?? [:] }
+
+    public func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws {
+        maps[map, default: [:]][key] = value
+    }
+
     public func setFromState(_ path: String, _ state: String?) async throws {
         let id = try known(path)
         guard let i = tree.buds.firstIndex(where: { $0.id == id }) else { throw VaultError.notFound(path) }

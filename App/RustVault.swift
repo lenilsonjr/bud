@@ -46,6 +46,18 @@ final class RustVault: BudKit.Vault {
     func setDue(_ path: String, _ due: Date?) async throws { try core.setDue(path: path, due: due.map(Self.day)) }
     func setPinned(_ path: String, _ pinned: Bool) async throws { try core.setPinned(path: path, pinned: pinned) }
     func setFromState(_ path: String, _ state: String?) async throws { try core.setFromState(path: path, state: state) }
+
+    func shared(_ map: SharedMap) async throws -> [String: String] {
+        let entries = map == .sources ? try core.sources() : try core.leases()
+        return Dictionary(entries.map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws {
+        switch map {
+        case .sources: try core.setSource(id: key, settings: value)
+        case .leases: try core.setLease(id: key, lease: value)
+        }
+    }
     func rename(_ path: String, to title: String) async throws -> String { try core.rename(path: path, newTitle: title) }
     func move(_ path: String, to parent: String?) async throws -> String { try core.moveTo(path: path, newParent: parent) }
 

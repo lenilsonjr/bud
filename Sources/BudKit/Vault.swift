@@ -188,6 +188,18 @@ public protocol Vault: Sendable {
 
     /// Calls back once per batch of changes made outside the app.
     func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch
+
+    /// Text the vault keeps beside the buds and syncs with them, by key: `sources` holds each
+    /// connected source's settings (never a token), `leases` which device keeps an account's
+    /// planted buds live.
+    func shared(_ map: SharedMap) async throws -> [String: String]
+    /// Nil removes the key.
+    func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws
+}
+
+/// The maps a vault keeps beside the buds.
+public enum SharedMap: String, Sendable {
+    case sources, leases
 }
 
 extension Vault {
