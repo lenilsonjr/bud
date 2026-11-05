@@ -131,13 +131,14 @@ struct LensMenu: View {
         })
         let canvas = store.tree.walk(under: rootID)
         let onCanvas = Set(canvas.map(\.id))
-        return canvas
-            .filter { !picked.contains($0.id) && (typed.isEmpty || BudLinks.fold($0.text).contains(typed)) }
-            .map { bud in (bud, store.links.around(bud.id).filter { onCanvas.contains($0.other) }.count) }
-            .filter { $0.1 > 0 }
-            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.text < $1.0.text }
-            .prefix(Self.linkLimit)
-            .map { (bud: $0.0, count: $0.1) }
+        var found: [(bud: Bud, count: Int)] = []
+        for bud in canvas where !picked.contains(bud.id) {
+            guard typed.isEmpty || BudLinks.fold(bud.text).contains(typed) else { continue }
+            let count = store.links.around(bud.id).filter { onCanvas.contains($0.other) }.count
+            if count > 0 { found.append((bud, count)) }
+        }
+        found.sort { a, b in a.count != b.count ? a.count > b.count : a.bud.text < b.bud.text }
+        return Array(found.prefix(Self.linkLimit))
     }
 
     private func pick(_ bud: Bud) {
