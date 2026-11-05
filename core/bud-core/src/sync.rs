@@ -950,7 +950,6 @@ impl Vault {
         Ok(())
     }
 
-    /// Reconcile one bud with its document.
     /// Whether `path` is a folder's file holding nothing, with no document of the folder's own.
     fn emptied_folder_file(&self, path: &str, text: &str) -> Result<bool> {
         let Some(folder) = path.strip_suffix(".md") else {
@@ -963,6 +962,7 @@ impl Vault {
         Ok(self.root.join(folder).is_dir() && self.doc_id(folder)?.is_none())
     }
 
+    /// Reconcile one bud with its document.
     fn sync_path(&mut self, path: &str) -> Result<SyncReport> {
         let mut report = SyncReport::default();
         let is_file = path.ends_with(".md");
