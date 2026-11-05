@@ -18,6 +18,7 @@ struct LinkLayer: View {
     let size: CGSize
     let screenPoint: (CGPoint) -> CGPoint
     let go: (UUID) -> Void
+    var hover: (Bool) -> Void = { _ in }
 
     private static let chip = CGSize(width: 220, height: 28)
     private static let inset: CGFloat = 130
@@ -25,7 +26,9 @@ struct LinkLayer: View {
     var body: some View {
         if let lit, let placed = layout.cards[lit] {
             let around = graph.around(lit)
-            let off = around.filter { layout.cards[$0.other] == nil }
+            // As many chips as fit down the side without overlapping; the rest wait on the page.
+            let room = Int(size.height * 0.6 / (Self.chip.height + 6)) + 1
+            let off = Array(around.filter { layout.cards[$0.other] == nil }.prefix(max(room, 1)))
             let litPoint = screenPoint(placed.position)
             let slots = LinkGeometry.ghostSlots(count: off.count, lit: litPoint, in: size, inset: Self.inset)
             switch part {
@@ -61,6 +64,7 @@ struct LinkLayer: View {
                     ForEach(Array(off.enumerated()), id: \.element.other) { i, link in
                         Button { go(link.other) } label: { ghost(link.other) }
                             .buttonStyle(.plain)
+                            .onHover(perform: hover)
                             .position(slots[i])
                     }
                 }

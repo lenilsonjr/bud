@@ -228,18 +228,19 @@ extension Tree {
     /// in any case, then the bud at that path. More than one at the first rank that has any, or
     /// none, is no bud.
     public func resolve(_ target: String) -> UUID? {
+        resolve(target, in: TitleIndex(self))
+    }
+
+    /// `resolve` against titles read once, for a caller that resolves many targets.
+    func resolve(_ target: String, in index: TitleIndex) -> UUID? {
         let bare = target.hasSuffix(".md") ? String(target.dropLast(3)) : target
-        let folded = BudLinks.fold(target)
-        let ranks: [(Bud) -> Bool] = [
-            { $0.text == target },
-            { BudLinks.fold($0.text) == folded },
-            { [self] in let path = linkPath(of: $0.id); return path == target || path == bare },
-        ]
-        for rank in ranks {
-            let found = buds.filter(rank)
-            if !found.isEmpty { return found.count == 1 ? found[0].id : nil }
-        }
-        return nil
+        func one(_ found: [UUID]) -> UUID?? { found.isEmpty ? nil : .some(found.count == 1 ? found[0] : nil) }
+        if let found = one(index.exact[target] ?? []) { return found }
+        if let found = one(index.folded[BudLinks.fold(target)] ?? []) { return found }
+        // A path ends in the bud's own title, so only buds with that title are walked up.
+        let last = bare.split(separator: "/").last.map(String.init) ?? bare
+        let named = (index.exact[last] ?? []).filter { let path = linkPath(of: $0); return path == target || path == bare }
+        return one(named) ?? nil
     }
 
     /// The buds that link to `id` in their body, one row each, by where they live.
@@ -403,6 +404,19 @@ public struct LinkPicker: Equatable, Sendable {
     }
 }
 
+/// Every bud's title, as written and folded, so resolving a link reads no bud twice.
+struct TitleIndex {
+    var exact: [String: [UUID]] = [:]
+    var folded: [String: [UUID]] = [:]
+
+    init(_ tree: Tree) {
+        for bud in tree.buds {
+            exact[bud.text, default: []].append(bud.id)
+            folded[BudLinks.fold(bud.text), default: []].append(bud.id)
+        }
+    }
+}
+
 /// Which buds link to which, read once from every body: what the canvas draws for the lit card
 /// and counts on each card.
 public struct LinkGraph: Equatable, Sendable {
@@ -415,12 +429,13 @@ public struct LinkGraph: Equatable, Sendable {
 
     public init(_ tree: Tree) {
         var resolved: [String: UUID?] = [:]
+        let index = TitleIndex(tree)
         for bud in tree.buds where bud.body.contains("[[") {
             var seen: Set<UUID> = []
             for link in BudLinks.parse(bud.body) {
                 let to: UUID?
                 if let known = resolved[link.target] { to = known } else {
-                    to = tree.resolve(link.target)
+                    to = tree.resolve(link.target, in: index)
                     resolved[link.target] = to
                 }
                 guard let to, to != bud.id, seen.insert(to).inserted else { continue }
