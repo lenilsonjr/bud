@@ -353,6 +353,12 @@ impl Vault {
                 "UPDATE buds SET parent = ?1 WHERE parent = ?2",
                 params![file_path, path],
             )?;
+            // The bud's sync document moves with it, so a sync sees the same bud at its file
+            // and not a folder gone and a new bud come.
+            tx.execute(
+                "UPDATE docs SET path = ?1 WHERE path = ?2",
+                params![file_path, path],
+            )?;
         }
         insert_row(&tx, &row, props, yaml, body)?;
         tx.commit()?;
