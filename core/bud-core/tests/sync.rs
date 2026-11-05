@@ -390,3 +390,34 @@ fn a_body_written_to_a_folder_bud_reaches_the_peer_as_its_file() {
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
     assert_eq!(b.rescan_and_sync().written, 0);
 }
+
+#[test]
+fn a_file_written_outside_beside_a_folder_bud_keeps_the_bud_whole_on_both_devices() {
+    let (mut a, mut b) = pair();
+    let id = a
+        .vault
+        .doc_id("Routines")
+        .unwrap()
+        .expect("the folder has a document");
+    a.write("Routines.md", "---\npinned: true\n---\nWritten elsewhere\n");
+    a.rescan_and_sync();
+    assert_eq!(
+        a.vault.doc_id("Routines.md").unwrap(),
+        Some(id.clone()),
+        "the same bud at its file"
+    );
+    exchange(&mut a, &mut b);
+    assert_eq!(b.vault.doc_id("Routines.md").unwrap(), Some(id));
+    assert!(b.read("Routines.md").contains("Written elsewhere"));
+    let named = |r: &Replica| {
+        r.vault
+            .all()
+            .unwrap()
+            .into_iter()
+            .filter(|bud| bud.title.starts_with("Routines"))
+            .count()
+    };
+    assert_eq!(named(&a), 1);
+    assert_eq!(named(&b), 1);
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}

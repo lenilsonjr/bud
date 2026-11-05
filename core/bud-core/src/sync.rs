@@ -387,12 +387,30 @@ impl Vault {
         let mut report = SyncReport::default();
         let buds = self.all()?;
         let live: std::collections::HashSet<&str> = buds.iter().map(|b| b.path.as_str()).collect();
-        let stale: Vec<String> = {
+        let mut stale: Vec<String> = {
             let conn = lock(&self.conn);
             let mut stmt = conn.prepare("SELECT path FROM docs")?;
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
+        // A folder bud that gained its `Name.md` from outside the app is the same bud at its
+        // file: its document follows it there, unless the file has a document of its own.
+        let documented: std::collections::HashSet<String> = stale.iter().cloned().collect();
+        let mut followed = Vec::new();
+        for path in &stale {
+            let file = format!("{path}.md");
+            let gained = !path.ends_with(".md")
+                && !live.contains(path.as_str())
+                && live.contains(file.as_str());
+            if gained && !documented.contains(&file) {
+                lock(&self.conn).execute(
+                    "UPDATE docs SET path = ?1 WHERE path = ?2",
+                    params![file, path],
+                )?;
+                followed.push(path.clone());
+            }
+        }
+        stale.retain(|path| !followed.contains(path));
         let mut tree = self.load_tree()?;
         let nodes = tree.nodes();
         let before = tree.doc.len_ops();
