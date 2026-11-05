@@ -36,7 +36,10 @@ public enum Sighting: Equatable, Sendable {
 public enum LiveChange: Equatable, Sendable {
     case rename(String)
     case when(Date?)
-    /// Mail: flagged is an open to-do, unflagged after that is done.
+    /// Linear: the issue's due date.
+    case due(Date?)
+    /// Mail: flagged is an open to-do, unflagged after that is done. Linear: completed or
+    /// cancelled is done, reopened is open again.
     case state(BudState)
     /// The bud's `from-state`; nil clears it.
     case mark(String?)
@@ -74,9 +77,17 @@ public enum LiveRules {
             changes.append(.when(item.date))
             mark = .some("moved \(stamp)")
         }
+        if kind == .linear, item.date != last.date {
+            changes.append(.due(item.date))
+            mark = .some("moved \(stamp)")
+        }
         if kind == .mail, item.todo != last.todo {
             changes.append(.state(item.todo ? .open : .done))
             mark = .some("\(item.todo ? "flagged" : "unflagged") \(stamp)")
+        }
+        if kind == .linear, item.todo != last.todo {
+            changes.append(.state(item.todo ? .open : .done))
+            mark = .some(item.todo ? "reopened \(stamp)" : "closed")
         }
         if item.cancelled != last.cancelled {
             mark = .some(item.cancelled ? "cancelled" : nil)

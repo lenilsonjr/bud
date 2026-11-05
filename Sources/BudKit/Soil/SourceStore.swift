@@ -55,6 +55,9 @@ public final class SourceStore: ObservableObject {
     /// Each calendar's sync token and when its window was last read; the window moves with the
     /// clock, so it is read again after an hour even when the token stands still.
     private var calendarSeen: [String: (token: String?, at: Date)] = [:]
+    /// Each Linear account's newest update and when it was last read in full; read again after an
+    /// hour anyway, since an issue taken off you no longer counts as an update to your issues.
+    private var linearSeen: [String: (updated: Date?, at: Date)] = [:]
     private var items: [String: [SourceItem]] = [:]
     private var polling: Task<Void, Never>?
 
@@ -132,6 +135,27 @@ public final class SourceStore: ObservableObject {
         return config
     }
 
+    // MARK: connecting Linear
+
+    /// Checks a personal API key and hands back the name of the workspace it reads.
+    public func linearWorkspace(token: String) async throws -> String {
+        try await LinearIssues(token: token, http: http).workspace()
+    }
+
+    /// Adds a Linear account that reads the open issues assigned to you, keeps its key on this
+    /// device, and reads it.
+    @discardableResult
+    public func connectLinear(name: String, token: String) async -> SourceConfig {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = SourceConfig(kind: .linear, name: trimmed.isEmpty ? SourceKind.linear.name : trimmed)
+        configs.append(config)
+        save()
+        await share(config)
+        keep(token, for: config)
+        await read(config)
+        return config
+    }
+
     /// Signs this device in to an account another device connected.
     public func signIn(_ id: String, token: String) async {
         guard let config = configs.first(where: { $0.id == id }) else { return }
@@ -146,6 +170,7 @@ public final class SourceStore: ObservableObject {
         items[id] = nil
         seen[id] = nil
         calendarSeen[id] = nil
+        linearSeen[id] = nil
         problems[id] = nil
         removed.insert(id)
         waiting.remove(id)
@@ -203,7 +228,15 @@ public final class SourceStore: ObservableObject {
                 if let last = calendarSeen[config.id], let syncToken, last.token == syncToken, now.timeIntervalSince(last.at) < 3600 { break }
                 items[config.id] = try await cal.window(of: calendar, now: now)
                 calendarSeen[config.id] = (syncToken, now)
-            case .github, .linear:
+            case .linear:
+                let linear = LinearIssues(token: token, http: http)
+                let now = clock()
+                if let last = linearSeen[config.id], let since = last.updated, now.timeIntervalSince(last.at) < 3600,
+                   !(try await linear.changed(since: since)) { break }
+                let window = try await linear.window()
+                items[config.id] = window.items
+                linearSeen[config.id] = (window.updated ?? linearSeen[config.id]?.updated, now)
+            case .github:
                 break
             }
             problems[config.id] = nil
@@ -212,6 +245,7 @@ public final class SourceStore: ObservableObject {
             problems[config.id] = "The token was refused. Sign in again on this device."
             seen[config.id] = nil
             calendarSeen[config.id] = nil
+            linearSeen[config.id] = nil
         } catch {
             problems[config.id] = "Couldn't reach \(config.name). Bud will try again."
         }
@@ -279,7 +313,25 @@ public final class SourceStore: ObservableObject {
                 if everyone, answered == readable.count {
                     for id in missingEverywhere { found[kind.key(id)] = .gone }
                 }
-            case .github, .linear:
+            case .linear:
+                // A closed issue leaves the window but is still there to read.
+                var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
+                var answered = 0
+                for config in readable where !left.isEmpty {
+                    guard let token = tokens.token(for: config.id) else { continue }
+                    let ids = left.map { SourceRowText.origin($0.from).id }
+                    guard let answer = try? await LinearIssues(token: token, http: http).issues(ids) else { continue }
+                    answered += 1
+                    for item in answer.found {
+                        found[kind.key(item.id)] = .seen(item)
+                        missingEverywhere.remove(item.id)
+                    }
+                    left = left.filter { found[$0.from] == nil }
+                }
+                if everyone, answered == readable.count {
+                    for id in missingEverywhere { found[kind.key(id)] = .gone }
+                }
+            case .github:
                 break
             }
         }
