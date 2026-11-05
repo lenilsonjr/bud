@@ -344,11 +344,17 @@ impl Vault {
     }
 
     /// Folders the trash only held for the sake of the bud that left `dir` go with it, and so do
-    /// their rows.
+    /// their rows. A folder with a document is a bud that was trashed on purpose and stays, empty
+    /// or not.
     fn prune_trash(&self, dir: &str) -> Result<()> {
         let mut dir = dir.rsplit_once('/').map_or("", |(parent, _)| parent);
         while dir.contains('/') {
-            if std::fs::remove_dir(self.root.join(dir)).is_err() {
+            let kept: bool = lock(&self.conn).query_row(
+                "SELECT EXISTS (SELECT 1 FROM docs WHERE path = ?1)",
+                params![dir],
+                |r| r.get(0),
+            )?;
+            if kept || std::fs::remove_dir(self.root.join(dir)).is_err() {
                 break;
             }
             lock(&self.conn).execute("DELETE FROM buds WHERE path = ?1", params![dir])?;
