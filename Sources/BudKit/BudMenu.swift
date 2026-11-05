@@ -4,7 +4,7 @@ import SwiftUI
 /// The one menu for a bud, the system's own: a long press on touch and TV, a right click or
 /// control click on the Mac. Add inside…, Open, Open as file, Close or Reopen (Make a to-do for
 /// a note), Move earlier and Move later where the surface shows every sibling (the canvas and the
-/// TV row), Move to…, then Trash. The hub (Everything) has no menu.
+/// TV row), Move to…, Tag… (not on TV), then Trash. The hub (Everything) has no menu.
 ///
 /// Add inside… and Open take closures where the surface has its own way (the TV plants through
 /// its own sheet, the canvas opens the card in place); without them Add inside… raises the quick
@@ -19,6 +19,7 @@ struct BudMenu: ViewModifier {
 
     #if !os(tvOS)
     @State private var moving: Bud? = nil
+    @State private var tagging: Bud? = nil
     #endif
 
     func body(content: Content) -> some View {
@@ -47,9 +48,22 @@ struct BudMenu: ViewModifier {
     private func attach(_ content: Content) -> some View {
         content
             .contextMenu {
-                BudMenuItems(id: id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: reorder, onMove: { moving = store.tree.bud(id) })
+                BudMenuItems(
+                    id: id, store: store, onAdd: onAdd, onOpen: onOpen, reorder: reorder,
+                    onMove: { moving = store.tree.bud(id) }, onTag: { tagging = store.tree.bud(id) }
+                )
             }
             .sheet(item: $moving) { bud in MoveToPicker(store: store, bud: bud) }
+            .sheet(item: $tagging) { bud in
+                TagPicker(carried: bud.allTags, counts: store.tree.tagCounts()) { tag in
+                    store.addTag(bud.id, tag)
+                    tagging = nil
+                }
+                .padding(10)
+                #if os(iOS)
+                .presentationDetents([.medium])
+                #endif
+            }
     }
     #endif
 
@@ -106,6 +120,7 @@ struct BudMenuItems: View {
     var onOpen: (() -> Void)? = nil
     var reorder = false
     let onMove: () -> Void
+    var onTag: (() -> Void)? = nil
 
     var body: some View {
         Button("Add inside…", systemImage: "plus") {
@@ -120,6 +135,7 @@ struct BudMenuItems: View {
         BudStateItem(id: id, store: store)
         if reorder { BudShiftItems(id: id, store: store) }
         Button("Move to…", systemImage: "arrow.turn.down.right", action: onMove)
+        if let onTag { Button("Tag…", systemImage: "number", action: onTag) }
         Divider()
         Button("Trash", systemImage: "trash", role: .destructive) { store.trash(id) }
     }
