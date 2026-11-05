@@ -120,6 +120,16 @@ public enum BudLinks {
         return out
     }
 
+    /// `text` with each link as the text a reader sees, for a screen that draws links plain.
+    public static func shown(_ text: String) -> String {
+        runs(text).map { run in
+            switch run {
+            case .text(let plain): return plain
+            case .link(let link): return link.shown
+            }
+        }.joined()
+    }
+
     private static func split(_ inner: String) -> Written? {
         let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         let label = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""

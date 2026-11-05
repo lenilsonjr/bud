@@ -86,6 +86,7 @@ struct TVReadScreen: View {
                     .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
                 if !bud.body.isEmpty { bodyBlocks(bud.body) }
+                linkedFrom
                 if let hint = TVReadText.playPauseHint(in: store.tree, under: id) {
                     Text(hint)
                         .textStyle(Self.hint)
@@ -137,7 +138,7 @@ struct TVReadScreen: View {
             ForEach(Array(MarkdownBlocks.parse(source).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(_, let text):
-                    Text(MarkdownBlocks.inline(text))
+                    Text(MarkdownBlocks.inline(BudLinks.shown(text)))
                         .textStyle(Self.heading)
                         .foregroundStyle(Theme.text)
                         .padding(.top, 8)
@@ -170,8 +171,46 @@ struct TVReadScreen: View {
         .animation(.easeOut(duration: 0.2), value: lit)
     }
 
+    /// The buds whose body links here, read only: each with where it lives and the sentence the
+    /// link sits in, the link in leaf.
+    @ViewBuilder private var linkedFrom: some View {
+        if let line = TVReadText.linkedFromLine(in: store.tree, to: id) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(line)
+                    .textStyle(Self.eyebrow)
+                    .foregroundStyle(Theme.leaf)
+                ForEach(store.tree.backlinks(to: id)) { link in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 12) {
+                            Text(store.tree.title(of: link.from))
+                                .textStyle(Self.step)
+                                .foregroundStyle(Theme.text)
+                            Text(store.tree.trail(of: link.from).joined(separator: " › "))
+                                .textStyle(Self.hint)
+                                .foregroundStyle(Theme.text3)
+                        }
+                        .lineLimit(1)
+                        Text(Self.marked(link))
+                            .textStyle(Self.hint)
+                            .foregroundStyle(Theme.text2)
+                    }
+                }
+            }
+            .padding(.top, 10)
+        }
+    }
+
+    private static func marked(_ link: Backlink) -> AttributedString {
+        var text = AttributedString(link.sentence)
+        guard link.mark.upperBound <= text.characters.count, !link.mark.isEmpty else { return text }
+        let lower = text.index(text.startIndex, offsetByCharacters: link.mark.lowerBound)
+        let upper = text.index(lower, offsetByCharacters: link.mark.count)
+        text[lower..<upper].foregroundColor = Theme.leaf
+        return text
+    }
+
     private func paragraph(_ text: String) -> some View {
-        Text(MarkdownBlocks.inline(text))
+        Text(MarkdownBlocks.inline(BudLinks.shown(text)))
             .textStyle(Self.paragraph)
             .lineSpacing(30 * 0.45)
             .foregroundStyle(Theme.text2)
