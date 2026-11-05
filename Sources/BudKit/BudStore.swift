@@ -469,7 +469,7 @@ public final class BudStore: ObservableObject {
             do {
                 try await edit(id) { try await $0.addTag($1, tag) }
             } catch {
-                toasts.show(Undoable(message: "Couldn't add #\(tag): the tags in this file are written in a way Bud can't change", systemImage: "exclamationmark.triangle"))
+                toasts.show(Undoable(message: "Couldn't add #\(tag) to this bud", systemImage: "exclamationmark.triangle"))
             }
         }
     }
