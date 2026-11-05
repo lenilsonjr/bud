@@ -22,13 +22,15 @@ public struct LensQuery: Hashable, Sendable {
     /// Tags the bud must carry, every one, in its list or its body, in any case; a tag also
     /// matches the tags nested under it (`#home` matches `#home/kitchen`).
     public var tags: Set<String>
+    /// Buds the bud must be linked with, every one, by a link either way.
+    public var linked: Set<UUID>
     /// Two facets that ask for different things in one slot, a to-do that is open and done:
     /// nothing answers.
     public var never = false
 
     public init(
         kind: Kind? = nil, state: BudState? = nil, day: Day? = nil, pinned: Bool = false, holdsOpen: Bool = false,
-        tags: Set<String> = []
+        tags: Set<String> = [], linked: Set<UUID> = []
     ) {
         self.kind = kind
         self.state = state
@@ -36,6 +38,7 @@ public struct LensQuery: Hashable, Sendable {
         self.pinned = pinned
         self.holdsOpen = holdsOpen
         self.tags = Set(tags.map(BudTags.key))
+        self.linked = linked
     }
 
     public static let todos = LensQuery(kind: .todo, state: .open)
@@ -59,6 +62,7 @@ public struct LensQuery: Hashable, Sendable {
         out.pinned = pinned || other.pinned
         out.holdsOpen = holdsOpen || other.holdsOpen
         out.tags = tags.union(other.tags)
+        out.linked = linked.union(other.linked)
         out.never = out.never || never || other.never
         return out
     }
@@ -66,12 +70,20 @@ public struct LensQuery: Hashable, Sendable {
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
-        return matches(bud, holders: holders, start: calendar.startOfDay(for: now))
+        return matches(bud, holders: holders, around: around(in: tree), start: calendar.startOfDay(for: now))
+    }
+
+    /// For each bud the query asks to be linked with, the buds linked with it: one read of the
+    /// links per question.
+    private func around(in tree: Tree) -> [Set<UUID>] {
+        guard !linked.isEmpty else { return [] }
+        let graph = LinkGraph(tree)
+        return linked.map { Set(graph.around($0).map(\.other)) }
     }
 
     /// The day's start and the buds holding an open to-do are worked out once per question, not
     /// once per bud.
-    private func matches(_ bud: Bud, holders: Set<UUID>, start: Date) -> Bool {
+    private func matches(_ bud: Bud, holders: Set<UUID>, around: [Set<UUID>], start: Date) -> Bool {
         if never { return false }
         if let kind, (kind == .todo) != bud.isTodo { return false }
         if let state, bud.state != state { return false }
@@ -92,6 +104,7 @@ public struct LensQuery: Hashable, Sendable {
             let carried = bud.allTags.map(BudTags.key)
             for tag in tags where !carried.contains(where: { $0 == tag || $0.hasPrefix(tag + "/") }) { return false }
         }
+        for others in around where !others.contains(bud.id) { return false }
         return true
     }
 
@@ -123,7 +136,8 @@ public struct LensQuery: Hashable, Sendable {
     public func hits(_ tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> [Bud] {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
         let start = calendar.startOfDay(for: now)
-        return tree.walk(under: rootID).filter { matches($0, holders: holders, start: start) }
+        let around = around(in: tree)
+        return tree.walk(under: rootID).filter { matches($0, holders: holders, around: around, start: start) }
     }
 }
 

@@ -135,4 +135,24 @@ final class LensQueryTests: XCTestCase {
         XCTAssertNotEqual(LensFacet.tag("home"), .tag("home/garden"))
         XCTAssertTrue([LensFacet.tag("home")].contains(.tag("Home")))
     }
+
+    func testALinkedFacetMatchesBudsLinkedEitherWay() {
+        var t = Tree()
+        let plan = t.add("Plan", todo: false, under: rootID)
+        let out = t.add("Out", todo: false, under: rootID)
+        let into = t.add("Into", todo: true, under: rootID)
+        let alone = t.add("Alone", todo: false, under: rootID)
+        t.setBody(plan.id, "See [[Out]]")
+        t.setBody(into.id, "For the [[Plan]]")
+        t.setBody(alone.id, "Nothing here")
+
+        let facet = LensFacet.linked(plan.id, title: "Plan")
+        XCTAssertEqual(facet.name, "Linked to Plan")
+        XCTAssertEqual(Set(facet.query.hits(t).map(\.id)), [out.id, into.id])
+        XCTAssertEqual(LensFacet.query(of: [facet, .openTodos])?.hits(t).map(\.id), [into.id])
+        XCTAssertEqual(LensFacet.linked(plan.id, title: "Old name"), facet, "one bud is one row")
+        XCTAssertEqual(LensFacet.query(of: [facet, .linked(out.id, title: "Out")])?.hits(t).map(\.id), [],
+                       "nothing is linked with both")
+        XCTAssertEqual(LensFacet.linked(alone.id, title: "Alone").query.hits(t).map(\.id), [])
+    }
 }

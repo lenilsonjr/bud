@@ -88,6 +88,12 @@ final class SnapshotTests: XCTestCase {
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
         }
+        // The most linked bud, picked under "Linked to…": its row joins the menu under Links.
+        let linked = try XCTUnwrap(store.links.into.max { $0.value.count < $1.value.count }?.key)
+        store.canvasFacets = [.linked(linked, title: store.tree.title(of: linked))]
+        let menu = LensMenu(store: store).padding(24).background(Theme.raised)
+        try render(menu, scheme: .light).write(to: folder.appendingPathComponent("lens-linked-light.png"))
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("canvas-lens-linked-light.png"))
     }
 
     func testRendersTheFilesView() throws {
