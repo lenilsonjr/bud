@@ -102,9 +102,11 @@ public final class DeviceStore: ObservableObject {
 
     /// Follows another node from now on: the app's own, once it has started.
     /// A ticket or request on show came from the node before, which cannot pair: the new node
-    /// makes its own.
+    /// makes its own, and if it cannot yet the old one is not left on show.
     public func use(_ peers: Peers) async {
         self.peers = peers
+        currentTicket = nil
+        currentRequest = nil
         await start()
         if sheetOpen { await renewTicket() }
         if requestOpen { await renewRequest() }
