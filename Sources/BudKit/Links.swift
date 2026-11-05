@@ -11,59 +11,106 @@ public enum BudLinks {
         public var shown: String { label ?? target }
     }
 
+    /// A line of prose as written, and the same line with its code spans as spaces: one
+    /// character for each, so an offset into one is an offset into the other.
+    struct Line {
+        var written: [Character]
+        var blank: [Character]
+    }
+
     /// The links in a body, in order.
     public static func parse(_ body: String) -> [Written] {
-        prose(body).flatMap { links(in: $0).map(\.link) }
+        prose(body).flatMap { links(in: $0.blank).map(\.link) }
     }
 
-    /// The lines of a body outside fenced code, code spans blanked out.
-    static func prose(_ body: String) -> [String] {
-        var fenced = false
-        var out: [String] = []
-        for line in body.components(separatedBy: .newlines) {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                fenced.toggle()
+    /// Each line of a body outside fenced code. A fence opens on a run of three or more
+    /// backticks or tildes and closes on a run of the same character at least as long with
+    /// nothing after it.
+    static func prose(_ body: String) -> [Line] {
+        var fence: (Character, Int)?
+        var out: [Line] = []
+        for raw in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.hasSuffix("\r") ? raw.dropLast() : raw
+            let trimmed = line.drop { $0 == " " || $0 == "\t" }
+            func run(_ c: Character) -> Int { trimmed.prefix { $0 == c }.count }
+            if let (c, len) = fence {
+                if run(c) >= len, trimmed.drop(while: { $0 == c }).allSatisfy(\.isWhitespace) { fence = nil }
                 continue
             }
-            if !fenced { out.append(blankingCode(line)) }
+            if let c = ["`", "~"].first(where: { run($0) >= 3 }) {
+                fence = (c, run(c))
+                continue
+            }
+            let written = Array(line)
+            out.append(Line(written: written, blank: blankingCode(written)))
         }
         return out
     }
 
-    private static func blankingCode(_ line: String) -> String {
-        var out = ""
-        var inCode = false
-        for c in line {
-            if c == "`" { inCode.toggle(); out.append(c) } else { out.append(inCode ? " " : c) }
+    /// Each code span, backticks included, as spaces. A run of backticks without a closing run
+    /// of exactly as many is plain text.
+    private static func blankingCode(_ line: [Character]) -> [Character] {
+        var out = line
+        func runLength(at i: Int) -> Int { line[i...].prefix { $0 == "`" }.count }
+        var i = 0
+        while i < line.count {
+            guard line[i] == "`" else { i += 1; continue }
+            let n = runLength(at: i)
+            var j = i + n
+            var close: Int?
+            while j < line.count {
+                guard line[j] == "`" else { j += 1; continue }
+                let len = runLength(at: j)
+                if len == n { close = j; break }
+                j += len
+            }
+            if let close {
+                for k in i..<(close + n) { out[k] = " " }
+                i = close + n
+            } else {
+                i += n
+            }
         }
         return out
     }
 
-    /// Each link in one line with the range it takes, brackets included.
-    static func links(in line: String) -> [(link: Written, range: Range<String.Index>)] {
-        var out: [(Written, Range<String.Index>)] = []
-        var i = line.startIndex
-        while let open = line.range(of: "[[", range: i..<line.endIndex) {
-            guard let close = line.range(of: "]]", range: open.upperBound..<line.endIndex) else { break }
-            let inner = line[open.upperBound..<close.lowerBound]
+    /// Each link in a line with the character offsets it takes, brackets included.
+    static func links(in line: [Character]) -> [(link: Written, range: Range<Int>)] {
+        var out: [(Written, Range<Int>)] = []
+        var i = 0
+        while i + 1 < line.count {
+            guard line[i] == "[", line[i + 1] == "[" else { i += 1; continue }
+            var close: Int?
+            var j = i + 2
+            while j + 1 < line.count {
+                if line[j] == "]", line[j + 1] == "]" { close = j; break }
+                j += 1
+            }
+            guard let close else { break }
+            let inner = line[(i + 2)..<close]
             if inner.contains("[") || inner.contains("]") {
-                i = line.index(after: open.lowerBound)
+                i += 1
                 continue
             }
-            let embed = open.lowerBound > line.startIndex && line[line.index(before: open.lowerBound)] == "!"
-            if !embed, let link = split(inner) { out.append((link, open.lowerBound..<close.upperBound)) }
-            i = close.upperBound
+            let embed = i > 0 && line[i - 1] == "!"
+            if !embed, let link = split(String(inner)) { out.append((link, i..<(close + 2))) }
+            i = close + 2
         }
         return out
     }
 
-    private static func split(_ inner: Substring) -> Written? {
+    private static func split(_ inner: String) -> Written? {
         let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         let label = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
         let target = (parts[0].split(separator: "#", omittingEmptySubsequences: false).first ?? "")
             .trimmingCharacters(in: .whitespaces)
         guard !target.isEmpty else { return nil }
         return Written(target: target, label: label.isEmpty ? nil : label)
+    }
+
+    /// Case folded the way the core's index compares titles: ASCII letters only.
+    static func fold(_ text: String) -> String {
+        String(text.map { $0.isASCII ? Character($0.lowercased()) : $0 })
     }
 }
 
@@ -72,56 +119,118 @@ public enum BudLinks {
 public struct Backlink: Equatable, Sendable, Identifiable {
     public var from: UUID
     public var sentence: String
-    /// The link's text as it reads in the sentence.
-    public var shown: String
+    /// Where the link's text is in the sentence, in characters.
+    public var mark: Range<Int>
     public var id: UUID { from }
 }
 
 extension Tree {
-    /// The bud a link's target names: the one bud with that title, then the one with that title
-    /// in any case. More than one at the first rank that has any, or none, is no bud.
-    public func resolve(_ target: String) -> UUID? {
-        let exact = buds.filter { $0.text == target }
-        if !exact.isEmpty { return exact.count == 1 ? exact[0].id : nil }
-        let folded = buds.filter { $0.text.caseInsensitiveCompare(target) == .orderedSame }
-        return folded.count == 1 ? folded[0].id : nil
+    /// A bud's place in the vault the way a link may name it: "Launch/Welcome list".
+    func linkPath(of id: UUID) -> String {
+        (breadcrumb(of: id) + [title(of: id)]).joined(separator: "/")
     }
 
-    /// The buds that link to `id` in their body, one row each, in the order of the tree.
+    /// The bud a link's target names: the one bud with that title, then the one with that title
+    /// in any case, then the bud at that path. More than one at the first rank that has any, or
+    /// none, is no bud.
+    public func resolve(_ target: String) -> UUID? {
+        let bare = target.hasSuffix(".md") ? String(target.dropLast(3)) : target
+        let folded = BudLinks.fold(target)
+        let ranks: [(Bud) -> Bool] = [
+            { $0.text == target },
+            { BudLinks.fold($0.text) == folded },
+            { [self] in let path = linkPath(of: $0.id); return path == target || path == bare },
+        ]
+        for rank in ranks {
+            let found = buds.filter(rank)
+            if !found.isEmpty { return found.count == 1 ? found[0].id : nil }
+        }
+        return nil
+    }
+
+    /// The buds that link to `id` in their body, one row each, by where they live.
     public func backlinks(to id: UUID) -> [Backlink] {
-        var out: [Backlink] = []
+        guard let target = bud(id) else { return [] }
+        let title = BudLinks.fold(target.text)
+        let path = linkPath(of: id)
+        // Only a link that could name this bud is resolved, each target once.
+        var seen: [String: Bool] = [:]
+        func names(_ written: String) -> Bool {
+            if let known = seen[written] { return known }
+            let bare = written.hasSuffix(".md") ? String(written.dropLast(3)) : written
+            let could = BudLinks.fold(written) == title || bare == path
+            let known = could && resolve(written) == id
+            seen[written] = known
+            return known
+        }
+        var out: [(String, Backlink)] = []
         for bud in buds where bud.id != id && bud.body.contains("[[") {
             found: for line in BudLinks.prose(bud.body) {
-                for (link, range) in BudLinks.links(in: line) where resolve(link.target) == id {
-                    out.append(Backlink(from: bud.id, sentence: Self.sentence(around: range, in: line), shown: link.shown))
+                let links = BudLinks.links(in: line.blank)
+                for (link, range) in links where names(link.target) {
+                    let (sentence, mark) = Self.sentence(around: range, in: line, links: links)
+                    out.append((linkPath(of: bud.id), Backlink(from: bud.id, sentence: sentence, mark: mark)))
                     break found
                 }
             }
         }
-        return out
+        return out.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
-    /// The sentence of `line` that holds `range`, its links shown as their text and its list or
-    /// heading mark left off.
-    static func sentence(around range: Range<String.Index>, in line: String) -> String {
+    /// The sentence of `line` that holds the link at `range`, its links shown as their text and
+    /// its list, quote or heading mark left off, with where that link's text is in it.
+    static func sentence(
+        around range: Range<Int>, in line: BudLinks.Line, links: [(link: BudLinks.Written, range: Range<Int>)]
+    ) -> (String, Range<Int>) {
+        let chars = line.blank
         let ends: Set<Character> = [".", "!", "?"]
+        func inLink(_ i: Int) -> Range<Int>? { links.first { $0.range.contains(i) }?.range }
         var start = range.lowerBound
-        while start > line.startIndex {
-            let before = line.index(before: start)
-            if ends.contains(line[before]), start == line.endIndex || line[start].isWhitespace { break }
-            start = before
+        while start > 0 {
+            if let other = inLink(start - 1) { start = other.lowerBound; continue }
+            if ends.contains(chars[start - 1]), start == chars.count || chars[start].isWhitespace { break }
+            start -= 1
         }
         var end = range.upperBound
-        while end < line.endIndex {
-            let next = line.index(after: end)
-            if ends.contains(line[end]), next == line.endIndex || line[next].isWhitespace { end = next; break }
+        while end < chars.count {
+            if let other = inLink(end) { end = other.upperBound; continue }
+            let next = end + 1
+            if ends.contains(chars[end]), next == chars.count || chars[next].isWhitespace { end = next; break }
             end = next
         }
-        var text = String(line[start..<end])
-        for (link, linkRange) in BudLinks.links(in: text).reversed() { text.replaceSubrange(linkRange, with: link.shown) }
-        text = text.trimmingCharacters(in: .whitespaces)
-        for mark in ["- ", "* ", "+ "] where text.hasPrefix(mark) { text.removeFirst(mark.count) }
-        while text.hasPrefix("#") { text.removeFirst() }
-        return text.trimmingCharacters(in: .whitespaces)
+        var text = ""
+        var mark = 0..<0
+        var i = start
+        while i < end {
+            if let found = links.first(where: { $0.range.lowerBound == i }) {
+                let shown = found.link.shown
+                if found.range == range { mark = text.count..<(text.count + shown.count) }
+                text += shown
+                i = found.range.upperBound
+            } else {
+                text.append(line.written[i])
+                i += 1
+            }
+        }
+        let rest = text.dropFirst(Self.leadingMark(text))
+        let shift = text.count - rest.count + rest.prefix(while: \.isWhitespace).count
+        let trimmed = rest.trimmingCharacters(in: .whitespaces)
+        let lower = max(0, mark.lowerBound - shift)
+        return (trimmed, lower..<min(trimmed.count, lower + mark.count))
+    }
+
+    /// How many characters at the start of a sentence are a list, quote or heading mark.
+    private static func leadingMark(_ text: String) -> Int {
+        let chars = Array(text)
+        var i = chars.prefix { $0 == " " || $0 == "\t" }.count
+        while i < chars.count, chars[i] == ">" { i += 1; i += chars[i...].prefix { $0 == " " }.count }
+        if i < chars.count, "-*+".contains(chars[i]), i + 1 < chars.count, chars[i + 1] == " " { return i + 2 }
+        let digits = chars[i...].prefix(while: \.isNumber).count
+        if digits > 0, i + digits + 1 < chars.count, ".)".contains(chars[i + digits]), chars[i + digits + 1] == " " {
+            return i + digits + 2
+        }
+        let hashes = chars[i...].prefix { $0 == "#" }.count
+        if hashes > 0, i + hashes < chars.count, chars[i + hashes] == " " { return i + hashes + 1 }
+        return i
     }
 }
