@@ -26,7 +26,7 @@ struct TagRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Add a tag")
             .accessibilityIdentifier("add-tag")
-            .popover(isPresented: $picking, arrowEdge: .bottom) {
+            .popover(isPresented: $picking, arrowEdge: .top) {
                 TagPicker(carried: bud.allTags, counts: store.tree.tagCounts()) { tag in
                     store.addTag(bud.id, tag)
                     picking = false

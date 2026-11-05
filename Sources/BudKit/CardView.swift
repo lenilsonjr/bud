@@ -211,6 +211,8 @@ struct CardView: View {
                 .overlay(Capsule().stroke(lit ? Theme.leaf : Theme.line, lineWidth: 1))
                 .offset(x: -8, y: -8)
                 .allowsHitTesting(false)
+                // One phrase for the glyph and the number, so the card says it once.
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(count == 1 ? "1 bud links here" : "\(count) buds link here")
             }
         }
