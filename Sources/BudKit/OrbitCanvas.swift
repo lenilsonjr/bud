@@ -293,6 +293,10 @@ public struct OrbitCanvas: View {
                         guard point.y < soilTop(in: size) else { return }
                         let target = card(at: point, in: size).map(PlantTarget.under) ?? .inbox
                         store.plant(item, from: account, at: target)
+                    },
+                    onRelease: {
+                        inHand = nil
+                        plantOver = nil
                     }
                 )
             }
@@ -320,8 +324,10 @@ public struct OrbitCanvas: View {
 
     /// The card under a point on screen, if any.
     private func card(at point: CGPoint, in size: CGSize) -> UUID? {
-        store.layout.order.reversed().first { id in
-            guard let placed = store.layout.cards[id] else { return false }
+        // Where the cards are drawn now, which the springs may still be moving.
+        let layout = Motion.enabled ? motion.sim.current : store.layout
+        return layout.order.reversed().first { id in
+            guard let placed = layout.cards[id] else { return false }
             let center = screenPoint(placed.position, in: size)
             let card = Metrics.size(hub: placed.hub)
             return abs(point.x - center.x) < card.width * scale / 2 && abs(point.y - center.y) < card.height * scale / 2

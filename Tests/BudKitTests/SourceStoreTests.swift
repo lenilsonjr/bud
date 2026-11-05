@@ -148,3 +148,26 @@ final class SightingTests: XCTestCase {
         XCTAssertNil(found["calendar:x"], "no calendar here: nothing is said")
     }
 }
+
+@MainActor
+final class TwoCalendarTests: XCTestCase {
+    func testAnEventInTheSecondCalendarIsSeenNotGone() async {
+        func token() -> String {
+            "<d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><d:sync-token>1</d:sync-token></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"
+        }
+        func report(_ uid: String) -> String {
+            "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:propstat><d:prop><c:calendar-data>BEGIN:VEVENT\nUID:\(uid)\nSUMMARY:\(uid)\nDTSTART:20261110T070000Z\nEND:VEVENT</c:calendar-data></d:prop></d:propstat></d:response></d:multistatus>"
+        }
+        let http = ScriptedHTTP([(token(), 207), (report("home"), 207), (token(), 207), (report("work"), 207)])
+        let store = SourceStore(defaults: UserDefaults(suiteName: "two-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
+        let now = Date(timeIntervalSince1970: 1_793_900_000)
+        store.clock = { now }
+        let server = URL(string: "https://cal.example.org/")!
+        await store.connectCalendar(name: "Home", server: server, user: "sam", password: "p", calendar: URL(string: "https://cal.example.org/home/")!)
+        await store.connectCalendar(name: "Work", server: server, user: "sam", password: "p", calendar: URL(string: "https://cal.example.org/work/")!)
+        let soon = now.addingTimeInterval(3 * 86_400)
+        let found = await store.sightings(for: [("calendar:work", soon), ("calendar:gone", soon)])
+        if case .seen(let item) = found["calendar:work"] { XCTAssertEqual(item.title, "work") } else { XCTFail("work not seen") }
+        XCTAssertEqual(found["calendar:gone"], .gone)
+    }
+}

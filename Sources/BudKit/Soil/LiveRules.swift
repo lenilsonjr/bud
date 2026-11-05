@@ -8,12 +8,20 @@ public struct SourceSnapshot: Codable, Hashable, Sendable {
     public var date: Date?
     public var todo: Bool
     public var cancelled: Bool
+    /// When this device saw it.
+    public var at: Date?
 
-    public init(_ item: SourceItem) {
+    public init(_ item: SourceItem, at: Date? = nil) {
         title = item.title
         date = item.date
         todo = item.todo
         cancelled = item.cancelled
+        self.at = at
+    }
+
+    /// The same values, whenever they were seen.
+    func same(as other: SourceSnapshot) -> Bool {
+        title == other.title && date == other.date && todo == other.todo && cancelled == other.cancelled
     }
 }
 
@@ -43,7 +51,7 @@ public enum LiveRules {
         guard case .seen(let item) = sighting else {
             return (bud.fromState == "gone" ? [] : [.mark("gone")], last)
         }
-        let seen = SourceSnapshot(item)
+        let seen = SourceSnapshot(item, at: now)
         var changes: [LiveChange] = []
         var mark: String?? = nil
         if bud.fromState == "gone" { mark = .some(nil) }
@@ -51,6 +59,11 @@ public enum LiveRules {
             // First sight: the bud was planted with these values.
             if item.cancelled, bud.fromState != "cancelled" { changes.append(.mark("cancelled")) }
             return (changes, seen)
+        }
+        // Another device already brought this change in after this one last looked: catch up
+        // without writing, so an edit made since then stands.
+        if let at = last.at, let since = SourceMark(fromState: bud.fromState)?.at, since > at {
+            return ([], seen)
         }
         let stamp = ISO8601DateFormatter().string(from: now)
         if item.title != last.title, item.title != bud.text {
@@ -63,6 +76,7 @@ public enum LiveRules {
         }
         if kind == .mail, item.todo != last.todo {
             changes.append(.state(item.todo ? .open : .done))
+            mark = .some("\(item.todo ? "flagged" : "unflagged") \(stamp)")
         }
         if item.cancelled != last.cancelled {
             mark = .some(item.cancelled ? "cancelled" : nil)

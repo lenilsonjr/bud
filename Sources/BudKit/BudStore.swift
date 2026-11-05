@@ -155,7 +155,7 @@ public final class BudStore: ObservableObject {
                   let current = tree.bud(bud.id) else { continue }
             let result = LiveRules.changes(for: current, kind: kind, sighting: sighting, last: lastSeen[from], now: now)
             apply(result.changes, to: current)
-            if let seen = result.seen, lastSeen[from] != seen { lastSeen[from] = seen }
+            if let seen = result.seen, !(lastSeen[from]?.same(as: seen) ?? false) { lastSeen[from] = seen }
             var mark = marks[from] ?? SourceMark()
             mark.synced = now
             mark.device = Self.deviceName
@@ -420,7 +420,7 @@ public final class BudStore: ObservableObject {
         }
         // A calendar owns the event's day: the bud starts with it.
         if account.kind == .calendar, let date = item.date { setWhen(id, date) }
-        lastSeen[key] = SourceSnapshot(item)
+        lastSeen[key] = SourceSnapshot(item, at: Date())
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
             Task { @MainActor in self?.remove(id) }
