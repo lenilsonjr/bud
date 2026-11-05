@@ -131,7 +131,7 @@ struct CardView: View {
                     .lineLimit(2)
                     .foregroundStyle(bud.isDone ? style.meta : style.ink)
                 if let from = bud.from {
-                    SourceRow(from: from, mark: store.marks[from], fallback: style.meta)
+                    SourceRow(from: from, mark: store.mark(of: bud), fallback: style.meta)
                 } else {
                     Text(CardStyle.caption(for: bud, in: store.tree))
                         .textRole(.caption)

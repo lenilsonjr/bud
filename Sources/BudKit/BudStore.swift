@@ -107,10 +107,85 @@ public final class BudStore: ObservableObject {
 
     private var soilFeed: AnyCancellable?
 
-    /// Shows what a source store reads below the soil, and starts it reading.
+    private var liveFeed: AnyCancellable?
+    private var keepingLive = false
+
+    /// Shows what a source store reads below the soil, starts it reading, and keeps the buds
+    /// planted from it live after each read.
     public func follow(_ soil: SourceStore) {
         soilFeed = soil.$accounts.receive(on: RunLoop.main).sink { [weak self] in self?.sources = $0 }
+        liveFeed = soil.$refreshed.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in
+            Task { @MainActor in await self?.keepLive(soil) }
+        }
         soil.start()
+    }
+
+    /// How a planted bud stands with its source: its `from-state`, with the last sync this device
+    /// made. Nil for a bud that was not planted.
+    public func mark(of bud: Bud) -> SourceMark? {
+        guard let from = bud.from else { return nil }
+        var mark = marks[from] ?? SourceMark()
+        if let state = SourceMark(fromState: bud.fromState) {
+            mark.status = state.status
+            mark.at = state.at
+        }
+        return mark
+    }
+
+    /// What each planted item showed at its source the last time this device looked, by `from` key.
+    private var lastSeen: [String: SourceSnapshot] = {
+        guard let data = UserDefaults.standard.data(forKey: BudStore.lastSeenKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: SourceSnapshot].self, from: data)) ?? [:]
+    }() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(lastSeen), forKey: Self.lastSeenKey) }
+    }
+    static let lastSeenKey = "sourceSnapshots"
+
+    /// Brings every planted bud in line with what its source shows now: the fields the source owns
+    /// change only when they changed there, and `from-state` says moved, cancelled or gone.
+    public func keepLive(_ soil: SourceStore, now: Date = Date()) async {
+        guard !keepingLive else { return }
+        keepingLive = true
+        defer { keepingLive = false }
+        let planted = tree.buds.filter { $0.from != nil }
+        guard !planted.isEmpty else { return }
+        let sightings = await soil.sightings(for: planted.map { ($0.from!, $0.when) })
+        for bud in planted {
+            guard let from = bud.from, let sighting = sightings[from], let kind = SourceRowText.origin(from).kind,
+                  let current = tree.bud(bud.id) else { continue }
+            let result = LiveRules.changes(for: current, kind: kind, sighting: sighting, last: lastSeen[from], now: now)
+            apply(result.changes, to: current)
+            if let seen = result.seen, lastSeen[from] != seen { lastSeen[from] = seen }
+            var mark = marks[from] ?? SourceMark()
+            mark.synced = now
+            mark.device = Self.deviceName
+            if case .seen(let item) = sighting, let url = item.url { mark.url = url }
+            marks[from] = mark
+        }
+    }
+
+    private func apply(_ changes: [LiveChange], to bud: Bud) {
+        for change in changes {
+            switch change {
+            case .rename(let title): update(bud.id, text: title, todo: bud.isTodo)
+            case .when(let when): setWhen(bud.id, when)
+            case .state(.open):
+                if !bud.isTodo { update(bud.id, text: tree.bud(bud.id)?.text ?? bud.text, todo: true) }
+                else if bud.isDone { set(.open, on: [bud.id]) }
+            case .state:
+                if bud.isTodo, !bud.isDone { set(.done, on: [bud.id]) }
+            case .mark(let state): setFromState(bud.id, state)
+            }
+        }
+    }
+
+    /// Sets a planted bud's `from-state`, here and in the vault.
+    public func setFromState(_ id: UUID, _ state: String?) {
+        commit { tree in
+            guard let i = tree.buds.firstIndex(where: { $0.id == id }) else { return }
+            tree.buds[i].fromState = state
+        }
+        write { [self] _ in try await edit(id) { try await $0.setFromState($1, state) } }
     }
 
     /// One root per account, in the order the accounts were connected.
@@ -343,6 +418,9 @@ public final class BudStore: ObservableObject {
             )
             book.learn(id, at: planting.path)
         }
+        // A calendar owns the event's day: the bud starts with it.
+        if account.kind == .calendar, let date = item.date { setWhen(id, date) }
+        lastSeen[key] = SourceSnapshot(item)
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
             Task { @MainActor in self?.remove(id) }

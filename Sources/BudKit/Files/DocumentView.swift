@@ -118,7 +118,7 @@ struct DocumentView: View {
     private func properties(_ bud: Bud) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let from = bud.from {
-                PropertyRow(name: "Source") { SourcePageRow(from: from, mark: store.marks[from]) }
+                PropertyRow(name: "Source") { SourcePageRow(from: from, mark: store.mark(of: bud)) }
             }
             PropertyRow(name: "State", from: owner(bud, .state)) {
                 if bud.isTodo {
