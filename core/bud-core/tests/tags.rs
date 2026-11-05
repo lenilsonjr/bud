@@ -402,3 +402,53 @@ fn a_list_bud_cannot_rewrite_safely_is_refused_and_left_alone() {
     assert!(vault.rename_tag("a", "z").unwrap().is_empty());
     assert_eq!(read(&dir, "Note.md"), file);
 }
+
+#[test]
+fn quotes_comments_and_escapes_in_lists_stay_as_written() {
+    let cases: &[(&str, &str, &str, &str)] = &[
+        (
+            "---\ntags: don't, b # x\n---\n",
+            "remove",
+            "b",
+            "---\ntags: don't # x\n---\n",
+        ),
+        (
+            "---\ntags:\n  # top\n  - a\n  - b\n---\n",
+            "remove",
+            "a",
+            "---\ntags:\n  # top\n  - b\n---\n",
+        ),
+        (
+            "---\ntags: # none yet\n---\n",
+            "add",
+            "c",
+            "---\ntags: [c] # none yet\n---\n",
+        ),
+        (
+            "---\ntags: [\"a\\\", b\", c]\n---\n",
+            "remove",
+            "c",
+            "---\ntags: [\"a\\\", b\"]\n---\n",
+        ),
+    ];
+    for (file, change, tag, want) in cases {
+        let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
+        match *change {
+            "add" => vault.add_tag("Note.md", tag).unwrap(),
+            _ => vault.remove_tag("Note.md", tag).unwrap(),
+        }
+        assert_eq!(&read(&dir, "Note.md"), want, "{change} {tag} on {file:?}");
+    }
+}
+
+#[test]
+fn a_rename_still_reaches_the_body_of_a_bud_whose_list_it_cannot_rewrite() {
+    let file = "---\nbase: &t [a, b]\ntags: *t\n---\nSee #a\n";
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
+    let edits = vault.rename_tag("a", "z").unwrap();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(
+        read(&dir, "Note.md"),
+        "---\nbase: &t [a, b]\ntags: *t\n---\nSee #z\n"
+    );
+}
