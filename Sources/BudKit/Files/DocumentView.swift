@@ -30,6 +30,9 @@ struct DocumentView: View {
                         Text(bud.text)
                             .textRole(.title)
                             .foregroundStyle(Theme.text)
+                        if let from = bud.from, SourceRowText.owns(.title, from: from) {
+                            FromMark(from: from)
+                        }
                         TagRow(bud: bud, store: store)
                     }
                     properties(bud)
@@ -114,7 +117,10 @@ struct DocumentView: View {
 
     private func properties(_ bud: Bud) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            PropertyRow(name: "State") {
+            if let from = bud.from {
+                PropertyRow(name: "Source") { SourcePageRow(from: from, mark: store.marks[from]) }
+            }
+            PropertyRow(name: "State", from: owner(bud, .state)) {
                 if bud.isTodo {
                     Segmented(selection: Binding(get: { bud.isDone }, set: { _ in store.tick(id) }), options: [false, true]) { $0 ? "Done" : "Open" }
                 } else {
@@ -123,14 +129,20 @@ struct DocumentView: View {
                         .textRole(.label)
                 }
             }
-            PropertyRow(name: "When") { DateField(label: "When", date: bud.when) { store.setWhen(id, $0) } }
-            PropertyRow(name: "Due") { DateField(label: "Due", date: bud.due) { store.setDue(id, $0) } }
+            PropertyRow(name: "When", from: owner(bud, .when)) { DateField(label: "When", date: bud.when) { store.setWhen(id, $0) } }
+            PropertyRow(name: "Due", from: owner(bud, .due)) { DateField(label: "Due", date: bud.due) { store.setDue(id, $0) } }
             PropertyRow(name: "Pinned") {
                 Button(bud.pinned ? "Pinned" : "Pin", systemImage: bud.pinned ? "pin.fill" : "pin") { store.setPinned(id, !bud.pinned) }
                     .buttonStyle(.bordered)
                     .textRole(.label)
             }
         }
+    }
+
+    /// The planted bud's `from` key when its source owns this field.
+    private func owner(_ bud: Bud, _ field: SourceRowText.Field) -> String? {
+        guard let from = bud.from, SourceRowText.owns(field, from: from) else { return nil }
+        return from
     }
 
     // MARK: body
@@ -651,6 +663,8 @@ struct DateField: View {
 /// One property of the document: its name in the gutter, its control beside it.
 struct PropertyRow<Control: View>: View {
     let name: String
+    /// The `from` key of the source that owns this field, which marks it.
+    var from: String? = nil
     @ViewBuilder let control: () -> Control
 
     var body: some View {
@@ -660,6 +674,7 @@ struct PropertyRow<Control: View>: View {
                 .foregroundStyle(Theme.text2)
                 .frame(width: 64, alignment: .leading)
             control()
+            if let from { FromMark(from: from) }
             Spacer()
         }
     }

@@ -153,6 +153,47 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersPlantedBuds() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let now = Date()
+        let mail = SourceAccount(id: "mail", kind: .mail)
+        let calendar = SourceAccount(id: "calendar", kind: .calendar)
+        let linear = SourceAccount(id: "linear", kind: .linear)
+        let thread = store.add("Move flats", todo: false, under: rootID)!
+        let live = store.plant(SourceItem(id: "PRJ-77", title: "Sign the lease", todo: true), from: linear, at: .under(thread.id))
+        let moved = store.plant(SourceItem(id: "E-1", title: "Flight to Lisbon"), from: calendar, at: .under(thread.id))
+        let cancelled = store.plant(SourceItem(id: "E-2", title: "Flat viewing"), from: calendar, at: .under(thread.id))
+        let gone = store.plant(SourceItem(id: "M-9", title: "Deposit receipt"), from: mail, at: .under(thread.id))
+        store.setDue(live.id, Date(timeIntervalSince1970: 1_793_750_400))
+        store.setWhen(moved.id, Date(timeIntervalSince1970: 1_794_000_000))
+        store.marks = [
+            "linear:PRJ-77": SourceMark(synced: now.addingTimeInterval(-300), device: "Mac", url: URL(string: "https://example.org/PRJ-77")),
+            "calendar:E-1": SourceMark(status: .changed("moved"), at: now.addingTimeInterval(-3600)),
+            "calendar:E-2": SourceMark(status: .cancelled),
+            "mail:M-9": SourceMark(status: .gone),
+        ]
+        _ = (cancelled, gone)
+        store.center = thread.id
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("planted-cards-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        store.openAsFile(live.id)
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("planted-page-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheLinkedFromSection() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
