@@ -34,6 +34,24 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(planted.id)?.text, "Book the printer")
     }
 
+    func testARenameRewritesTheLinksToTheBudAndUndoPutsThemBack() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let other = try XCTUnwrap(store.tree.children(of: rootID).dropFirst().first)
+        store.setBody(other.id, "See [[\(thread.text)|the launch]].")
+        store.update(thread.id, text: "Ship the newsletter", todo: thread.isTodo)
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(other.id)?.body, "See [[Ship the newsletter|the launch]].")
+        XCTAssertEqual(store.toasts.current?.action.message, "Updated links in 1 bud")
+        let records = try await vault.snapshot()
+        XCTAssertEqual(records.first { $0.path == other.id.uuidString }?.body, "See [[Ship the newsletter|the launch]].")
+        store.toasts.current?.action.undo?()
+        for _ in 0..<5 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(thread.id)?.text, thread.text)
+        XCTAssertEqual(store.tree.bud(other.id)?.body, "See [[\(thread.text)|the launch]].")
+    }
+
     func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
         let (store, vault) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)

@@ -80,6 +80,10 @@ final class LinksTests: XCTestCase {
         XCTAssertEqual(BudLinks.runs("plain"), [.text("plain")])
     }
 
+    func testWindowsLineEndsEndLines() {
+        XCTAssertEqual(BudLinks.parse("One [[A]]\r\n```\r\n[[In code]]\r\n```\r\nTwo [[B]]").map(\.target), ["A", "B"])
+    }
+
     func testAPlantedBudsSourceIsNotALinkedFromRow() {
         // A bud planted from a link keeps where it came from as `source`, which is no body link.
         let parent = Bud(text: "Moving")

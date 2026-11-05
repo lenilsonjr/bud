@@ -16,11 +16,19 @@ public enum BudLinks {
     struct Line {
         var written: [Character]
         var blank: [Character]
+        /// Which line of the body it is, counting from 0.
+        var index = 0
     }
 
     /// The links in a body, in order.
     public static func parse(_ body: String) -> [Written] {
         prose(body).flatMap { links(in: $0.blank).map(\.link) }
+    }
+
+    /// The lines of a body, without their endings. Swift reads "\r\n" as one character, so it
+    /// ends a line as "\n" does.
+    static func lines(_ body: String) -> [Substring] {
+        body.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r\n" }
     }
 
     /// Each line of a body outside fenced code. A fence opens on a run of three or more
@@ -29,8 +37,7 @@ public enum BudLinks {
     static func prose(_ body: String) -> [Line] {
         var fence: (Character, Int)?
         var out: [Line] = []
-        for raw in body.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = raw.hasSuffix("\r") ? raw.dropLast() : raw
+        for (index, line) in lines(body).enumerated() {
             let trimmed = line.drop { $0 == " " || $0 == "\t" }
             func run(_ c: Character) -> Int { trimmed.prefix { $0 == c }.count }
             if let (c, len) = fence {
@@ -42,7 +49,7 @@ public enum BudLinks {
                 continue
             }
             let written = Array(line)
-            out.append(Line(written: written, blank: blankingCode(written)))
+            out.append(Line(written: written, blank: blankingCode(written), index: index))
         }
         return out
     }
@@ -130,6 +137,29 @@ public enum BudLinks {
         }.joined()
     }
 
+    /// `body` with the target of each link `retarget` answers for replaced, the `#heading` and
+    /// label kept; nil when no link changed. Code and embeds are left as written.
+    public static func rewrite(_ body: String, _ retarget: (Written) -> String?) -> String? {
+        var lines = Self.lines(body).map(String.init)
+        // Each line's ending as written, so a rewritten body keeps them.
+        let endings = body.filter { $0 == "\n" || $0 == "\r\n" }.map(String.init)
+        var changed = false
+        for line in prose(body) {
+            var chars = line.written
+            for (link, range) in links(in: line.blank).reversed() {
+                guard let target = retarget(link) else { continue }
+                let inner = String(chars[(range.lowerBound + 2)..<(range.upperBound - 2)])
+                // What follows the target as written: a `#heading`, a `|label`, or both.
+                let rest = inner.firstIndex { $0 == "#" || $0 == "|" }.map { String(inner[$0...]) } ?? ""
+                chars.replaceSubrange(range, with: Array("[[\(target)\(rest)]]"))
+                changed = true
+            }
+            lines[line.index] = String(chars)
+        }
+        guard changed else { return nil }
+        return lines.enumerated().map { i, line in line + (i < endings.count ? endings[i] : "") }.joined()
+    }
+
     private static func split(_ inner: String) -> Written? {
         let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         let label = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
@@ -160,6 +190,26 @@ extension Tree {
     public func trail(of id: UUID) -> [String] {
         let above = breadcrumb(of: id)
         return ancestors(of: id).contains(inboxID) ? above : ["Everything"] + above
+    }
+
+    /// The bodies that change when bud `id` is renamed to `title`: each link that names it now
+    /// names it by the new title, or by its path when another bud has that title too. Links that
+    /// named no bud, or another, are left alone.
+    public func relinked(renaming id: UUID, to title: String) -> [UUID: String] {
+        guard let i = buds.firstIndex(where: { $0.id == id }), buds[i].text != title else { return [:] }
+        var after = self
+        after.buds[i].text = title
+        let target = LinkPicker.target(for: after.buds[i], in: after)
+        var names: [String: Bool] = [:]
+        var out: [UUID: String] = [:]
+        for bud in buds where bud.body.contains("[[") {
+            let body = BudLinks.rewrite(bud.body) { link in
+                if names[link.target] == nil { names[link.target] = resolve(link.target) == id }
+                return names[link.target] == true ? target : nil
+            }
+            if let body { out[bud.id] = body }
+        }
+        return out
     }
 
     /// A bud's place in the vault the way a link may name it: "Launch/Welcome list".
@@ -287,7 +337,7 @@ public struct LinkPicker: Equatable, Sendable {
         let chars = Array(body)
         var i = chars.count - 1
         while i > 0 {
-            if chars[i] == "\n" || chars[i] == "|" || (chars[i] == "]" && chars[i - 1] == "]") { return nil }
+            if chars[i] == "\n" || chars[i] == "\r\n" || chars[i] == "|" || (chars[i] == "]" && chars[i - 1] == "]") { return nil }
             if chars[i] == "[", chars[i - 1] == "[" { break }
             i -= 1
         }
@@ -295,7 +345,7 @@ public struct LinkPicker: Equatable, Sendable {
         let open = i - 1
         guard open == 0 || chars[open - 1] != "!" else { return nil }
         // The last line must be prose, and the brackets outside its code spans.
-        let lineStart = (chars[..<open].lastIndex(of: "\n") ?? -1) + 1
+        let lineStart = (chars[..<open].lastIndex { $0 == "\n" || $0 == "\r\n" } ?? -1) + 1
         guard let last = BudLinks.prose(body).last, last.written == Array(chars[lineStart...]),
               last.blank[open - lineStart] == "[" else { return nil }
         query = String(chars[(open + 2)...])
