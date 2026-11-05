@@ -642,10 +642,9 @@ fn the_source_list_reaches_the_peer_and_a_removal_follows() {
 }
 
 #[test]
-fn a_folder_file_deleted_outside_comes_back_and_the_bud_keeps_its_identity() {
+fn a_folder_file_deleted_outside_leaves_the_bud_at_its_folder_with_its_identity() {
     let (mut a, mut b) = pair();
-    let text = "---\npinned: true\n---\nWritten elsewhere\n";
-    a.write("Routines.md", text);
+    a.write("Routines.md", "---\npinned: true\n---\nWritten elsewhere\n");
     a.rescan_and_sync();
     exchange(&mut a, &mut b);
     let id = a
@@ -654,17 +653,26 @@ fn a_folder_file_deleted_outside_comes_back_and_the_bud_keeps_its_identity() {
         .unwrap()
         .expect("the folder file has a document");
     let child = "Routines/Weekly review.md";
+    let child_id = a.vault.doc_id(child).unwrap();
 
     std::fs::remove_file(a.dir.path().join("Routines.md")).unwrap();
-    let report = a.rescan_and_sync();
-    assert_eq!(report.written, 1, "the file comes back");
-    assert_eq!(a.read("Routines.md"), text);
-    assert_eq!(a.vault.doc_id("Routines.md").unwrap(), Some(id.clone()));
+    a.rescan_and_sync();
+    assert!(
+        !a.dir.path().join("Routines.md").exists(),
+        "a deletion stands"
+    );
+    assert_eq!(a.vault.doc_id("Routines").unwrap(), Some(id.clone()));
+    assert_eq!(a.vault.doc_id(child).unwrap(), child_id);
     assert_eq!(
         a.vault.bud(child).unwrap().unwrap().parent.as_deref(),
-        Some("Routines.md")
+        Some("Routines")
     );
     exchange(&mut a, &mut b);
-    assert_eq!(b.vault.doc_id("Routines.md").unwrap(), Some(id));
-    assert_eq!(b.read("Routines.md"), text);
+    let on_b = b
+        .vault
+        .doc_id("Routines")
+        .unwrap()
+        .or(b.vault.doc_id("Routines.md").unwrap());
+    assert_eq!(on_b, Some(id));
+    assert_eq!(b.vault.doc_id(child).unwrap(), child_id);
 }
