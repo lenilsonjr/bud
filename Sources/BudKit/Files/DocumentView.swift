@@ -14,6 +14,8 @@ struct DocumentView: View {
     /// The `[[` picker's highlighted row, and the open `[[` it was closed on with Esc.
     @State private var pick = 0
     @State private var closedAt: Int?
+    /// Whether the last edit was typed at the open `[[`, so ↩, ⇥ and the arrows are the picker's.
+    @State private var armed = false
     @FocusState private var bodyFocused: Bool
 
     var body: some View {
@@ -40,7 +42,13 @@ struct DocumentView: View {
             }
             .onAppear { draft = bud.body }
             .onChange(of: bud.body) { _, now in if !dirty { draft = now } }
-            .onChange(of: draft) { _, _ in scheduleSave() }
+            .onChange(of: draft) { old, now in
+                scheduleSave()
+                let typed = LinkPicker(typing: now)
+                armed = typed?.edited(from: old, to: now) ?? false
+                if typed?.range.lowerBound != closedAt { closedAt = nil }
+            }
+            .onChange(of: editing) { _, _ in closedAt = nil; armed = false }
             .onDisappear { flush() }
         }
     }
@@ -115,7 +123,7 @@ struct DocumentView: View {
                     .onChange(of: bodyFocused) { _, now in if !now { editing = false; flush() } }
                     .onChange(of: linkPicker?.query) { _, _ in pick = 0 }
                     .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
-                        pickerKey(press.key) ? .handled : .ignored
+                        press.modifiers.isEmpty && pickerKey(press.key) ? .handled : .ignored
                     }
                 if let picker = linkPicker {
                     LinkPickerList(
@@ -152,18 +160,19 @@ struct DocumentView: View {
     private func pickerRows(_ picker: LinkPicker) -> [LinkPickerList.Row] {
         let found = picker.candidates(in: store.tree, excluding: id)
         let query = picker.query.trimmingCharacters(in: .whitespaces)
-        let plant = !query.isEmpty && !found.contains { BudLinks.fold($0.text) == BudLinks.fold(query) }
+        let taken = store.tree.buds.contains { BudLinks.fold($0.text) == BudLinks.fold(query) }
+        let plant = !query.isEmpty && LinkPicker.linkable(query) && !taken
         return found.map { .bud($0) } + (plant ? [.plant(query)] : [])
     }
 
     /// ↑↓ move the pick, ↩ links, ⇥ links with the typed text as its label, Esc closes.
     private func pickerKey(_ key: KeyEquivalent) -> Bool {
-        guard let picker = linkPicker else { return false }
+        guard armed, let picker = linkPicker else { return false }
         let rows = pickerRows(picker)
         switch key {
         case .escape: closedAt = picker.range.lowerBound
         case .upArrow: pick = max(0, pick - 1)
-        case .downArrow: pick = min(rows.count - 1, pick + 1)
+        case .downArrow: pick = max(0, min(rows.count - 1, pick + 1))
         default:
             guard rows.indices.contains(pick) else { return false }
             choose(rows[pick], labelled: key == .tab)
@@ -175,10 +184,10 @@ struct DocumentView: View {
         guard let picker = linkPicker else { return }
         switch row {
         case .bud(let target):
-            draft = picker.complete(draft, with: target.text, labelled: labelled)
+            draft = picker.complete(draft, with: LinkPicker.target(for: target, in: store.tree), labelled: labelled)
         case .plant(let title):
             guard let planted = store.add(title, todo: false, under: id) else { return }
-            draft = picker.complete(draft, with: planted.text)
+            draft = picker.complete(draft, with: LinkPicker.target(for: planted, in: store.tree))
         }
         pick = 0
         bodyFocused = true
