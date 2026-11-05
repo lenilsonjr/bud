@@ -146,6 +146,12 @@ public struct Backlink: Equatable, Sendable, Identifiable {
 }
 
 extension Tree {
+    /// Where a bud lives, as a row under it shows: its folders under Everything, or under the Inbox.
+    public func trail(of id: UUID) -> [String] {
+        let above = breadcrumb(of: id)
+        return ancestors(of: id).contains(inboxID) ? above : ["Everything"] + above
+    }
+
     /// A bud's place in the vault the way a link may name it: "Launch/Welcome list".
     func linkPath(of id: UUID) -> String {
         (breadcrumb(of: id) + [title(of: id)]).joined(separator: "/")
@@ -253,5 +259,55 @@ extension Tree {
         let hashes = chars[i...].prefix { $0 == "#" }.count
         if hashes > 0, i + hashes < chars.count, chars[i + hashes] == " " { return i + hashes + 1 }
         return i
+    }
+}
+
+/// The `[[` picker's sums: the link being typed in a body, the buds it could name, and the body
+/// once one is picked. The editor cannot say where its caret is, so the link being typed is the
+/// last `[[` on its line with no `]]` after it.
+public struct LinkPicker: Equatable, Sendable {
+    /// What follows the open `[[`, up to the end of its line.
+    public var query: String
+    /// Where `[[` and the query are in the body, in characters.
+    var range: Range<Int>
+
+    /// The link being typed in `body`, if one is: an open `[[` with no `]]`, `|` or newline after it.
+    public init?(typing body: String) {
+        let chars = Array(body)
+        var i = chars.count - 1
+        while i > 0 {
+            if chars[i] == "\n" || chars[i] == "|" || (chars[i] == "]" && chars[i - 1] == "]") { return nil }
+            if chars[i] == "[", chars[i - 1] == "[" { break }
+            i -= 1
+        }
+        guard i > 0 else { return nil }
+        let open = i - 1
+        guard open == 0 || chars[open - 1] != "!" else { return nil }
+        query = String(chars[(open + 2)...])
+        range = open..<chars.count
+        guard query.count <= 80 else { return nil }
+    }
+
+    /// The buds whose title holds the query, those it starts first, at most `limit`. A bud never
+    /// links to itself.
+    public func candidates(in tree: Tree, excluding id: UUID, limit: Int = 6) -> [Bud] {
+        let q = BudLinks.fold(query.trimmingCharacters(in: .whitespaces))
+        let found = tree.buds.filter { $0.id != id && (q.isEmpty || BudLinks.fold($0.text).contains(q)) }
+        return found
+            .sorted { a, b in
+                let (sa, sb) = (BudLinks.fold(a.text).hasPrefix(q), BudLinks.fold(b.text).hasPrefix(q))
+                return sa != sb ? sa : a.text.localizedStandardCompare(b.text) == .orderedAscending
+            }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// `body` with the link being typed made a link to `title`; with a label, the query becomes it.
+    public func complete(_ body: String, with title: String, labelled: Bool = false) -> String {
+        var chars = Array(body)
+        let label = query.trimmingCharacters(in: .whitespaces)
+        let link = labelled && !label.isEmpty && label != title ? "[[\(title)|\(label)]]" : "[[\(title)]]"
+        chars.replaceSubrange(range, with: Array(link))
+        return String(chars)
     }
 }

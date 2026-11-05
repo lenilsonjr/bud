@@ -11,6 +11,9 @@ struct DocumentView: View {
     @State private var dirty = false
     @State private var saver: Task<Void, Never>?
     @State private var enrich = ""
+    /// The `[[` picker's highlighted row, and the open `[[` it was closed on with Esc.
+    @State private var pick = 0
+    @State private var closedAt: Int?
     @FocusState private var bodyFocused: Bool
 
     var body: some View {
@@ -101,14 +104,25 @@ struct DocumentView: View {
     /// editor with the source in its place, and the page returns when the editor loses focus.
     @ViewBuilder private var bodyEditor: some View {
         if editing {
-            TextEditor(text: $draft)
-                .textRole(.body)
-                .foregroundStyle(Theme.text)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 160)
-                .focused($bodyFocused)
-                .onAppear { bodyFocused = true }
-                .onChange(of: bodyFocused) { _, now in if !now { editing = false; flush() } }
+            VStack(alignment: .leading, spacing: 8) {
+                TextEditor(text: $draft)
+                    .textRole(.body)
+                    .foregroundStyle(Theme.text)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 160)
+                    .focused($bodyFocused)
+                    .onAppear { bodyFocused = true }
+                    .onChange(of: bodyFocused) { _, now in if !now { editing = false; flush() } }
+                    .onChange(of: linkPicker?.query) { _, _ in pick = 0 }
+                    .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
+                        pickerKey(press.key) ? .handled : .ignored
+                    }
+                if let picker = linkPicker {
+                    LinkPickerList(
+                        rows: pickerRows(picker), pick: pick, tree: store.tree, here: store.tree.title(of: id)
+                    ) { row in choose(row, labelled: false) }
+                }
+            }
         } else {
             Group {
                 if draft.isEmpty {
@@ -124,6 +138,50 @@ struct DocumentView: View {
             // Beside the links in the text, not over them: a click on a link opens its bud.
             .simultaneousGesture(TapGesture().onEnded { editing = true })
         }
+    }
+
+    // MARK: link picker
+
+    /// The link being typed while the editor is open, unless Esc closed the picker on it.
+    private var linkPicker: LinkPicker? {
+        guard editing, let picker = LinkPicker(typing: draft), picker.range.lowerBound != closedAt else { return nil }
+        return picker
+    }
+
+    /// The buds the link could name, then planting one when no title is the query.
+    private func pickerRows(_ picker: LinkPicker) -> [LinkPickerList.Row] {
+        let found = picker.candidates(in: store.tree, excluding: id)
+        let query = picker.query.trimmingCharacters(in: .whitespaces)
+        let plant = !query.isEmpty && !found.contains { BudLinks.fold($0.text) == BudLinks.fold(query) }
+        return found.map { .bud($0) } + (plant ? [.plant(query)] : [])
+    }
+
+    /// ↑↓ move the pick, ↩ links, ⇥ links with the typed text as its label, Esc closes.
+    private func pickerKey(_ key: KeyEquivalent) -> Bool {
+        guard let picker = linkPicker else { return false }
+        let rows = pickerRows(picker)
+        switch key {
+        case .escape: closedAt = picker.range.lowerBound
+        case .upArrow: pick = max(0, pick - 1)
+        case .downArrow: pick = min(rows.count - 1, pick + 1)
+        default:
+            guard rows.indices.contains(pick) else { return false }
+            choose(rows[pick], labelled: key == .tab)
+        }
+        return true
+    }
+
+    private func choose(_ row: LinkPickerList.Row, labelled: Bool) {
+        guard let picker = linkPicker else { return }
+        switch row {
+        case .bud(let target):
+            draft = picker.complete(draft, with: target.text, labelled: labelled)
+        case .plant(let title):
+            guard let planted = store.add(title, todo: false, under: id) else { return }
+            draft = picker.complete(draft, with: planted.text)
+        }
+        pick = 0
+        bodyFocused = true
     }
 
     private func scheduleSave() {
@@ -213,6 +271,87 @@ struct LinkedFrom: View {
     }
 }
 
+/// The `[[` picker under the editor: the buds the link could name with where each lives, then
+/// planting the typed title under this bud, and the keys it answers to.
+struct LinkPickerList: View {
+    enum Row: Hashable {
+        case bud(Bud)
+        case plant(String)
+    }
+
+    let rows: [Row]
+    let pick: Int
+    let tree: Tree
+    /// The title of the bud being written in, for the plant row.
+    let here: String
+    let choose: (Row) -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                Button { choose(row) } label: {
+                    line(row, picked: index == pick)
+                }
+                .buttonStyle(.plain)
+            }
+            if rows.isEmpty {
+                Text("No bud has that title.")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .padding(8)
+            }
+            Divider()
+            Text("↑↓ choose · ↩ link · ⇥ link with a label · esc close")
+                .textRole(.caption)
+                .foregroundStyle(Theme.text3)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+        }
+        .padding(6)
+        .frame(maxWidth: 420, alignment: .leading)
+        .background(Theme.raised, in: shape)
+        .overlay(shape.stroke(Theme.line, lineWidth: 1))
+        .accessibilityIdentifier("link-picker")
+    }
+
+    @ViewBuilder private func line(_ row: Row, picked: Bool) -> some View {
+        HStack(spacing: 10) {
+            switch row {
+            case .bud(let bud):
+                Image(systemName: bud.isTodo ? "square" : "doc.text")
+                    .foregroundStyle(Theme.text2)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(bud.text)
+                        .textRole(.label)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Text(tree.trail(of: bud.id).joined(separator: " › "))
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.text3)
+                        .lineLimit(1)
+                }
+            case .plant(let title):
+                Image(systemName: "leaf")
+                    .foregroundStyle(Theme.leaf)
+                    .frame(width: 18)
+                Text("Plant “\(title)” under \(here)")
+                    .textRole(.label)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Theme.leaf)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(picked ? Theme.leafSoft : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .contentShape(Rectangle())
+    }
+}
+
 /// One "Linked from" row: the linking bud and where it lives, the sentence below with the link
 /// marked in leaf.
 struct BacklinkRow: View {
@@ -229,7 +368,7 @@ struct BacklinkRow: View {
                     .textRole(.label)
                     .fontWeight(.semibold)
                     .foregroundStyle(Theme.text)
-                Text(trail.joined(separator: " › "))
+                Text(tree.trail(of: link.from).joined(separator: " › "))
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)
@@ -247,12 +386,6 @@ struct BacklinkRow: View {
         .background(Theme.raised, in: shape)
         .overlay(shape.stroke(Theme.line, lineWidth: 1))
         .contentShape(shape)
-    }
-
-    /// Where the linking bud lives: its folders under Everything, or under the Inbox.
-    private var trail: [String] {
-        let above = tree.breadcrumb(of: link.from)
-        return tree.ancestors(of: link.from).contains(inboxID) ? above : ["Everything"] + above
     }
 
     private var marked: AttributedString {
