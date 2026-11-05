@@ -24,7 +24,7 @@ struct DocumentView: View {
                     properties(bud)
                     bodyEditor
                     inside(bud)
-                    linkedFrom
+                    LinkedFrom(id: id, store: store)
                     enrichField(bud)
                 }
                 .pageColumn()
@@ -185,12 +185,16 @@ struct DocumentView: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
     }
+}
 
-    // MARK: linked from
+/// The buds whose body links to a page, each with where it lives and the sentence the link
+/// sits in; a click goes to that bud. Nothing is drawn while no bud links here. A view of its
+/// own, so typing in the page's body does not read every bud again.
+struct LinkedFrom: View {
+    let id: UUID
+    @ObservedObject var store: BudStore
 
-    /// The buds whose body links here, each with where it lives and the sentence the link sits
-    /// in; a click goes to that bud. Nothing is drawn while no bud links here.
-    @ViewBuilder private var linkedFrom: some View {
+    var body: some View {
         let links = store.tree.backlinks(to: id)
         if !links.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -224,7 +228,7 @@ struct BacklinkRow: View {
                     .textRole(.label)
                     .fontWeight(.semibold)
                     .foregroundStyle(Theme.text)
-                Text((["Everything"] + tree.breadcrumb(of: link.from)).joined(separator: " › "))
+                Text(trail.joined(separator: " › "))
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)
@@ -244,12 +248,19 @@ struct BacklinkRow: View {
         .contentShape(shape)
     }
 
+    /// Where the linking bud lives: its folders under Everything, or under the Inbox.
+    private var trail: [String] {
+        let above = tree.breadcrumb(of: link.from)
+        return tree.ancestors(of: link.from).contains(inboxID) ? above : ["Everything"] + above
+    }
+
     private var marked: AttributedString {
         var text = AttributedString(link.sentence)
-        if let range = text.range(of: link.shown) {
-            text[range].foregroundColor = Theme.leaf
-            text[range].backgroundColor = Theme.leafSoft
-        }
+        guard link.mark.upperBound <= text.characters.count, !link.mark.isEmpty else { return text }
+        let lower = text.index(text.startIndex, offsetByCharacters: link.mark.lowerBound)
+        let upper = text.index(lower, offsetByCharacters: link.mark.count)
+        text[lower..<upper].foregroundColor = Theme.leaf
+        text[lower..<upper].backgroundColor = Theme.leafSoft
         return text
     }
 }
