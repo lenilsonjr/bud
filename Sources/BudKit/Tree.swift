@@ -120,7 +120,20 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     public func children(of id: UUID) -> [Bud] {
-        buds.filter { $0.parent == id }.sorted { ($0.order, $0.id.uuidString) < ($1.order, $1.id.uuidString) }
+        buds.filter { $0.parent == id }.sorted(by: Self.siblingOrder)
+    }
+
+    /// Siblings by their order, then by id so a tie reads the same everywhere.
+    private static func siblingOrder(_ a: Bud, _ b: Bud) -> Bool {
+        (a.order, a.id.uuidString) < (b.order, b.id.uuidString)
+    }
+
+    /// Every bud's children in their order, in one pass over the tree: what a walk reads, so it
+    /// does not filter the whole tree at every step.
+    private func childIndex() -> [UUID: [Bud]] {
+        var index = Dictionary(grouping: buds, by: \.parent)
+        for (parent, kids) in index { index[parent] = kids.sorted(by: Self.siblingOrder) }
+        return index
     }
 
     public func hasChildren(_ id: UUID) -> Bool {
@@ -152,17 +165,19 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     public func descendants(of id: UUID) -> [UUID] {
+        let index = childIndex()
         var out: [UUID] = []
-        var stack = children(of: id).map(\.id)
+        var stack = (index[id] ?? []).map(\.id)
         while let next = stack.popLast() {
             out.append(next)
-            stack.append(contentsOf: children(of: next).map(\.id))
+            stack.append(contentsOf: (index[next] ?? []).map(\.id))
         }
         return out
     }
 
     public func openCount(under id: UUID) -> Int {
-        descendants(of: id).compactMap(bud).filter { $0.state == .open }.count
+        let open = Set(buds.filter { $0.state == .open }.map(\.id))
+        return descendants(of: id).filter(open.contains).count
     }
 
     /// The open to-dos among a bud's own children: the count beside "n inside", so it never
@@ -173,10 +188,15 @@ public struct Tree: Codable, Equatable, Sendable {
 
     /// Descendants in reading order: each bud before its children, siblings in their order.
     public func walk(under id: UUID) -> [Bud] {
+        let index = childIndex()
         var out: [Bud] = []
-        for child in children(of: id) {
-            out.append(child)
-            out.append(contentsOf: walk(under: child.id))
+        // Each bud before its children: a stack of the siblings still to read, last first.
+        var stack = Array((index[id] ?? []).reversed())
+        var seen: Set<UUID> = [id]
+        while let bud = stack.popLast() {
+            guard seen.insert(bud.id).inserted else { continue }
+            out.append(bud)
+            stack.append(contentsOf: (index[bud.id] ?? []).reversed())
         }
         return out
     }
