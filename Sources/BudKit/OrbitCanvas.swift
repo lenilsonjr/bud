@@ -220,6 +220,8 @@ public struct OrbitCanvas: View {
             inlineAdd(layout: layout, size: size)
             if let opened, let placed = layout.cards[opened] {
                 DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
+                    // A card per bud, so another bud's card never inherits this one's draft.
+                    .id(opened)
                     .scaleEffect(scale)
                     .position(screenPoint(placed.position, in: size))
                     .zIndex(3)
@@ -245,8 +247,7 @@ public struct OrbitCanvas: View {
     /// Under a lens, how many buds match and which one ⌘G went to; ⌘G and ⇧⌘G step through
     /// them, bringing each onto the canvas.
     @ViewBuilder private var matchPill: some View {
-        // An open card has the canvas's attention, and the pill would sit on its buttons.
-        if let lens = store.canvasLens, opened == nil {
+        if let lens = store.canvasLens {
             let hits = lens.hits(store.tree).map(\.id)
             let shape = Capsule()
             HStack(spacing: 8) {
@@ -275,6 +276,11 @@ public struct OrbitCanvas: View {
             .shadow(color: Theme.shadowStrong.opacity(0.4), radius: 8, y: 3)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("match-pill")
+            // An open card has the canvas's attention, and the pill would sit on its buttons; its
+            // ⌘G keys still work.
+            .opacity(opened == nil ? 1 : 0)
+            .allowsHitTesting(opened == nil)
+            .accessibilityHidden(opened != nil)
         }
     }
 
