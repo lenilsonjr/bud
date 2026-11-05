@@ -462,9 +462,16 @@ public final class BudStore: ObservableObject {
 
     /// Adds a tag to a bud's own list, unless the bud carries it already.
     public func addTag(_ id: UUID, _ tag: String) {
-        guard let tag = BudTags.clean(tag), let bud = tree.bud(id), !bud.carries(tag) else { return }
+        guard let tag = BudTags.clean(tag), let bud = tree.bud(id),
+              !bud.tags.contains(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
         commit { $0.addTag(id, tag) }
-        write { [self] _ in try await edit(id) { try await $0.addTag($1, tag) } }
+        write { [self] _ in
+            do {
+                try await edit(id) { try await $0.addTag($1, tag) }
+            } catch {
+                toasts.show(Undoable(message: "Couldn't add #\(tag): the tags in this file are written in a way Bud can't change", systemImage: "exclamationmark.triangle"))
+            }
+        }
     }
 
     /// Takes a tag out of a bud's own list and offers to put it back.
@@ -483,7 +490,6 @@ public final class BudStore: ObservableObject {
         var changed: [UUID] = []
         commit { changed = $0.renameTag(from, to: to) }
         guard !changed.isEmpty else { return }
-        let after = Dictionary(uniqueKeysWithValues: changed.compactMap { id in tree.bud(id).map { (id, $0) } })
         let edits = TagEdits()
         write { [self] vault in
             let records = try await vault.renameTag(from, to: to)
@@ -492,19 +498,17 @@ public final class BudStore: ObservableObject {
         let count = changed.count
         let message = count == 1 ? "Renamed #\(from) to #\(to) in 1 bud" : "Renamed #\(from) to #\(to) in \(count) buds"
         toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
-            Task { @MainActor in self?.undoRenameTag(after: after, edits: edits) }
+            Task { @MainActor in self?.undoRenameTag(edits) }
         })
     }
 
-    /// Puts back each bud a tag rename changed, where nothing has changed it since.
-    private func undoRenameTag(after: [UUID: Bud], edits: TagEdits) {
-        let untouched = after.filter { id, bud in
-            tree.bud(id).map { $0.tags == bud.tags && $0.body == bud.body } ?? false
-        }
-        let restore = untouched.keys.compactMap { id in edits.byID[id].map { (id, $0.before) } }
-        guard !restore.isEmpty else { return }
-        write { [self] _ in
-            for (id, text) in restore { try await edit(id) { try await $0.setText($1, text) } }
+    /// Puts back each file a tag rename wrote, where nothing has changed it since. It queues
+    /// behind the rename, so the vault's list of what it wrote is there by then.
+    private func undoRenameTag(_ edits: TagEdits) {
+        write { [self] vault in
+            for (id, record) in edits.byID {
+                _ = try? await vault.restoreText(path(id), from: record.after, to: record.before)
+            }
         }
     }
 

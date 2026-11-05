@@ -141,7 +141,7 @@ private actor FolderVault: Vault {
     func addTag(_ path: String, _ tag: String) async throws { records[try index(path)].tags.append(tag) }
     func removeTag(_ path: String, _ tag: String) async throws { records[try index(path)].tags.removeAll { $0 == tag } }
     func renameTag(_ from: String, to: String) async throws -> [TagEditRecord] { [] }
-    func setText(_ path: String, _ text: String) async throws {}
+    func restoreText(_ path: String, from expected: String, to text: String) async throws -> Bool { false }
 
     func paths() -> [String] { records.map(\.path) }
 }

@@ -601,13 +601,10 @@ impl Vault {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
-    /// Add `tag` to the frontmatter of the bud at `path`. A bud that carries it already, in the
-    /// frontmatter or as a `#tag` in its body, is left as it is.
+    /// Add `tag` to the frontmatter of the bud at `path`; a list that has it already, in any
+    /// case, is left as it is. A `#tag` in the body does not count: the list is the bud's own.
     pub fn add_tag(&mut self, path: &str, tag: &str) -> Result<()> {
         let tag = clean(tag).ok_or_else(|| Error::Invalid(format!("not a tag: {tag}")))?;
-        if self.tags_of(path)?.iter().any(|own| key(own) == key(&tag)) {
-            return Ok(());
-        }
         self.change_frontmatter(path, Change::Add(&tag))
     }
 
@@ -664,10 +661,15 @@ impl Vault {
         Ok(edits)
     }
 
-    /// Write the whole text of the bud at `path`, as undoing a tag rename does with each file's
-    /// text from before.
-    pub fn set_text(&mut self, path: &str, text: &str) -> Result<()> {
-        self.write_file(path, text, None)
+    /// Put back the text a file had before a tag rename, when the file still holds `expected`,
+    /// the text the rename wrote: an edit made since is never undone. Returns whether it wrote.
+    pub fn restore_text(&mut self, path: &str, expected: &str, text: &str) -> Result<bool> {
+        let now = std::fs::read_to_string(self.root.join(path))?;
+        if now != expected {
+            return Ok(false);
+        }
+        self.write_file(path, text, None)?;
+        Ok(true)
     }
 
     fn change_frontmatter(&mut self, path: &str, change: Change<'_>) -> Result<()> {

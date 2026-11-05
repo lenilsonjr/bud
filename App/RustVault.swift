@@ -122,7 +122,9 @@ final class RustVault: BudKit.Vault {
         try core.renameTag(from: from, to: to).map { BudKit.TagEditRecord(path: $0.path, before: $0.before, after: $0.after) }
     }
 
-    func setText(_ path: String, _ text: String) async throws { try core.setText(path: path, text: text) }
+    func restoreText(_ path: String, from expected: String, to text: String) async throws -> Bool {
+        try core.restoreText(path: path, expected: expected, text: text)
+    }
 
     func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> BudKit.VaultWatch {
         let watch = try core.watch(listener: Listener(onChange: onChange))

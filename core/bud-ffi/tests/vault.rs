@@ -260,6 +260,9 @@ fn tags_are_added_removed_and_renamed() {
     assert_eq!(edits.len(), 1);
     let read = || std::fs::read_to_string(f.dir.path().join("Groceries.md")).unwrap();
     assert_eq!(read(), "---\ntags: [errands]\n---\nMilk #house\n");
-    f.vault.set_text(path, edits[0].before.clone()).unwrap();
+    assert!(f
+        .vault
+        .restore_text(path, edits[0].after.clone(), edits[0].before.clone())
+        .unwrap());
     assert_eq!(read(), "---\ntags: [errands]\n---\nMilk #home\n");
 }

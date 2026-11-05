@@ -34,9 +34,10 @@ final class TagsTests: XCTestCase {
         let bud = Bud(text: "Groceries", body: "#home")
         var tree = Tree(buds: [bud])
         tree.addTag(bud.id, "HOME")
-        XCTAssertEqual(tree.bud(bud.id)?.tags, [], "the body carries it already")
+        XCTAssertEqual(tree.bud(bud.id)?.tags, ["HOME"], "the body is not the bud's list")
+        tree.addTag(bud.id, "home")
         tree.addTag(bud.id, "#errands")
-        XCTAssertEqual(tree.bud(bud.id)?.tags, ["errands"])
+        XCTAssertEqual(tree.bud(bud.id)?.tags, ["HOME", "errands"])
         tree.removeTag(bud.id, "Errands")
         tree.removeTag(bud.id, "home")
         XCTAssertEqual(tree.bud(bud.id)?.tags, [])
@@ -60,7 +61,8 @@ final class TagsTests: XCTestCase {
         var now = await vault.tree.bud(bud.id)
         XCTAssertEqual(now?.tags, ["house"])
         XCTAssertEqual(now?.body, "#house")
-        try await vault.setText(bud.path, edits[0].before)
+        let restored = try await vault.restoreText(bud.path, from: edits[0].after, to: edits[0].before)
+        XCTAssertTrue(restored)
         now = await vault.tree.bud(bud.id)
         XCTAssertEqual(now?.tags, ["home"])
         XCTAssertEqual(now?.body, "#home")
@@ -88,5 +90,13 @@ final class TagsTests: XCTestCase {
         XCTAssertEqual(bud.tagChips, [
             TagChip(tag: "home", inText: false), TagChip(tag: "lisbon", inText: false), TagChip(tag: "neighbourhood", inText: true),
         ])
+    }
+
+    func testTagsEndWhereTheCoreEndsThemScalarByScalar() {
+        XCTAssertEqual(BudTags.inBody("#cafe\u{301} and #a1\u{FE0F}\u{20E3}"), ["cafe", "a1"], "a mark or a keycap ends a tag")
+        XCTAssertEqual(BudTags.inBody(" \u{301}#t3 then #ok"), ["ok"], "a mark before the # is no space")
+        XCTAssertEqual(BudTags.key("ΣΑΣ"), "σας", "a final sigma lowers as the core lowers it")
+        XCTAssertEqual(BudTags.renaming(body: "x #home\r\ny #home/k\r\n😀 #Home z\n", from: "home", to: "house"), "x #house\r\ny #house/k\r\n😀 #house z\n")
+        XCTAssertEqual(BudTags.renaming(body: "`#home` #e\u{301}t #home", from: "home", to: "house"), "`#home` #e\u{301}t #house")
     }
 }
