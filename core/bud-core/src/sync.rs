@@ -276,8 +276,19 @@ impl Tree {
         Tree { doc, tree }
     }
 
-    /// Bud identity to node.
+    /// Bud identity to node. Two devices that kept one restored bud each made a node for it;
+    /// until [`Tree::settle_twins`] runs, the smallest stands for both.
     fn nodes(&self) -> HashMap<String, TreeID> {
+        let mut nodes: HashMap<String, TreeID> = HashMap::new();
+        for (id, node) in self.live() {
+            let kept = nodes.entry(id).or_insert(node);
+            *kept = (*kept).min(node);
+        }
+        nodes
+    }
+
+    /// Every live node with the bud identity it carries.
+    fn live(&self) -> Vec<(String, TreeID)> {
         self.tree
             .nodes()
             .into_iter()
@@ -287,6 +298,37 @@ impl Tree {
                 Some((id, node))
             })
             .collect()
+    }
+
+    /// Keep one node per bud identity: the smallest, shallowest twins first, since deleting a
+    /// node deletes the nodes under it and a twin below must be chosen among what is left.
+    /// Every device chooses the same, so they converge.
+    fn settle_twins(&mut self) -> Result<()> {
+        loop {
+            let mut by_id: HashMap<String, Vec<TreeID>> = HashMap::new();
+            for (id, node) in self.live() {
+                by_id.entry(id).or_default().push(node);
+            }
+            let twins: Vec<(usize, Vec<TreeID>)> = by_id
+                .into_values()
+                .filter(|nodes| nodes.len() > 1)
+                .map(|nodes| {
+                    let depth = nodes.iter().map(|n| self.depth(*n)).min().unwrap_or(0);
+                    (depth, nodes)
+                })
+                .collect();
+            let Some(top) = twins.iter().map(|(depth, _)| *depth).min() else {
+                return Ok(());
+            };
+            for (_, mut nodes) in twins.into_iter().filter(|(depth, _)| *depth == top) {
+                nodes.sort();
+                for node in &nodes[1..] {
+                    if !self.tree.is_node_deleted(node).unwrap_or(true) {
+                        self.tree.delete(*node).map_err(tree_fail)?;
+                    }
+                }
+            }
+        }
     }
 
     /// Bud identities whose node is deleted, itself or with an ancestor, and that no live node
@@ -385,6 +427,8 @@ impl Vault {
     /// renames, moves and trashing in the tree document. Call after [`Vault::rescan`].
     pub fn sync(&mut self) -> Result<SyncReport> {
         let mut report = SyncReport::default();
+        let mut tree = self.load_tree()?;
+        self.forget_gone(&tree, &mut report)?;
         let buds = self.all()?;
         let live: std::collections::HashSet<&str> = buds.iter().map(|b| b.path.as_str()).collect();
         let mut stale: Vec<String> = {
@@ -413,7 +457,6 @@ impl Vault {
             }
         }
         stale.retain(|path| !followed.contains(path));
-        let mut tree = self.load_tree()?;
         let nodes = tree.nodes();
         let before = tree.doc.len_ops();
         for path in stale.iter().filter(|p| !live.contains(p.as_str())) {
@@ -864,6 +907,7 @@ impl Vault {
             .iter()
             .map(|(id, path)| (path.as_str(), id.as_str()))
             .collect();
+        tree.settle_twins()?;
         let mut nodes = tree.nodes();
         let gone = tree.gone();
         for (id, path) in &rows {
@@ -995,7 +1039,8 @@ impl Vault {
     /// Settle the buds whose node a peer deleted for good. One still in the trash here goes for
     /// good too: its file, its folder, its rows and its document. One that is not, because it was
     /// restored here before the deletion arrived, is kept: it takes a new identity, it and every
-    /// bud under it, so the next sync records it as a new bud and the peers get it back. Losing
+    /// bud under it, so the next sync records it as a new bud and the peers get it back. Every
+    /// sync runs it too, so a purge that failed is tried again. Losing
     /// what someone just chose to keep is worse than seeing a deleted bud return.
     fn forget_gone(&mut self, tree: &Tree, report: &mut SyncReport) -> Result<()> {
         let gone = tree.gone();
@@ -1015,7 +1060,11 @@ impl Vault {
             }
             if path.starts_with(".trash/") {
                 if self.bud(&path)?.is_some() {
-                    self.purge(&path)?;
+                    // The rows stay for a failed one, so the next sync tries again.
+                    if let Err(err) = self.purge(&path) {
+                        eprintln!("bud-core: could not delete {path} for good: {err}");
+                        continue;
+                    }
                     report.moved += 1;
                 }
                 let dir = path.strip_suffix(".md").unwrap_or(&path);
@@ -1025,10 +1074,12 @@ impl Vault {
                     params![path, dir],
                 )?;
             } else if self.bud(&path)?.is_some() {
-                let conn = lock(&self.conn);
-                let fresh: String =
-                    conn.query_row("SELECT lower(hex(randomblob(16)))", [], |r| r.get(0))?;
-                conn.execute("UPDATE docs SET id = ?1 WHERE id = ?2", params![fresh, id])?;
+                // Derived from the old one, so every device that kept the bud gives it the same
+                // identity and their copies keep syncing.
+                let fresh =
+                    blake3::hash(format!("kept:{id}").as_bytes()).to_hex()[..32].to_string();
+                lock(&self.conn)
+                    .execute("UPDATE docs SET id = ?1 WHERE id = ?2", params![fresh, id])?;
             }
         }
         Ok(())
