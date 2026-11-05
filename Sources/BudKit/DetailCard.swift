@@ -25,6 +25,15 @@ struct DetailCard: View {
                         .lineLimit(1...3)
                         .focused($editingTitle)
                         .onSubmit(save)
+                        // A title that wraps takes Return as a new line on iPhone, never as a
+                        // submit: a line break ends the edit instead, and so does leaving the field.
+                        .onChange(of: title) { _, now in
+                            if now.contains("\n") {
+                                title = now.replacingOccurrences(of: "\n", with: "")
+                                save()
+                            }
+                        }
+                        .onChange(of: editingTitle) { _, now in if !now { save() } }
                     Button(action: { store.remove(id); onClose() }) {
                         Image(systemName: "trash")
                     }
@@ -51,6 +60,7 @@ struct DetailCard: View {
                     .shadow(color: Theme.shadowStrong, radius: 14, y: 6)
             )
             .onAppear { title = bud.text }
+            .onDisappear(perform: save)
             .onChange(of: bud.text) { _, now in title = now }
         }
     }
@@ -100,7 +110,7 @@ struct DetailCard: View {
         guard let bud = store.tree.bud(id) else { return }
         let line = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { title = bud.text; return }
-        store.update(id, text: line, todo: bud.isTodo)
+        if line != bud.text { store.update(id, text: line, todo: bud.isTodo) }
         editingTitle = false
     }
 }

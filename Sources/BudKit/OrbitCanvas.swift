@@ -245,7 +245,8 @@ public struct OrbitCanvas: View {
     /// Under a lens, how many buds match and which one ⌘G went to; ⌘G and ⇧⌘G step through
     /// them, bringing each onto the canvas.
     @ViewBuilder private var matchPill: some View {
-        if let lens = store.canvasLens {
+        // An open card has the canvas's attention, and the pill would sit on its buttons.
+        if let lens = store.canvasLens, opened == nil {
             let hits = lens.hits(store.tree).map(\.id)
             let shape = Capsule()
             HStack(spacing: 8) {
