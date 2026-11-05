@@ -300,9 +300,15 @@ struct LinkedFrom: View {
         let links = store.tree.backlinks(to: id)
         if !links.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("LINKED FROM · \(links.count)")
-                    .textRole(.eyebrow)
-                    .foregroundStyle(Theme.text3)
+                HStack {
+                    Text("LINKED FROM · \(links.count)")
+                        .textRole(.eyebrow)
+                        .foregroundStyle(Theme.text3)
+                    Spacer()
+                    Text("Rename keeps these links")
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.text3)
+                }
                 ForEach(links) { link in
                     Button { store.center = link.from } label: {
                         BacklinkRow(link: link, tree: store.tree)
