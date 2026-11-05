@@ -101,6 +101,7 @@ struct CardView: View {
         .opacity(inkLight)
         .background(hubBackground.overlay(wash(Radius.hub)))
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.hub))
+        .overlay(alignment: .topTrailing) { LinkBadge(count: store.links.into[id]?.count ?? 0, lit: lit) }
         .contentShape(RoundedRectangle(cornerRadius: Radius.hub))
         .onTapGesture(perform: onTap)
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
@@ -148,6 +149,7 @@ struct CardView: View {
         .opacity(inkLight)
         .background(chipBackground(bud).overlay(wash(Radius.card)))
         .overlay(EntryRing(fresh: store.isFresh(id), radius: Radius.card))
+        .overlay(alignment: .topTrailing) { LinkBadge(count: store.links.into[id]?.count ?? 0, lit: lit) }
         .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         .onTapGesture(perform: onTap)
         // One VoiceOver element per card: the tick and the + come along as its actions, and the
@@ -186,6 +188,30 @@ struct CardView: View {
                         guard !still else { return }
                         withAnimation(.easeOut(duration: BudStore.entryCue)) { shown = 0 }
                     }
+            }
+        }
+    }
+
+    /// How many buds link to the card, on its corner: nothing while none do.
+    private struct LinkBadge: View {
+        let count: Int
+        let lit: Bool
+
+        var body: some View {
+            if count > 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: "link")
+                    Text("\(count)")
+                }
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(lit ? Theme.onLeaf : Theme.leaf)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(lit ? Theme.leaf : Theme.raised, in: Capsule())
+                .overlay(Capsule().stroke(lit ? Theme.leaf : Theme.line, lineWidth: 1))
+                .offset(x: -8, y: -8)
+                .allowsHitTesting(false)
+                .accessibilityLabel(count == 1 ? "1 bud links here" : "\(count) buds link here")
             }
         }
     }

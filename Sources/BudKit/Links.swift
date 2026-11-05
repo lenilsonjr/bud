@@ -402,3 +402,38 @@ public struct LinkPicker: Equatable, Sendable {
         return shared >= range.lowerBound && old != new
     }
 }
+
+/// Which buds link to which, read once from every body: what the canvas draws for the lit card
+/// and counts on each card.
+public struct LinkGraph: Equatable, Sendable {
+    /// The buds each bud links to, once each, in the order its body names them.
+    public var out: [UUID: [UUID]] = [:]
+    /// The buds that link to each bud.
+    public var into: [UUID: Set<UUID>] = [:]
+
+    public init() {}
+
+    public init(_ tree: Tree) {
+        var resolved: [String: UUID?] = [:]
+        for bud in tree.buds where bud.body.contains("[[") {
+            var seen: Set<UUID> = []
+            for link in BudLinks.parse(bud.body) {
+                let to: UUID?
+                if let known = resolved[link.target] { to = known } else {
+                    to = tree.resolve(link.target)
+                    resolved[link.target] = to
+                }
+                guard let to, to != bud.id, seen.insert(to).inserted else { continue }
+                out[bud.id, default: []].append(to)
+                into[to, default: []].insert(bud.id)
+            }
+        }
+    }
+
+    /// Every bud linked with `id` either way, each with whether the link points away from it.
+    public func around(_ id: UUID) -> [(other: UUID, outgoing: Bool)] {
+        let away = out[id] ?? []
+        let toward = (into[id] ?? []).subtracting(away).sorted { $0.uuidString < $1.uuidString }
+        return away.map { ($0, true) } + toward.map { ($0, false) }
+    }
+}

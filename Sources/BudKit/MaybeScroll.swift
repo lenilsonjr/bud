@@ -21,6 +21,18 @@ extension EnvironmentValues {
     }
 }
 
+/// The card a still picture lights, since a picture has no pointer to light one.
+struct StillLitKey: EnvironmentKey {
+    static let defaultValue: UUID? = nil
+}
+
+extension EnvironmentValues {
+    var stillLit: UUID? {
+        get { self[StillLitKey.self] }
+        set { self[StillLitKey.self] = newValue }
+    }
+}
+
 private struct CompactKey: EnvironmentKey {
     static let defaultValue = false
 }

@@ -27,7 +27,11 @@ public enum Place: String, CaseIterable, Sendable {
 /// Every mutation goes to the vault and reloads from it; the layout is recomputed once per change, not per frame.
 @MainActor
 public final class BudStore: ObservableObject {
-    @Published public private(set) var tree: Tree
+    @Published public private(set) var tree: Tree {
+        didSet { links = LinkGraph(tree) }
+    }
+    /// Which buds link to which, read again whenever the tree changes.
+    @Published public private(set) var links = LinkGraph()
     @Published public private(set) var layout: Layout
     @Published public var center: UUID {
         didSet {
@@ -105,6 +109,7 @@ public final class BudStore: ObservableObject {
         self.devices = devices ?? .shared
         let tree = Self.normalized(tree)
         self.tree = tree
+        self.links = LinkGraph(tree)
         self.center = rootID
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
         self.devices.onSyncFinished = { [weak self] summary in
