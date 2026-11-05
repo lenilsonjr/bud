@@ -86,6 +86,8 @@ pub struct BudRecord {
     pub source: Option<String>,
     pub body: String,
     pub place: BudPlace,
+    /// The tags of its frontmatter list; the `#tags` in its body are read from the body.
+    pub tags: Vec<String>,
 }
 
 /// A bud with the titles of the buds above it, root first.
@@ -868,6 +870,7 @@ impl From<bud_core::Bud> for BudRecord {
             source: bud.source,
             body: bud.body,
             place: bud.place.into(),
+            tags: bud.tags,
         }
     }
 }

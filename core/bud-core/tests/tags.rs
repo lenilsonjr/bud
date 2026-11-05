@@ -452,3 +452,15 @@ fn a_rename_still_reaches_the_body_of_a_bud_whose_list_it_cannot_rewrite() {
         "---\nbase: &t [a, b]\ntags: *t\n---\nSee #z\n"
     );
 }
+
+#[test]
+fn a_bud_row_carries_its_frontmatter_tags_in_order() {
+    let (vault, _dir, _index) = vault_with(WORLD);
+    let bud = vault.bud("Groceries.md").unwrap().unwrap();
+    assert_eq!(
+        bud.tags,
+        ["home", "errands"],
+        "the body's #Home is not in the list"
+    );
+    assert!(vault.bud("Garden.md").unwrap().unwrap().tags.is_empty());
+}
