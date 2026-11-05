@@ -19,13 +19,20 @@ public struct LensQuery: Hashable, Sendable {
     public var pinned: Bool
     /// The bud has an open to-do somewhere below it.
     public var holdsOpen: Bool
+    /// Tags the bud must carry, every one, in its list or its body, in any case; a tag also
+    /// matches the tags nested under it (`#home` matches `#home/kitchen`).
+    public var tags: Set<String>
 
-    public init(kind: Kind? = nil, state: BudState? = nil, day: Day? = nil, pinned: Bool = false, holdsOpen: Bool = false) {
+    public init(
+        kind: Kind? = nil, state: BudState? = nil, day: Day? = nil, pinned: Bool = false, holdsOpen: Bool = false,
+        tags: Set<String> = []
+    ) {
         self.kind = kind
         self.state = state
         self.day = day
         self.pinned = pinned
         self.holdsOpen = holdsOpen
+        self.tags = Set(tags.map(BudTags.key))
     }
 
     public static let todos = LensQuery(kind: .todo, state: .open)
@@ -67,6 +74,10 @@ public struct LensQuery: Hashable, Sendable {
             }
         }
         if holdsOpen && !holders.contains(bud.id) { return false }
+        if !tags.isEmpty {
+            let carried = bud.allTags.map(BudTags.key)
+            for tag in tags where !carried.contains(where: { $0 == tag || $0.hasPrefix(tag + "/") }) { return false }
+        }
         return true
     }
 

@@ -106,4 +106,14 @@ final class LensQueryTests: XCTestCase {
         _ = t.add("A note", todo: false, under: rootID)
         XCTAssertTrue(LensQuery(day: .overdue).light(t, on: day).isEmpty)
     }
+
+    func testATagFacetMatchesListAndBodyTagsInAnyCaseAndNestedOnes() {
+        let a = Bud(text: "A", tags: ["Home"])
+        let b = Bud(text: "B", body: "#home/kitchen #errands")
+        let c = Bud(text: "C", body: "#homework")
+        let tree = Tree(buds: [a, b, c])
+        XCTAssertEqual(Set(LensQuery(tags: ["HOME"]).hits(tree).map(\.id)), [a.id, b.id])
+        XCTAssertEqual(LensQuery(tags: ["home", "errands"]).hits(tree).map(\.id), [b.id], "every tag must hold")
+        XCTAssertEqual(LensQuery(state: .open, tags: ["home"]).hits(tree).map(\.id), [])
+    }
 }
