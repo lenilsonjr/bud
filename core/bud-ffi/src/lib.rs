@@ -123,7 +123,7 @@ pub struct TagCountRecord {
     pub buds: u64,
 }
 
-/// One file a tag rename rewrote, with its text before and after.
+/// One file a tag change rewrote, with its text before and after.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct TagEditRecord {
     pub path: String,
@@ -766,9 +766,14 @@ impl Vault {
         Ok(self.core().add_tag(&path, &tag)?)
     }
 
-    /// Take `tag` out of the bud's frontmatter; a `#tag` in its body stays.
-    pub fn remove_tag(&self, path: String, tag: String) -> Result<()> {
-        Ok(self.core().remove_tag(&path, &tag)?)
+    /// Take `tag` out of the bud's frontmatter; a `#tag` in its body stays. Returns the file it
+    /// rewrote, for undo.
+    pub fn remove_tag(&self, path: String, tag: String) -> Result<Option<TagEditRecord>> {
+        Ok(self.core().remove_tag(&path, &tag)?.map(|e| TagEditRecord {
+            path: e.path,
+            before: e.before,
+            after: e.after,
+        }))
     }
 
     /// Rename or merge a tag across the vault. Returns each file it rewrote, for undo.

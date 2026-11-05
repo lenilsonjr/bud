@@ -254,7 +254,8 @@ fn tags_are_added_removed_and_renamed() {
     let f = fixture(&[("Groceries.md", "---\ntags: [home]\n---\nMilk #home\n")]);
     let path = "Groceries.md".to_string();
     f.vault.add_tag(path.clone(), "errands".into()).unwrap();
-    f.vault.remove_tag(path.clone(), "home".into()).unwrap();
+    let removed = f.vault.remove_tag(path.clone(), "home".into()).unwrap();
+    assert_eq!(removed.map(|e| e.path), Some(path.clone()));
     assert_eq!(f.vault.tags_of(path.clone()).unwrap(), ["errands", "home"]);
     let edits = f.vault.rename_tag("home".into(), "house".into()).unwrap();
     assert_eq!(edits.len(), 1);

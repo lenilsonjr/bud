@@ -479,14 +479,29 @@ public final class BudStore: ObservableObject {
         }
     }
 
-    /// Takes a tag out of a bud's own list and offers to put it back.
+    /// Takes a tag out of a bud's own list and offers to put it back where it was.
     public func removeTag(_ id: UUID, _ tag: String) {
-        guard let own = tree.bud(id)?.tags.first(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
+        guard let tags = tree.bud(id)?.tags,
+              let index = tags.firstIndex(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
+        let own = tags[index]
         commit { $0.removeTag(id, own) }
-        write { [self] _ in try await edit(id) { try await $0.removeTag($1, own) } }
+        let edits = TagEdits()
+        write { [self] _ in try await edit(id) { edits.byID[id] = try await $0.removeTag($1, own) } }
         toasts.show(Undoable(message: "Removed #\(own)", systemImage: "number") { [weak self] in
-            Task { @MainActor in self?.addTag(id, own) }
+            Task { @MainActor in self?.undoRemoveTag(id, own, at: index, edits) }
         })
+    }
+
+    /// Puts the file back as it was before the remove; where it has changed since, adds the
+    /// tag to its list instead.
+    private func undoRemoveTag(_ id: UUID, _ tag: String, at index: Int, _ edits: TagEdits) {
+        commit { $0.addTag(id, tag, at: index) }
+        write { [self] vault in
+            if let record = edits.byID[id], try await vault.restoreText(path(id), from: record.after, to: record.before) {
+                return
+            }
+            try await edit(id) { try await $0.addTag($1, tag) }
+        }
     }
 
     /// Renames or merges a tag in every bud outside the Trash and offers to take it back.
@@ -665,7 +680,7 @@ public final class BudStore: ObservableObject {
     }
 }
 
-/// What a tag rename wrote, by bud, filled in once the vault has done it, for the undo.
+/// What a tag rename or remove wrote, by bud, filled in once the vault has done it, for the undo.
 @MainActor
 private final class TagEdits {
     var byID: [UUID: TagEditRecord] = [:]

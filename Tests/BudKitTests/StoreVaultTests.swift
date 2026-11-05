@@ -86,6 +86,23 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(a.id)?.tags, ["home"])
     }
 
+    func testUndoingARemovePutsTheTagBackInItsPlace() async throws {
+        let (store, vault) = await loaded()
+        let a = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(a.id, "home")
+        store.addTag(a.id, "errands")
+        await store.settle()
+        store.removeTag(a.id, "home")
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, ["errands"])
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where store.tree.bud(a.id)?.tags != ["home", "errands"] { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, ["home", "errands"])
+        let records = try await vault.snapshot()
+        XCTAssertEqual(records.first { $0.path == a.id.uuidString }?.tags, ["home", "errands"])
+    }
+
     func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
         let (store, vault) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)

@@ -139,7 +139,10 @@ private actor FolderVault: Vault {
     func nextStep(under: String?, date: Date) async throws -> RowRecord? { nil }
     func watch(_ onChange: @escaping @Sendable () -> Void) async throws -> VaultWatch { VaultWatch {} }
     func addTag(_ path: String, _ tag: String) async throws { records[try index(path)].tags.append(tag) }
-    func removeTag(_ path: String, _ tag: String) async throws { records[try index(path)].tags.removeAll { $0 == tag } }
+    func removeTag(_ path: String, _ tag: String) async throws -> TagEditRecord? {
+        records[try index(path)].tags.removeAll { $0 == tag }
+        return nil
+    }
     func renameTag(_ from: String, to: String) async throws -> [TagEditRecord] { [] }
     func restoreText(_ path: String, from expected: String, to text: String) async throws -> Bool { false }
 

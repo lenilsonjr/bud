@@ -155,12 +155,13 @@ public protocol Vault: Sendable {
     /// in its body, stays as it is.
     func addTag(_ path: String, _ tag: String) async throws
     /// Takes a tag out of a bud's own list. A `#tag` in its body stays: that is the bud's text.
-    func removeTag(_ path: String, _ tag: String) async throws
+    /// Returns the text it rewrote, for undo.
+    func removeTag(_ path: String, _ tag: String) async throws -> TagEditRecord?
     /// Renames a tag in every bud outside the Trash, lists and bodies alike, with the tags nested
     /// under it; renaming onto a tag in use merges the two. Returns each bud it changed.
     func renameTag(_ from: String, to: String) async throws -> [TagEditRecord]
-    /// Puts back the text a tag rename handed over as `before`, while the bud still holds the
-    /// rename's `after`: an edit made since is never undone. Returns whether it wrote.
+    /// Puts back the text a tag change handed over as `before`, while the bud still holds the
+    /// change's `after`: an edit made since is never undone. Returns whether it wrote.
     func restoreText(_ path: String, from expected: String, to text: String) async throws -> Bool
 
     /// Calls back once per batch of changes made outside the app.
