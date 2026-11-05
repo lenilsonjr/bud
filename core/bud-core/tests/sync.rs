@@ -668,11 +668,17 @@ fn a_folder_file_deleted_outside_leaves_the_bud_at_its_folder_with_its_identity(
         Some("Routines")
     );
     exchange(&mut a, &mut b);
-    let on_b = b
-        .vault
-        .doc_id("Routines")
-        .unwrap()
-        .or(b.vault.doc_id("Routines.md").unwrap());
-    assert_eq!(on_b, Some(id));
+    assert!(
+        !b.dir.path().join("Routines.md").exists(),
+        "the other replica's file goes too, not left empty"
+    );
+    assert_eq!(b.vault.doc_id("Routines").unwrap(), Some(id));
     assert_eq!(b.vault.doc_id(child).unwrap(), child_id);
+    assert_eq!(
+        b.vault.bud(child).unwrap().unwrap().parent.as_deref(),
+        Some("Routines")
+    );
+    exchange(&mut a, &mut b);
+    assert!(!a.dir.path().join("Routines.md").exists());
+    assert!(!b.dir.path().join("Routines.md").exists());
 }
