@@ -434,3 +434,95 @@ fn a_file_written_outside_beside_a_folder_bud_keeps_the_bud_whole_on_both_device
     assert_eq!(named(&b), 1);
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
 }
+
+/// A third replica that shares the identities of `a`.
+fn join(a: &mut Replica) -> Replica {
+    let mut c = Replica::new();
+    for bud in c.vault.all().unwrap() {
+        if bud.place == bud_core::Place::Trash && !bud.path.ends_with(".md") {
+            continue;
+        }
+        let id = a.vault.doc_id(&bud.path).unwrap().unwrap();
+        let bytes = a.vault.doc_bytes(&bud.path).unwrap().unwrap();
+        c.vault.adopt_doc(&bud.path, &id, &bytes).unwrap();
+    }
+    c.vault.merge_tree(&a.vault.tree_bytes().unwrap()).unwrap();
+    c.vault.sync().unwrap();
+    c
+}
+
+/// What `from` has that `to` lacks, one way.
+fn send(from: &Replica, to: &mut Replica) {
+    let updates = from.vault.updates_for(&to.vault.heads().unwrap()).unwrap();
+    to.vault.apply_updates(&updates).unwrap();
+    to.vault.sync().unwrap();
+}
+
+#[test]
+fn a_bud_two_devices_restored_while_a_third_deletes_it_forever_stays_one_bud() {
+    let (mut a, mut b) = pair();
+    let mut c = join(&mut a);
+    let trashed = trash_on_both(&mut a, &mut b, "Launch the newsletter.md");
+    send(&a, &mut c);
+    let old_id = b.vault.doc_id(&trashed).unwrap().unwrap();
+
+    b.vault.restore(&trashed).unwrap();
+    b.vault.sync().unwrap();
+    exchange(&mut b, &mut c);
+    assert!(c.exists("Launch the newsletter.md"));
+    a.vault.delete_forever(&trashed).unwrap();
+    a.vault.sync().unwrap();
+    // The deletion reaches each before they hear from each other: each keeps its own copy.
+    send(&a, &mut b);
+    send(&a, &mut c);
+    for _ in 0..2 {
+        exchange(&mut b, &mut c);
+        exchange(&mut a, &mut b);
+        exchange(&mut a, &mut c);
+    }
+
+    let kept = b.vault.doc_id("Launch the newsletter.md").unwrap().unwrap();
+    assert_ne!(kept, old_id);
+    for replica in [&a, &c] {
+        assert_eq!(
+            replica.vault.doc_id("Launch the newsletter.md").unwrap(),
+            Some(kept.clone())
+        );
+    }
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+    assert_eq!(fingerprint(b.dir.path()), fingerprint(c.dir.path()));
+
+    // The copies keep syncing: an edit on one reaches the others once.
+    let child = "Launch the newsletter/Pick a name.md";
+    let text = c.read(child);
+    c.write(child, &format!("{text}\nShort and plain.\n"));
+    c.rescan_and_sync();
+    exchange(&mut b, &mut c);
+    exchange(&mut a, &mut b);
+    for replica in [&a, &b] {
+        assert_eq!(replica.read(child), c.read(child));
+        assert_eq!(replica.read(child).matches("Short and plain.").count(), 1);
+    }
+}
+
+#[test]
+fn a_deletion_that_could_not_remove_the_file_is_tried_again_on_the_next_sync() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut a, mut b) = pair();
+    let trashed = trash_on_both(&mut a, &mut b, "Gift ideas.md");
+    a.vault.delete_forever(&trashed).unwrap();
+    a.vault.sync().unwrap();
+
+    let trash = b.dir.path().join(".trash");
+    std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o555)).unwrap();
+    send(&a, &mut b);
+    std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(b.exists(&trashed), "the file could not go");
+
+    b.vault.sync().unwrap();
+    assert!(!b.exists(&trashed));
+    assert!(b.vault.bud(&trashed).unwrap().is_none());
+    assert_eq!(b.vault.doc_id(&trashed).unwrap(), None);
+    exchange(&mut a, &mut b);
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}
