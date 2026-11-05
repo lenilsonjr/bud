@@ -371,6 +371,21 @@ public struct Tree: Codable, Equatable, Sendable {
         return bud
     }
 
+    /// A source item planted under a parent, the Inbox included, as a bud carrying its `from`
+    /// key, after the parent's last child.
+    @discardableResult
+    public mutating func plant(_ text: String, todo: Bool, under parent: UUID, from key: String, id: UUID = UUID()) -> Bud {
+        var bud = add(text, todo: todo, under: parent, id: id)
+        bud.from = key
+        buds[buds.count - 1] = bud
+        return bud
+    }
+
+    /// The bud a source item was planted as, outside the Trash.
+    public func planted(from key: String) -> Bud? {
+        buds.first { $0.from == key }
+    }
+
     /// What waits in the Inbox, in reading order.
     public func inbox() -> [Bud] {
         children(of: inboxID)

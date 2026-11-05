@@ -205,17 +205,17 @@ final class VaultTests: XCTestCase {
 
     func testPlantingAnItemTwiceFindsTheBudItMade() async throws {
         let vault = vault()
-        let first = try await vault.plant(parent: nil, title: "Lease draft", kind: .note, from: "mail:M-1")
+        let first = try await vault.plant(parent: nil, title: "Lease draft", kind: .note, from: "mail:M-1", preferredPath: nil)
         XCTAssertTrue(first.new)
         let record = try await vault.snapshot().first { $0.path == first.path }
         XCTAssertEqual(record?.from, "mail:M-1")
         XCTAssertEqual(record?.title, "Lease draft")
 
-        let again = try await vault.plant(parent: vault.inboxPath, title: "Lease draft", kind: .note, from: "mail:M-1")
+        let again = try await vault.plant(parent: vault.inboxPath, title: "Lease draft", kind: .note, from: "mail:M-1", preferredPath: nil)
         XCTAssertEqual(again, Planting(path: first.path, new: false))
 
         try await vault.trash(first.path)
-        let after = try await vault.plant(parent: nil, title: "Lease draft", kind: .note, from: "mail:M-1")
+        let after = try await vault.plant(parent: nil, title: "Lease draft", kind: .note, from: "mail:M-1", preferredPath: nil)
         XCTAssertTrue(after.new, "a bud in the Trash is planted again")
     }
 }

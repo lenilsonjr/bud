@@ -45,9 +45,9 @@ public actor MemoryVault: Vault {
         return id.uuidString
     }
 
-    public func plant(parent: String?, title: String, kind: BudKind, from: String) async throws -> Planting {
+    public func plant(parent: String?, title: String, kind: BudKind, from: String, preferredPath: String?) async throws -> Planting {
         if let bud = tree.buds.first(where: { $0.from == from }) { return Planting(path: bud.path, new: false) }
-        let path = try await create(parent: parent, title: title, kind: kind, source: nil, preferredPath: nil)
+        let path = try await create(parent: parent, title: title, kind: kind, source: nil, preferredPath: preferredPath)
         if let i = tree.buds.firstIndex(where: { $0.path == path }) { tree.buds[i].from = from }
         save()
         return Planting(path: path, new: true)
