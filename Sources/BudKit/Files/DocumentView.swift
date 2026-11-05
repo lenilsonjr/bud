@@ -477,6 +477,8 @@ struct RenderedBody: View {
     let source: String
     var tree: Tree?
     var open: (UUID) -> Void = { _ in }
+    /// Opens the web links in the text, for the actions VoiceOver offers.
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -562,7 +564,16 @@ struct RenderedBody: View {
             guard case .link(let link) = run, let id = tree?.resolve(link.target), seen.insert(id).inserted else { return nil }
             return (tree?.title(of: id) ?? link.shown, id)
         }
-        guard !BudLinks.parse(text).isEmpty else { return AnyView(line) }
+        let runs = BudLinks.runs(text)
+        guard runs.contains(where: { if case .link = $0 { true } else { false } }) else { return AnyView(line) }
+        // Web links in the line's Markdown, which the label hides too.
+        let web: [(String, URL)] = runs.flatMap { run -> [(String, URL)] in
+            guard case .text(let plain) = run else { return [] }
+            let inline = MarkdownBlocks.inline(plain)
+            return inline.runs.compactMap { part in
+                part.link.map { (String(inline[part.range].characters), $0) }
+            }
+        }
         // A line with links reads as its words alone: VoiceOver gives a link that wraps to a
         // second line no element of its own, and reads the arrows in the line's text. Each bud
         // it links to is an Open action instead.
@@ -571,6 +582,9 @@ struct RenderedBody: View {
             .accessibilityActions {
                 ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
                     Button("Open \(target.0)") { open(target.1) }
+                }
+                ForEach(Array(web.enumerated()), id: \.offset) { _, link in
+                    Button("Open \(link.0)") { openURL(link.1) }
                 }
             })
     }
