@@ -161,43 +161,64 @@ impl Item {
     }
 }
 
-/// `text` split before a YAML comment: a `#` at the start or after a space or tab, outside
-/// quotes. The comment keeps the space before it.
-fn comment(text: &str) -> (&str, &str) {
+/// Calls `at` with each character of `text` outside quotes and the character before it, until
+/// `at` returns true. A quote opens only where a scalar starts (first, or after a space, a tab,
+/// `[` or `,`), so the `'` in `don't` is a letter; inside double quotes a backslash escapes.
+fn outside_quotes(text: &str, mut at: impl FnMut(usize, char, Option<char>) -> bool) {
     let mut quote: Option<char> = None;
+    let mut escaped = false;
     let mut previous: Option<char> = None;
     for (i, c) in text.char_indices() {
         match quote {
+            Some('"') if escaped => escaped = false,
+            Some('"') if c == '\\' => escaped = true,
             Some(q) if c == q => quote = None,
             Some(_) => {}
-            None if c == '"' || c == '\'' => quote = Some(c),
-            None if c == '#' && previous.is_none_or(|p| p == ' ' || p == '\t') => {
-                let at = text[..i].trim_end_matches([' ', '\t']).len();
-                return (&text[..at], &text[at..]);
+            None if c == '"' || c == '\'' => {
+                let starts = previous.is_none_or(|p| matches!(p, ' ' | '\t' | '[' | ','));
+                // `''` inside single quotes closes and opens again: one quote character.
+                if starts || (c == '\'' && previous == Some('\'')) {
+                    quote = Some(c);
+                }
             }
-            None => {}
+            None => {
+                if at(i, c, previous) {
+                    return;
+                }
+            }
         }
         previous = Some(c);
     }
-    (text, "")
+}
+
+/// `text` split before a YAML comment: a `#` at the start or after a space or tab, outside
+/// quotes. The comment keeps the space before it.
+fn comment(text: &str) -> (&str, &str) {
+    let mut cut = text.len();
+    outside_quotes(text, |i, c, previous| {
+        let found = c == '#' && previous.is_none_or(|p| p == ' ' || p == '\t');
+        if found {
+            cut = text[..i].trim_end_matches([' ', '\t']).len();
+        }
+        found
+    });
+    text.split_at(cut)
 }
 
 /// The items of a one-line flow list's inside, split on commas outside quotes.
 fn flow_items(inner: &str) -> Vec<Item> {
-    let mut out = Vec::new();
-    let mut quote: Option<char> = None;
-    let mut from = 0;
-    for (i, c) in inner.char_indices() {
-        match quote {
-            Some(q) if c == q => quote = None,
-            Some(_) => {}
-            None if c == '"' || c == '\'' => quote = Some(c),
-            None if c == ',' => {
-                out.push(&inner[from..i]);
-                from = i + 1;
-            }
-            None => {}
+    let mut cuts = vec![];
+    outside_quotes(inner, |i, c, _| {
+        if c == ',' {
+            cuts.push(i);
         }
+        false
+    });
+    let mut out = Vec::new();
+    let mut from = 0;
+    for cut in cuts {
+        out.push(&inner[from..cut]);
+        from = cut + 1;
     }
     out.push(&inner[from..]);
     out.into_iter()
@@ -250,7 +271,7 @@ fn changed(items: &[Item], change: Change<'_>) -> Option<Vec<Item>> {
 
 /// The `tags` key as lines; empty when no entry is left. `note` is a comment the key line had.
 fn write_key(shape: &Shape, items: &[Item], note: &str, eol: &str) -> String {
-    if items.is_empty() {
+    if items.iter().all(|item| item.raw.starts_with('#')) {
         return String::new();
     }
     let raws: Vec<&str> = items.iter().map(|item| item.raw.as_str()).collect();
@@ -262,7 +283,8 @@ fn write_key(shape: &Shape, items: &[Item], note: &str, eol: &str) -> String {
         Shape::Block(indent) => {
             let mut out = format!("tags:{note}{eol}");
             for raw in raws {
-                out.push_str(&format!("{indent}- {raw}{eol}"));
+                let dash = if raw.starts_with('#') { "" } else { "- " };
+                out.push_str(&format!("{indent}{dash}{raw}{eol}"));
             }
             out
         }
@@ -287,15 +309,30 @@ fn read_key(chunk: &str) -> (Shape, Vec<Item>, String) {
         return (Shape::Flow, flow_items(inner), note.to_string());
     }
     let dashed = |line: &&str| line.trim_start().starts_with("- ") || line.trim() == "-";
-    if value.is_empty() && !rest.is_empty() && rest.iter().all(dashed) {
-        let indent = rest[0][..rest[0].len() - rest[0].trim_start().len()].to_string();
-        let items = rest
-            .iter()
-            .map(|line| line.trim_start()[1..].trim())
-            .filter(|raw| !raw.is_empty())
-            .map(Item::written)
-            .collect();
-        return (Shape::Block(indent), items, note.to_string());
+    let remark = |line: &&str| line.trim_start().starts_with('#');
+    let items_at = rest.iter().position(dashed);
+    if let (true, Some(first)) = (value.is_empty(), items_at) {
+        if rest.iter().all(|line| dashed(line) || remark(line)) {
+            let line = rest[first];
+            let indent = line[..line.len() - line.trim_start().len()].to_string();
+            // A comment line stays where it is, as an entry that is no tag.
+            let items = rest
+                .iter()
+                .filter_map(|line| {
+                    let line = line.trim_start();
+                    match line.strip_prefix('-') {
+                        Some(raw) => Some(raw.trim())
+                            .filter(|raw| !raw.is_empty())
+                            .map(Item::written),
+                        None => Some(Item {
+                            raw: line.trim_end().to_string(),
+                            tag: None,
+                        }),
+                    }
+                })
+                .collect();
+            return (Shape::Block(indent), items, note.to_string());
+        }
     }
     let plain = !value.starts_with(['"', '\'', '[', '{', '|', '>', '&', '*', '!']);
     if rest.is_empty() && plain && !value.is_empty() {
@@ -312,7 +349,8 @@ fn read_key(chunk: &str) -> (Shape, Vec<Item>, String) {
         .iter()
         .map(|tag| Item::new(tag))
         .collect();
-    (Shape::Flow, items, String::new())
+    let note = if rest.is_empty() { note } else { "" };
+    (Shape::Flow, items, note.to_string())
 }
 
 /// Whether a line of a block starts the `tags` key: `tags:` or `tags :`.
@@ -435,24 +473,33 @@ fn expected(yaml: &str, change: Change<'_>) -> std::collections::BTreeSet<String
 /// every property it had, and read as exactly the tags the change asks for. A file whose list
 /// cannot be rewritten that way is refused rather than written.
 fn write_frontmatter(text: &str, change: Change<'_>) -> Result<Option<String>> {
+    let old = frontmatter::split(text).0.unwrap_or("");
+    let keys = |yaml: &str| -> std::collections::BTreeSet<String> {
+        from_frontmatter(yaml).iter().map(|tag| key(tag)).collect()
+    };
     let Some(written) = rewrite_frontmatter(text, change) else {
+        // Nothing to write must mean nothing to change, not a list read wrong.
+        if keys(old) != expected(old, change) {
+            return Err(refused());
+        }
         return Ok(None);
     };
-    let old = frontmatter::split(text).0.unwrap_or("");
     let new = frontmatter::split(&written).0.unwrap_or("");
     let parses = |yaml: &str| serde_yaml::from_str::<serde_yaml::Value>(yaml).is_ok();
-    let new_tags: std::collections::BTreeSet<String> =
-        from_frontmatter(new).iter().map(|tag| key(tag)).collect();
     let sound = (parses(new) || !parses(old))
         && frontmatter::parse(new) == frontmatter::parse(old)
-        && new_tags == expected(old, change)
+        && keys(new) == expected(old, change)
         && frontmatter::split(&written).1 == frontmatter::split(text).1;
     if !sound {
-        return Err(Error::Invalid(
-            "the tags in this file are written in a way Bud cannot change safely".to_string(),
-        ));
+        return Err(refused());
     }
     Ok(Some(written))
+}
+
+fn refused() -> Error {
+    Error::Invalid(
+        "the tags in this file are written in a way Bud cannot change safely".to_string(),
+    )
 }
 
 /// `body` with every `#from`, and every tag nested under it, renamed to `to`; none when it has
@@ -598,10 +645,8 @@ impl Vault {
                 from: &from,
                 to: &to,
             };
-            // A file whose list cannot be rewritten safely is left as it is.
-            let Ok(written) = write_frontmatter(&before, change) else {
-                continue;
-            };
+            // A list that cannot be rewritten safely stays as it is; the body is still renamed.
+            let written = write_frontmatter(&before, change).ok().flatten();
             let mut after = written.unwrap_or_else(|| before.clone());
             let (_, body) = frontmatter::split(&after);
             if let Some(body_after) = rename_in_body(body, &from, &to) {
