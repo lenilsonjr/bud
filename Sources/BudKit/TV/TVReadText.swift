@@ -17,7 +17,7 @@ public enum TVReadText {
         return nil
     }
 
-    /// The eyebrow over the children: "4 inside · 5 open", or "Nothing inside yet".
+    /// The eyebrow over the children: "4 inside · 2 open", or "Nothing inside yet".
     public static func insideLine(in tree: Tree, under id: UUID) -> String {
         let count = tree.children(of: id).count
         guard count > 0 else { return "Nothing inside yet" }
