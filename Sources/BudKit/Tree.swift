@@ -168,7 +168,9 @@ public struct Tree: Codable, Equatable, Sendable {
         let index = childIndex()
         var out: [UUID] = []
         var stack = (index[id] ?? []).map(\.id)
+        var seen: Set<UUID> = [id]
         while let next = stack.popLast() {
+            guard seen.insert(next).inserted else { continue }
             out.append(next)
             stack.append(contentsOf: (index[next] ?? []).map(\.id))
         }
