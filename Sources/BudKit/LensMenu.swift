@@ -1,20 +1,27 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The rows a lens can tick: the built-in questions, then the tags in use, each with how many
-/// buds answer it alone. Ticked rows combine, and the canvas lights the answer while the menu is
+/// The rows a lens can tick: the built-in questions, then the tags in use, then the buds picked
+/// under "Linked to…", each with how many buds answer it alone. Ticked rows combine, and the canvas lights the answer while the menu is
 /// open. The footer counts the buds that answer every ticked row.
 struct LensMenu: View {
     @ObservedObject var store: BudStore
+    /// Whether "Linked to…" has opened its search.
+    @State private var linking = false
+    @State private var linkQuery = ""
+    @FocusState private var typing: Bool
 
     /// The tags the menu offers: the most used, up to this many.
     static let tagLimit = 8
+    /// The buds "Linked to…" offers at once.
+    static let linkLimit = 5
 
     var body: some View {
         let tags = store.tree.tagCounts().prefix(Self.tagLimit).map { LensFacet.tag($0.tag) }
         VStack(alignment: .leading, spacing: 2) {
             section("Built in", LensFacet.builtIns)
             if !tags.isEmpty { section("Tags", Array(tags)) }
+            links
             Divider().padding(.vertical, 4)
             footer
         }
@@ -33,6 +40,92 @@ struct LensMenu: View {
                 .padding(.bottom, 2)
             ForEach(facets, id: \.self) { facet in row(facet) }
         }
+    }
+
+    /// The buds picked so far, each a row to untick, then "Linked to…", which opens a search over
+    /// the buds that have links, the most linked first.
+    private var links: some View {
+        let picked = store.canvasFacets.filter { if case .linked = $0 { return true } else { return false } }
+        return VStack(alignment: .leading, spacing: 2) {
+            if !picked.isEmpty { section("Links", picked) }
+            if linking {
+                TextField("Linked to…", text: $linkQuery)
+                    .textFieldStyle(.plain)
+                    .focused($typing)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
+                    .onSubmit { if let first = candidates.first { pick(first) } }
+                    .onAppear { typing = true }
+                    .accessibilityIdentifier("lens-linked-search")
+                ForEach(candidates) { bud in
+                    Button { pick(bud) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "link").foregroundStyle(Theme.text2).frame(width: 16)
+                            Text(bud.text).lineLimit(1).foregroundStyle(Theme.text)
+                            Spacer(minLength: 8)
+                            Text("\(linkCount(bud.id))")
+                                .textRole(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.text3)
+                        }
+                        .textRole(.body)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Linked to \(bud.text), \(linkCount(bud.id) == 1 ? "1 bud" : "\(linkCount(bud.id)) buds")")
+                }
+                if candidates.isEmpty {
+                    Text(linkQuery.isEmpty ? "No links yet." : "Nothing matches.")
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.text3)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                }
+            } else {
+                Button {
+                    linking = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "link").foregroundStyle(Theme.text2).frame(width: 16)
+                        Text("Linked to…").foregroundStyle(Theme.text)
+                        Spacer(minLength: 8)
+                    }
+                    .textRole(.body)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, picked.isEmpty ? 6 : 0)
+                .accessibilityIdentifier("lens-linked-to")
+            }
+        }
+    }
+
+    /// Buds with links, not picked yet, whose title has what is typed, the most linked first.
+    private var candidates: [Bud] {
+        let typed = BudLinks.fold(linkQuery.trimmingCharacters(in: .whitespaces))
+        let picked = Set(store.canvasFacets.compactMap { facet -> UUID? in
+            if case .linked(let id, _) = facet { return id } else { return nil }
+        })
+        return store.tree.walk(under: rootID)
+            .filter { linkCount($0.id) > 0 && !picked.contains($0.id) }
+            .filter { typed.isEmpty || BudLinks.fold($0.text).contains(typed) }
+            .sorted { linkCount($0.id) != linkCount($1.id) ? linkCount($0.id) > linkCount($1.id) : $0.text < $1.text }
+            .prefix(Self.linkLimit)
+            .map { $0 }
+    }
+
+    private func linkCount(_ id: UUID) -> Int { store.links.around(id).count }
+
+    private func pick(_ bud: Bud) {
+        withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets.append(.linked(bud.id, title: bud.text)) }
+        linking = false
+        linkQuery = ""
     }
 
     private func row(_ facet: LensFacet) -> some View {
