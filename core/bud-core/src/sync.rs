@@ -300,33 +300,38 @@ impl Tree {
             .collect()
     }
 
-    /// Keep one node per bud identity: the smallest, shallowest twins first, since deleting a
-    /// node deletes the nodes under it and a twin below must be chosen among what is left.
-    /// Every device chooses the same, so they converge.
+    /// Keep one node per bud identity: the smallest. The shallowest twins go first, one identity
+    /// at a time, and what was under a twin moves under the node kept, so a bud below is chosen
+    /// among what is left and nothing goes with the twin. Every device chooses the same, so
+    /// they converge.
     fn settle_twins(&mut self) -> Result<()> {
         loop {
             let mut by_id: HashMap<String, Vec<TreeID>> = HashMap::new();
             for (id, node) in self.live() {
                 by_id.entry(id).or_default().push(node);
             }
-            let twins: Vec<(usize, Vec<TreeID>)> = by_id
-                .into_values()
-                .filter(|nodes| nodes.len() > 1)
-                .map(|nodes| {
-                    let depth = nodes.iter().map(|n| self.depth(*n)).min().unwrap_or(0);
-                    (depth, nodes)
-                })
-                .collect();
-            let Some(top) = twins.iter().map(|(depth, _)| *depth).min() else {
+            let twins =
+                by_id
+                    .into_iter()
+                    .filter(|(_, nodes)| nodes.len() > 1)
+                    .map(|(id, mut nodes)| {
+                        nodes.sort();
+                        let depth = nodes.iter().map(|n| self.depth(*n)).min().unwrap_or(0);
+                        (depth, id, nodes)
+                    });
+            let Some((_, _, nodes)) = twins.min() else {
                 return Ok(());
             };
-            for (_, mut nodes) in twins.into_iter().filter(|(depth, _)| *depth == top) {
-                nodes.sort();
-                for node in &nodes[1..] {
-                    if !self.tree.is_node_deleted(node).unwrap_or(true) {
-                        self.tree.delete(*node).map_err(tree_fail)?;
-                    }
+            let kept = nodes[0];
+            for twin in &nodes[1..] {
+                // A kept node below its twin would go with it: it takes the twin's place first.
+                if self.holds(*twin, kept) {
+                    self.set_parent(kept, self.parent(*twin))?;
                 }
+                for child in self.tree.children(*twin).unwrap_or_default() {
+                    self.set_parent(child, Some(kept))?;
+                }
+                self.tree.delete(*twin).map_err(tree_fail)?;
             }
         }
     }
@@ -377,6 +382,18 @@ impl Tree {
                 return true;
             }
             at = self.parent(node);
+        }
+        false
+    }
+
+    /// Whether `node` is `inner` or one of its ancestors.
+    fn holds(&self, node: TreeID, inner: TreeID) -> bool {
+        let mut at = Some(inner);
+        while let Some(here) = at {
+            if here == node {
+                return true;
+            }
+            at = self.parent(here);
         }
         false
     }
