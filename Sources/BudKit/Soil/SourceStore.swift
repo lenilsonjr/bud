@@ -346,14 +346,16 @@ public final class SourceStore: ObservableObject {
             guard let text = await share(config) else { moved = false; continue }
             waiting.remove(config.id)
             stored[config.id] = text
-            // Disconnected while it was being written: the removal may have landed first.
-            if removed.contains(config.id) { try? await vault.setShared(.sources, config.id, nil) }
         }
         if moved { defaults.set(true, forKey: Self.movedKey) }
         var list = stored.filter { !removed.contains($0.key) }.values
             .compactMap { try? Self.decoder.decode(SourceConfig.self, from: Data($0.utf8)) }
         let ids = Set(list.map(\.id))
-        list += configs.filter { !known.contains($0.id) && !ids.contains($0.id) && !removed.contains($0.id) }
+        // Kept too: one connected while this read, and one whose share has not landed yet.
+        list += configs.filter {
+            (!known.contains($0.id) || waiting.contains($0.id) || sharing.contains($0.id))
+                && !ids.contains($0.id) && !removed.contains($0.id)
+        }
         list.sort { ($0.added ?? .distantPast, $0.id) < ($1.added ?? .distantPast, $1.id) }
         let leased = (try? await vault.shared(.leases)) ?? [:]
         leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
@@ -373,8 +375,15 @@ public final class SourceStore: ObservableObject {
             return nil
         }
         let text = String(decoding: data, as: UTF8.self)
+        sharing.insert(config.id)
+        defer { sharing.remove(config.id) }
         do {
             try await vault.setShared(.sources, config.id, text)
+            // Disconnected while it was being written: the removal may have landed first.
+            if removed.contains(config.id) {
+                try? await vault.setShared(.sources, config.id, nil)
+                return nil
+            }
             return text
         } catch {
             waiting.insert(config.id)
@@ -382,6 +391,8 @@ public final class SourceStore: ObservableObject {
         }
     }
 
+    /// Accounts whose settings are being written to the vault.
+    private var sharing: Set<String> = []
     /// Accounts connected here and not yet in the vault.
     private var waiting: Set<String> = []
     /// Accounts disconnected here, which a read of the vault before the removal lands must not bring back.
