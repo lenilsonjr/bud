@@ -243,6 +243,28 @@ fn removing_a_tag_rewrites_the_list_and_leaves_body_tags_alone() {
 }
 
 #[test]
+fn removing_a_tag_hands_back_the_text_that_puts_it_back_in_place() {
+    let before = "---\ntags: [home, errands]\n---\nMilk\n";
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", before)]);
+    let edit = vault
+        .remove_tag("Note.md", "home")
+        .unwrap()
+        .expect("the list changed");
+    assert_eq!(edit.before, before);
+    assert_eq!(edit.after, read(&dir, "Note.md"));
+    assert!(vault
+        .restore_text("Note.md", &edit.after, &edit.before)
+        .unwrap());
+    assert_eq!(read(&dir, "Note.md"), before, "home comes back first");
+    assert_eq!(vault.tags_of("Note.md").unwrap(), ["home", "errands"]);
+    assert_eq!(
+        vault.remove_tag("Note.md", "work").unwrap(),
+        None,
+        "nothing to take out"
+    );
+}
+
+#[test]
 fn renaming_a_tag_reaches_lists_bodies_and_nested_tags_outside_the_trash() {
     let (mut vault, dir, _index) = vault_with(&[
         ("Groceries.md", "---\ntags: [Home, errands]\n---\nMilk for the #home fridge, #home/kitchen, not #homely or `#home`.\n"),
@@ -384,7 +406,7 @@ fn awkward_lists_are_rewritten_without_breaking_the_block() {
         let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
         match *change {
             "add" => vault.add_tag("Note.md", tag).unwrap(),
-            _ => vault.remove_tag("Note.md", tag).unwrap(),
+            _ => vault.remove_tag("Note.md", tag).map(|_| ()).unwrap(),
         }
         assert_eq!(&read(&dir, "Note.md"), want, "{change} {tag} on {file:?}");
     }
@@ -448,7 +470,7 @@ fn quotes_comments_and_escapes_in_lists_stay_as_written() {
         let (mut vault, dir, _index) = vault_with(&[("Note.md", file)]);
         match *change {
             "add" => vault.add_tag("Note.md", tag).unwrap(),
-            _ => vault.remove_tag("Note.md", tag).unwrap(),
+            _ => vault.remove_tag("Note.md", tag).map(|_| ()).unwrap(),
         }
         assert_eq!(&read(&dir, "Note.md"), want, "{change} {tag} on {file:?}");
     }

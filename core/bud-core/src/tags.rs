@@ -516,7 +516,7 @@ fn rename_in_body(body: &str, from: &str, to: &str) -> Option<String> {
     any.then_some(out)
 }
 
-/// One file a tag rename rewrote: its text before and after, so the rename can be undone.
+/// One file a tag change rewrote: its text before and after, so the change can be undone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagEdit {
     pub path: String,
@@ -605,12 +605,12 @@ impl Vault {
     /// case, is left as it is. A `#tag` in the body does not count: the list is the bud's own.
     pub fn add_tag(&mut self, path: &str, tag: &str) -> Result<()> {
         let tag = clean(tag).ok_or_else(|| Error::Invalid(format!("not a tag: {tag}")))?;
-        self.change_frontmatter(path, Change::Add(&tag))
+        self.change_frontmatter(path, Change::Add(&tag)).map(|_| ())
     }
 
     /// Take `tag` out of the frontmatter of the bud at `path`. A `#tag` in its body stays: that
-    /// is the bud's own text.
-    pub fn remove_tag(&mut self, path: &str, tag: &str) -> Result<()> {
+    /// is the bud's own text. Returns the file's text before and after, when it rewrote one.
+    pub fn remove_tag(&mut self, path: &str, tag: &str) -> Result<Option<TagEdit>> {
         let tag = clean(tag).ok_or_else(|| Error::Invalid(format!("not a tag: {tag}")))?;
         self.change_frontmatter(path, Change::Remove(&tag))
     }
@@ -672,7 +672,7 @@ impl Vault {
         Ok(true)
     }
 
-    fn change_frontmatter(&mut self, path: &str, change: Change<'_>) -> Result<()> {
+    fn change_frontmatter(&mut self, path: &str, change: Change<'_>) -> Result<Option<TagEdit>> {
         self.bud(path)?
             .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
         let text = if path.ends_with(".md") {
@@ -680,10 +680,15 @@ impl Vault {
         } else {
             String::new()
         };
-        match write_frontmatter(&text, change)? {
-            Some(written) => self.write_file(path, &written, None),
-            None => Ok(()),
-        }
+        let Some(written) = write_frontmatter(&text, change)? else {
+            return Ok(None);
+        };
+        self.write_file(path, &written, None)?;
+        Ok(path.ends_with(".md").then(|| TagEdit {
+            path: path.to_string(),
+            before: text,
+            after: written,
+        }))
     }
 
     /// The buds outside the Trash that carry `tag`, in any case, by path.

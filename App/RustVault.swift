@@ -116,7 +116,9 @@ final class RustVault: BudKit.Vault {
     }
 
     func addTag(_ path: String, _ tag: String) async throws { try core.addTag(path: path, tag: tag) }
-    func removeTag(_ path: String, _ tag: String) async throws { try core.removeTag(path: path, tag: tag) }
+    func removeTag(_ path: String, _ tag: String) async throws -> BudKit.TagEditRecord? {
+        try core.removeTag(path: path, tag: tag).map { BudKit.TagEditRecord(path: $0.path, before: $0.before, after: $0.after) }
+    }
 
     func renameTag(_ from: String, to: String) async throws -> [BudKit.TagEditRecord] {
         try core.renameTag(from: from, to: to).map { BudKit.TagEditRecord(path: $0.path, before: $0.before, after: $0.after) }

@@ -158,9 +158,13 @@ public actor MemoryVault: Vault {
         save()
     }
 
-    public func removeTag(_ path: String, _ tag: String) async throws {
-        tree.removeTag(try known(path), tag)
+    public func removeTag(_ path: String, _ tag: String) async throws -> TagEditRecord? {
+        let id = try known(path)
+        guard let old = tree.bud(id) else { return nil }
+        tree.removeTag(id, tag)
         save()
+        guard let new = tree.bud(id), new.tags != old.tags else { return nil }
+        return TagEditRecord(path: id.uuidString, before: Self.text(of: old), after: Self.text(of: new))
     }
 
     /// A bud's text here is its list and body as JSON: the memory vault has no file to hand over.

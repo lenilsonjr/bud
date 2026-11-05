@@ -181,11 +181,12 @@ extension Tree {
         }
     }
 
-    /// Adds `tag` to a bud's own list unless the list has it already, in any case.
-    public mutating func addTag(_ id: UUID, _ tag: String) {
+    /// Adds `tag` to a bud's own list unless the list has it already, in any case: at the end,
+    /// or at `index` when there is one.
+    public mutating func addTag(_ id: UUID, _ tag: String, at index: Int? = nil) {
         guard let tag = BudTags.clean(tag), let i = buds.firstIndex(where: { $0.id == id }),
               !buds[i].tags.contains(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
-        buds[i].tags.append(tag)
+        buds[i].tags.insert(tag, at: min(index ?? buds[i].tags.count, buds[i].tags.count))
     }
 
     /// Takes `tag`, in any case, out of a bud's own list. A `#tag` in its body stays.
