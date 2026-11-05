@@ -117,6 +117,13 @@ pub struct HitRecord {
     pub snippet: String,
 }
 
+/// One entry of a map the vault keeps beside the buds: a source's settings or a lease.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SharedEntry {
+    pub key: String,
+    pub value: String,
+}
+
 /// A `[[link]]` written in a bud: the target as written, its label, and the bud it names when
 /// exactly one does.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -658,6 +665,24 @@ impl Vault {
         Ok(self.core().set_due(&path, due.as_deref())?)
     }
 
+    /// The settings of each connected source, synced with the vault and never holding a token.
+    pub fn sources(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().sources()?))
+    }
+
+    pub fn set_source(&self, id: String, settings: Option<String>) -> Result<()> {
+        Ok(self.core().set_source(&id, settings.as_deref())?)
+    }
+
+    /// Which device keeps each account's planted buds live.
+    pub fn leases(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().leases()?))
+    }
+
+    pub fn set_lease(&self, id: String, lease: Option<String>) -> Result<()> {
+        Ok(self.core().set_lease(&id, lease.as_deref())?)
+    }
+
     /// How a planted bud stands with its source; none clears it.
     pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
         Ok(self.core().set_from_state(&path, state.as_deref())?)
@@ -956,4 +981,11 @@ impl From<bud_core::Counts> for CountsRecord {
             open_todos: counts.open_todos as u64,
         }
     }
+}
+
+fn entries(pairs: Vec<(String, String)>) -> Vec<SharedEntry> {
+    pairs
+        .into_iter()
+        .map(|(key, value)| SharedEntry { key, value })
+        .collect()
 }

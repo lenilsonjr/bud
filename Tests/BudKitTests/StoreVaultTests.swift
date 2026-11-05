@@ -418,6 +418,7 @@ final class StoreVaultTests: XCTestCase {
         let soil = SourceStore(
             defaults: UserDefaults(suiteName: "live-\(UUID().uuidString)")!, tokens: MemoryTokens(),
             http: ScriptedHTTP([(token, 207), (report, 207)]))
+        soil.deviceName = BudStore.deviceName
         await soil.connectCalendar(
             name: "Home", server: URL(string: "https://cal.example.org/")!, user: "sam", password: "p",
             calendar: URL(string: "https://cal.example.org/home/")!)

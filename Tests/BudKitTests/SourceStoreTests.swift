@@ -171,3 +171,70 @@ final class TwoCalendarTests: XCTestCase {
         XCTAssertEqual(found["calendar:gone"], .gone)
     }
 }
+
+@MainActor
+final class SharedSourcesTests: XCTestCase {
+    private let session = URL(string: "https://mail.example.org/jmap/session")!
+    private let sessionReply = """
+    {"apiUrl": "https://mail.example.org/jmap/api/", "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"}}
+    """
+    private let window = """
+    {"methodResponses": [["Email/query", {}, "q"], ["Email/get", {"state": "S1", "list": [{"id": "e1", "subject": "x", "keywords": {}}]}, "g"]]}
+    """
+    private func device(_ http: ScriptedHTTP, tokens: TokenStore = MemoryTokens()) -> SourceStore {
+        SourceStore(defaults: UserDefaults(suiteName: "dev-\(UUID().uuidString)")!, tokens: tokens, http: http)
+    }
+
+    func testASourceConnectedOnOneDeviceShowsLockedOnAnotherWithoutItsToken() async throws {
+        let vault = MemoryVault(tree: Tree())
+        let mac = device(ScriptedHTTP([(sessionReply, 200), (window, 200)]))
+        await mac.use(vault)
+        let config = await mac.connectMail(name: "Work mail", session: session, token: "secret", mailbox: "b1")
+        let phone = device(ScriptedHTTP([]))
+        await phone.use(vault)
+        XCTAssertEqual(phone.accounts.map(\.name), ["Work mail"])
+        XCTAssertTrue(phone.accounts[0].locked)
+        let stored = try await vault.shared(.sources)
+        XCTAssertFalse(stored[config.id]?.contains("secret") ?? true, "the token never enters the vault")
+        mac.disconnect(config.id)
+        try await Task.sleep(for: .milliseconds(50))
+        await phone.reloadShared()
+        XCTAssertEqual(phone.accounts, [])
+    }
+
+    func testAListKeptBeforeMovesIntoTheVault() async throws {
+        let defaults = UserDefaults(suiteName: "old-\(UUID().uuidString)")!
+        let before = SourceStore(defaults: defaults, tokens: MemoryTokens(), http: ScriptedHTTP([(sessionReply, 200), (window, 200)]))
+        await before.connectMail(name: "Mail", session: session, token: "t", mailbox: "b1")
+        let vault = MemoryVault(tree: Tree())
+        let after = SourceStore(defaults: defaults, tokens: MemoryTokens(), http: ScriptedHTTP([]))
+        await after.use(vault)
+        let stored = try await vault.shared(.sources)
+        XCTAssertEqual(stored.count, 1)
+        XCTAssertEqual(after.accounts.map(\.name), ["Mail"])
+    }
+
+    func testOneDeviceAtATimeKeepsAnAccountLiveAndAnotherTakesOverWhenItsLeaseRunsOut() async {
+        let vault = MemoryVault(tree: Tree())
+        let tokens = MemoryTokens()
+        let mac = device(ScriptedHTTP([(sessionReply, 200), (window, 200)]), tokens: tokens)
+        let ipad = device(ScriptedHTTP([(sessionReply, 200), (window, 200)]), tokens: tokens)
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        mac.clock = { now }
+        ipad.clock = { now }
+        mac.deviceName = "Mac"
+        await mac.use(vault)
+        await ipad.use(vault)
+        await mac.connectMail(name: "Mail", session: session, token: "t", mailbox: "b1")
+        await ipad.reloadShared()
+        await ipad.refresh()
+        let macHolds = await mac.holdLeases()
+        XCTAssertEqual(macHolds, [.mail])
+        let ipadHolds = await ipad.holdLeases()
+        XCTAssertEqual(ipadHolds, [], "the Mac's lease still runs")
+        XCTAssertEqual(ipad.lastSync(of: .mail)?.name, "Mac")
+        now += SourceStore.leaseLength + 1
+        let later = await ipad.holdLeases()
+        XCTAssertEqual(later, [.mail])
+    }
+}

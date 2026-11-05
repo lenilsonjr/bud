@@ -15,6 +15,8 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
     /// Calendar: the user name and the calendar the soil shows.
     public var user: String?
     public var calendar: URL?
+    /// When it was connected, which keeps the roots in that order on every device.
+    public var added: Date?
 
     public init(
         id: String = UUID().uuidString, kind: SourceKind, name: String, session: URL? = nil, mailbox: String? = nil,
@@ -27,6 +29,7 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
         self.mailbox = mailbox
         self.user = user
         self.calendar = calendar
+        added = Date()
     }
 }
 
@@ -71,6 +74,12 @@ public final class SourceStore: ObservableObject {
         self.defaults = defaults
         self.tokens = tokens
         self.http = http
+        if let known = defaults.string(forKey: Self.deviceKey) {
+            device = known
+        } else {
+            device = UUID().uuidString
+            defaults.set(device, forKey: Self.deviceKey)
+        }
         let saved = defaults.data(forKey: Self.configsKey).flatMap { try? JSONDecoder().decode([SourceConfig].self, from: $0) }
         configs = saved ?? []
         publish()
@@ -91,6 +100,7 @@ public final class SourceStore: ObservableObject {
         let config = SourceConfig(kind: .mail, name: trimmed.isEmpty ? SourceKind.mail.name : trimmed, session: session, mailbox: mailbox)
         configs.append(config)
         save()
+        await share(config)
         keep(token, for: config)
         await read(config)
         return config
@@ -116,6 +126,7 @@ public final class SourceStore: ObservableObject {
             kind: .calendar, name: trimmed.isEmpty ? SourceKind.calendar.name : trimmed, session: server, user: user, calendar: calendar)
         configs.append(config)
         save()
+        await share(config)
         keep(password, for: config)
         await read(config)
         return config
@@ -138,6 +149,12 @@ public final class SourceStore: ObservableObject {
         problems[id] = nil
         save()
         publish()
+        if let vault {
+            Task {
+                try? await vault.setShared(.sources, id, nil)
+                try? await vault.setShared(.leases, id, nil)
+            }
+        }
     }
 
     // MARK: reading
@@ -269,5 +286,103 @@ public final class SourceStore: ObservableObject {
 
     private func save() {
         defaults.set(try? JSONEncoder().encode(configs), forKey: Self.configsKey)
+    }
+
+    // MARK: the list and the leases in the vault
+
+    /// Which device keeps an account's planted buds live, until when, and when it last synced.
+    public struct Lease: Codable, Hashable, Sendable {
+        public var holder: String
+        public var name: String
+        public var until: Date
+        public var synced: Date
+    }
+
+    private var vault: Vault?
+    public private(set) var leases: [String: Lease] = [:]
+    /// What this device is called on a source row: "Mac", "iPad".
+    public var deviceName = "This device"
+    /// This install, as a lease names it.
+    public let device: String
+    static let deviceKey = "sourceDevice"
+    static let movedKey = "sourcesMovedToVault"
+    /// How long a lease runs without renewal: a few reads, so a device that went away hands over soon.
+    public static let leaseLength: TimeInterval = 600
+
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    /// Keeps the list of sources in the vault from now on, so every device sees it. A list this
+    /// device kept before moves there the first time.
+    public func use(_ vault: Vault) async {
+        self.vault = vault
+        await reloadShared()
+    }
+
+    /// Reads the list and the leases again, after a sync brought someone else's changes.
+    public func reloadShared() async {
+        guard let vault else { return }
+        let stored = (try? await vault.shared(.sources)) ?? [:]
+        var list = stored.values.compactMap { try? Self.decoder.decode(SourceConfig.self, from: Data($0.utf8)) }
+        // Once only: after that an empty list in the vault means every source was disconnected.
+        if !defaults.bool(forKey: Self.movedKey) {
+            defaults.set(true, forKey: Self.movedKey)
+            if stored.isEmpty, !configs.isEmpty {
+                for config in configs { await share(config) }
+                list = configs
+            }
+        }
+        list.sort { ($0.added ?? .distantPast, $0.id) < ($1.added ?? .distantPast, $1.id) }
+        let leased = (try? await vault.shared(.leases)) ?? [:]
+        leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
+        if list != configs {
+            configs = list
+            save()
+            publish()
+        }
+    }
+
+    private func share(_ config: SourceConfig) async {
+        guard let vault, let data = try? Self.encoder.encode(config) else { return }
+        try? await vault.setShared(.sources, config.id, String(decoding: data, as: UTF8.self))
+    }
+
+    /// Takes or renews the lease of each account this device reads, unless another device holds
+    /// one that still runs, and says which kinds this device keeps live now.
+    public func holdLeases() async -> Set<SourceKind> {
+        let now = clock()
+        if let vault {
+            let leased = (try? await vault.shared(.leases)) ?? [:]
+            leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
+        }
+        var held = Set<SourceKind>(), blocked = Set<SourceKind>()
+        for config in configs where problems[config.id] == nil && readAt[config.id] != nil && tokens.token(for: config.id) != nil {
+            if let lease = leases[config.id], lease.holder != device, lease.until > now {
+                blocked.insert(config.kind)
+                continue
+            }
+            let lease = Lease(holder: device, name: deviceName, until: now.addingTimeInterval(Self.leaseLength), synced: now)
+            leases[config.id] = lease
+            if let vault, let data = try? Self.encoder.encode(lease) {
+                try? await vault.setShared(.leases, config.id, String(decoding: data, as: UTF8.self))
+            }
+            held.insert(config.kind)
+        }
+        return held.subtracting(blocked)
+    }
+
+    /// The latest sync of any account of this kind, and the device that ran it.
+    public func lastSync(of kind: SourceKind) -> Lease? {
+        configs.filter { $0.kind == kind }.compactMap { leases[$0.id] }.max { $0.synced < $1.synced }
     }
 }
