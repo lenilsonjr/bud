@@ -10,6 +10,7 @@ struct TopBar: View {
     let onSearch: () -> Void
     @Environment(\.compact) private var compact
     @Environment(\.stillPicture) private var still
+    @State private var lensOpen = false
 
     var body: some View {
         HStack(spacing: compact ? 10 : 14) {
@@ -25,11 +26,11 @@ struct TopBar: View {
                 lastCrumb.frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 breadcrumb.layoutPriority(1)
+                if store.surface == .canvas && !store.canvasFacets.isEmpty { lensChips }
                 Spacer(minLength: 8)
             }
             if compact {
                 if let step = store.nextStep { bullseye(step.bud) }
-                if store.surface == .canvas { lensMenu }
                 Button(action: onSearch) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Theme.text2)
@@ -39,6 +40,7 @@ struct TopBar: View {
                 .buttonStyle(.plain)
                 .help("Go anywhere")
                 .accessibilityLabel("Go anywhere")
+                if store.surface == .canvas { lensMenu }
                 Button(action: onAdd) {
                     Image(systemName: "plus")
                         .foregroundStyle(Theme.text)
@@ -49,15 +51,13 @@ struct TopBar: View {
                 .help("Capture")
                 .accessibilityLabel("Capture")
             } else {
+                if store.surface == .canvas { lensMenu }
                 if let step = store.nextStep { nextStep(step.bud, elsewhere: step.elsewhere) }
                 #if os(macOS)
                 SyncDot(devices: store.devices)
                 #endif
                 goAnywhere
-                if store.surface == .canvas {
-                    lensMenu
-                    zoom
-                }
+                if store.surface == .canvas { zoom }
                 Button(action: onAdd) {
                     BudButtonLabel(title: "Capture", systemImage: "plus")
                 }
@@ -243,68 +243,94 @@ struct TopBar: View {
         .buttonStyle(.plain)
     }
 
-    /// Ask the canvas a question: the hits stay lit, the path to them half lit, the rest fades.
-    /// The picture renderer cannot draw a menu, so a still picture shows the label alone.
+    /// Ask the canvas a question: tick rows in the lens menu and the hits stay lit, the path to
+    /// them half lit, the rest fades, while the menu is still open. The picture renderer cannot
+    /// draw a popover, so a still picture shows the button alone.
     @ViewBuilder private var lensMenu: some View {
-        if still {
-            lensLabel
-        } else {
-            Menu {
-                ForEach(LensQuery.canvasPresets, id: \.name) { preset in
-                    Toggle(preset.name, isOn: Binding(
-                        get: { store.canvasLens == preset.query },
-                        set: { on in withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = on ? preset.query : nil } }
-                    ))
-                }
-                if store.canvasLens != nil {
-                    Divider()
-                    Button("Show everything") {
-                        withAnimation(.easeOut(duration: 0.35)) { store.canvasLens = nil }
-                    }
-                }
-            } label: {
-                lensLabel
-            }
-            .menuStyle(.button)
+        Button { lensOpen.toggle() } label: { lensLabel }
             .buttonStyle(.plain)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help("Light up what matches")
-            .accessibilityLabel(activeLens.map { "Lens: \($0.name)" + (nothingMatches ? ", no matches" : "") } ?? "Lens")
+            .accessibilityLabel(lensSpoken)
             .accessibilityIdentifier("canvas-lens")
-        }
+            .popover(isPresented: still ? .constant(false) : $lensOpen, arrowEdge: .bottom) {
+                LensMenu(store: store)
+                #if os(iOS)
+                .presentationCompactAdaptation(.popover)
+                #endif
+            }
     }
 
     private var nothingMatches: Bool { store.canvasLens != nil && store.canvasLight.isEmpty }
 
-    private var activeLens: (name: String, query: LensQuery)? {
-        LensQuery.canvasPresets.first { $0.query == store.canvasLens }
+    private var lensSpoken: String {
+        let count = store.canvasFacets.count
+        guard count > 0 else { return "Lens" }
+        let names = store.canvasFacets.map(\.name).joined(separator: ", ")
+        return "Lens: \(names)" + (nothingMatches ? ", no matches" : "")
     }
 
     /// On a narrow bar a bare glyph like the search glass beside it, filled while a lens is on;
-    /// elsewhere a chip like the zoom with the lens's name.
+    /// elsewhere "Lens" with how many rows are ticked, filled in leaf while a lens is on.
     @ViewBuilder private var lensLabel: some View {
-        // Filled in leaf while the lens finds something; filled but quiet when it finds nothing.
-        let glyph = Image(systemName: activeLens == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-            .foregroundStyle(activeLens == nil ? Theme.text2 : nothingMatches ? Theme.text3 : Theme.leaf)
+        let on = !store.canvasFacets.isEmpty
         if compact {
-            glyph
+            Image(systemName: on ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(on ? (nothingMatches ? Theme.text3 : Theme.leaf) : Theme.text2)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         } else {
+            let shape = RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
             HStack(spacing: 6) {
-                glyph
-                if let active = activeLens {
-                    Text(nothingMatches ? "No matches" : active.name)
-                        .textRole(.label)
-                        .foregroundStyle(Theme.text)
+                Image(systemName: "line.3.horizontal.decrease")
+                Text("Lens")
+                if on {
+                    Text("\(store.canvasFacets.count)")
+                        .textRole(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.leaf)
+                        .padding(.horizontal, 5)
+                        .background(Theme.onLeaf, in: Capsule())
                 }
             }
+            .textRole(.label)
+            .foregroundStyle(on ? Theme.onLeaf : Theme.text)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(Theme.glass, in: RoundedRectangle(cornerRadius: Radius.button, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.button, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
+            .background(on ? Theme.leaf : Theme.glass, in: shape)
+            .overlay(shape.stroke(on ? Theme.leaf : Theme.lineStrong, lineWidth: 1))
+            .contentShape(shape)
         }
+    }
+
+    /// The lens as chips after the breadcrumb, each with × to untick it.
+    private var lensChips: some View {
+        HStack(spacing: 6) {
+            ForEach(store.canvasFacets, id: \.self) { facet in
+                HStack(spacing: 4) {
+                    Text(facet.name)
+                        .textRole(.label)
+                        .foregroundStyle(Theme.leaf)
+                    Button {
+                        withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets.removeAll { $0 == facet } }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Theme.leaf)
+                            .frame(width: 14, height: 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(facet.name) from the lens")
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 4)
+                .padding(.vertical, 3)
+                .background(Theme.leafSoft, in: Capsule())
+                .overlay(Capsule().stroke(Theme.leafLine, lineWidth: 1))
+            }
+        }
+        .fixedSize()
     }
 
     private var zoom: some View {
