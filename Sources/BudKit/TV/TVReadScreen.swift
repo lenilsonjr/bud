@@ -18,6 +18,7 @@ struct TVReadScreen: View {
         case title
         case body
         case row(UUID)
+        case linked(UUID)
     }
 
     private static let trail = TextStyle(typeface: .text, size: 24, weight: 400)
@@ -172,14 +173,18 @@ struct TVReadScreen: View {
     }
 
     /// The buds whose body links here, read only: each with where it lives and the sentence the
-    /// link sits in, the link in leaf.
+    /// link sits in, the link in leaf. Each row takes the focus like the body, so the remote
+    /// scrolls the page down to them.
     @ViewBuilder private var linkedFrom: some View {
-        if let line = TVReadText.linkedFromLine(in: store.tree, to: id) {
+        let links = store.tree.backlinks(to: id)
+        if let line = TVReadText.linkedFromLine(count: links.count) {
             VStack(alignment: .leading, spacing: 18) {
                 Text(line)
                     .textStyle(Self.eyebrow)
                     .foregroundStyle(Theme.leaf)
-                ForEach(store.tree.backlinks(to: id)) { link in
+                ForEach(links) { link in
+                    let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    let lit = focused == .linked(link.from)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 12) {
                             Text(store.tree.title(of: link.from))
@@ -194,6 +199,16 @@ struct TVReadScreen: View {
                             .textStyle(Self.hint)
                             .foregroundStyle(Theme.text2)
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(lit ? Theme.amethystSoft : .clear, in: shape)
+                    .overlay(shape.stroke(lit ? Theme.amethyst : .clear, lineWidth: 2))
+                    .shadow(color: lit ? Theme.amethyst.opacity(0.35) : .clear, radius: lit ? 24 : 0)
+                    .padding(.horizontal, -24)
+                    .focusable()
+                    .focused($focused, equals: .linked(link.from))
+                    .animation(.easeOut(duration: 0.2), value: lit)
                 }
             }
             .padding(.top, 10)
