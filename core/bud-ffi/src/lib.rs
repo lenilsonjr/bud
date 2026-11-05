@@ -785,9 +785,10 @@ impl Vault {
             .collect())
     }
 
-    /// Write a bud's whole file, as undoing a tag rename does.
-    pub fn set_text(&self, path: String, text: String) -> Result<()> {
-        Ok(self.core().set_text(&path, &text)?)
+    /// Put back a file's text from before a tag rename, if the file still holds what the rename
+    /// wrote. Returns whether it wrote.
+    pub fn restore_text(&self, path: String, expected: String, text: String) -> Result<bool> {
+        Ok(self.core().restore_text(&path, &expected, &text)?)
     }
 
     /// Follow the folder and tell `listener` once per batch of outside changes.

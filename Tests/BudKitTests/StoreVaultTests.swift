@@ -52,6 +52,40 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(other.id)?.body, "See [[\(thread.text)|the launch]].")
     }
 
+    func testATagRenameUndoneAtOnceStillPutsEveryBudBack() async throws {
+        let (store, vault) = await loaded()
+        let a = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let b = try XCTUnwrap(store.tree.children(of: rootID).dropFirst().first)
+        store.addTag(a.id, "home")
+        store.setBody(b.id, "Milk #home")
+        await store.settle()
+        store.renameTag("home", to: "house")
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, ["house"])
+        // Undo before the rename has reached the vault: the undo waits for it.
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where store.tree.bud(b.id)?.body != "Milk #home" { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, ["home"])
+        XCTAssertEqual(store.tree.bud(b.id)?.body, "Milk #home")
+        let records = try await vault.snapshot()
+        XCTAssertEqual(records.first { $0.path == a.id.uuidString }?.tags, ["home"])
+    }
+
+    func testRemovingATagTheBodyAlsoHasCanBeUndone() async throws {
+        let (store, _) = await loaded()
+        let a = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(a.id, "home")
+        store.setBody(a.id, "#home too")
+        await store.settle()
+        store.removeTag(a.id, "home")
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, [])
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where store.tree.bud(a.id)?.tags != ["home"] { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.tree.bud(a.id)?.tags, ["home"])
+    }
+
     func testAFreshStartEmptiesTheVaultAndTheTrash() async throws {
         let (store, vault) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)

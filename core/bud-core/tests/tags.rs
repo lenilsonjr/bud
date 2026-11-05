@@ -179,17 +179,28 @@ fn adding_a_tag_keeps_the_way_the_file_writes_its_list() {
 }
 
 #[test]
-fn adding_a_tag_a_bud_carries_in_any_case_changes_nothing() {
+fn adding_a_tag_the_list_has_in_any_case_changes_nothing_and_the_body_does_not_count() {
     let (mut vault, dir, _index) = vault_with(WORLD);
     vault.add_tag("Groceries.md", "HOME").unwrap();
-    vault.add_tag("Garden.md", "garden/Roses").unwrap();
     assert_eq!(read(&dir, "Groceries.md"), WORLD[0].1);
+    vault.add_tag("Garden.md", "garden/Roses").unwrap();
     assert_eq!(
         read(&dir, "Garden.md"),
-        WORLD[1].1,
-        "a #tag in the body counts"
+        "---\ntags: [garden/Roses]\n---\nPrune the roses #home #garden/roses #Élan\n",
+        "a #tag in the body is not the bud's list"
     );
     assert!(vault.add_tag("Garden.md", "#1").is_err(), "not a tag");
+}
+
+#[test]
+fn restoring_a_text_skips_a_file_edited_since_the_rename() {
+    let (mut vault, dir, _index) = vault_with(&[("Note.md", "#home\n")]);
+    let edits = vault.rename_tag("home", "house").unwrap();
+    vault.set_body("Note.md", "#house and more\n").unwrap();
+    assert!(!vault
+        .restore_text("Note.md", &edits[0].after, &edits[0].before)
+        .unwrap());
+    assert_eq!(read(&dir, "Note.md"), "#house and more\n");
 }
 
 #[test]
@@ -275,7 +286,9 @@ fn renaming_onto_a_tag_in_use_merges_them_and_undo_puts_the_text_back() {
         vec![count("chores", 1), count("home", 1)]
     );
     for edit in &edits {
-        vault.set_text(&edit.path, &edit.before).unwrap();
+        assert!(vault
+            .restore_text(&edit.path, &edit.after, &edit.before)
+            .unwrap());
     }
     assert_eq!(
         read(&dir, "Groceries.md"),

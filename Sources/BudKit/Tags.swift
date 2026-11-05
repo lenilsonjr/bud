@@ -2,25 +2,42 @@ import Foundation
 
 /// Tags, read the way the core reads them (core/bud-core/src/tags.rs): the list in a bud's
 /// frontmatter, which a vault hands over, and the `#tags` in its body's prose. Spellings that
-/// differ only in case are one tag.
+/// differ only in case are one tag. The reading walks Unicode scalars, as the core walks chars,
+/// so a combining mark or a keycap ends a tag in both.
 public enum BudTags {
-    /// A character a tag can hold: a letter, a digit, `_`, `-` or `/` (for nested tags).
-    static func isTagCharacter(_ c: Character) -> Bool {
-        c.isLetter || c.isNumber || c == "_" || c == "-" || c == "/"
+    /// A scalar a tag can hold: a letter, a digit, `_`, `-` or `/` (for nested tags).
+    static func isTagScalar(_ s: Unicode.Scalar) -> Bool {
+        s.properties.isAlphabetic || s.properties.numericType != nil || s == "_" || s == "-" || s == "/"
     }
 
     /// A tag as written, without a leading `#` and trailing `/`; nil when it holds no letter
     /// (`#1` and `#-` are not tags) or anything a tag cannot.
     public static func clean(_ raw: String) -> String? {
-        var tag = Substring(raw.trimmingCharacters(in: .whitespaces))
+        var tag = Substring(raw.trimmingCharacters(in: .whitespacesAndNewlines)).unicodeScalars
         tag = tag.drop { $0 == "#" }
         while tag.last == "/" { tag = tag.dropLast() }
-        guard tag.allSatisfy(isTagCharacter), tag.contains(where: \.isLetter) else { return nil }
+        guard tag.allSatisfy(isTagScalar), tag.contains(where: \.properties.isAlphabetic) else { return nil }
         return String(tag)
     }
 
-    /// What two spellings of one tag share.
-    public static func key(_ tag: String) -> String { tag.lowercased() }
+    /// What two spellings of one tag share: the tag in lower case, a final sigma as `ς`, as the
+    /// core lowers it.
+    public static func key(_ tag: String) -> String {
+        let scalars = Array(tag.unicodeScalars)
+        var out = String.UnicodeScalarView()
+        for (i, s) in scalars.enumerated() {
+            guard s == "\u{03A3}" else {
+                out.append(contentsOf: s.properties.lowercaseMapping.unicodeScalars)
+                continue
+            }
+            func cased(_ side: some Sequence<Unicode.Scalar>) -> Bool {
+                side.first { !$0.properties.isCaseIgnorable }?.properties.isCased ?? false
+            }
+            let final = cased(scalars[..<i].reversed()) && !cased(scalars[(i + 1)...])
+            out.append(final ? "\u{03C2}" : "\u{03C3}")
+        }
+        return String(out)
+    }
 
     /// The `#tags` in a body's prose: a `#` at the start of a line or after a space or a comma,
     /// then tag characters. A heading's `# ` is not a tag, nor is a `#` inside a word or a link,
@@ -29,23 +46,31 @@ public enum BudTags {
         spans(body).map(\.tag)
     }
 
-    /// Each body `#tag` with the line it is on and where its first character after the `#` is.
+    /// Each body `#tag` with the line it is on and the scalar offset of its first scalar after
+    /// the `#`.
     static func spans(_ body: String) -> [(line: Int, start: Int, tag: String)] {
         var out: [(line: Int, start: Int, tag: String)] = []
         for line in BudLinks.prose(body) {
-            let chars = line.blank
-            var previous: Character?
+            // Code reads as spaces, scalar for scalar, so offsets stay offsets into the line.
+            var scalars: [Unicode.Scalar] = []
+            for (written, blank) in zip(line.written, line.blank) {
+                let own = Array(written.unicodeScalars)
+                scalars += written == blank ? own : Array(repeating: " ", count: own.count)
+            }
+            var previous: Unicode.Scalar?
             var i = 0
-            while i < chars.count {
-                let c = chars[i]
-                if c == "#", previous.map({ $0.isWhitespace || $0 == "," }) ?? true {
-                    let run = chars[(i + 1)...].prefix(while: isTagCharacter)
-                    if let tag = clean(String(run)) { out.append((line.index, i + 1, tag)) }
+            while i < scalars.count {
+                let s = scalars[i]
+                if s == "#", previous.map({ $0.properties.isWhitespace || $0 == "," }) ?? true {
+                    let run = scalars[(i + 1)...].prefix(while: isTagScalar)
+                    var text = String.UnicodeScalarView()
+                    text.append(contentsOf: run)
+                    if let tag = clean(String(text)) { out.append((line.index, i + 1, tag)) }
                     previous = run.last ?? "#"
                     i += 1 + run.count
                     continue
                 }
-                previous = c
+                previous = s
                 i += 1
             }
         }
@@ -60,9 +85,11 @@ public enum BudTags {
 
     /// `tag` with `from`, in any case, swapped for `to` when it is `from` or nested under it.
     static func renamed(_ tag: String, from: String, to: String) -> String? {
-        let head = String(tag.prefix(from.count))
-        let rest = tag.dropFirst(from.count)
-        guard key(head) == key(from), rest.isEmpty || rest.first == "/" else { return nil }
+        let scalars = tag.unicodeScalars
+        let cut = scalars.index(scalars.startIndex, offsetBy: from.unicodeScalars.count, limitedBy: scalars.endIndex) ?? scalars.endIndex
+        let head = String(scalars[..<cut])
+        let rest = String(scalars[cut...])
+        guard key(head) == key(from), rest.isEmpty || rest.hasPrefix("/") else { return nil }
         return to + rest
     }
 
@@ -79,26 +106,20 @@ public enum BudTags {
     /// none.
     static func renaming(body: String, from: String, to: String) -> String? {
         let hits = spans(body).compactMap { span in
-            renamed(span.tag, from: from, to: to).map { (span.line, span.start, span.tag.count, $0) }
+            renamed(span.tag, from: from, to: to).map { (span.line, span.start, span.tag.unicodeScalars.count, $0) }
         }
         guard !hits.isEmpty else { return nil }
-        var lines = BudLinks.lines(body).map { Array($0) }
+        // Lines split on "\n" alone keep a "\r" at their end, so each keeps its ending.
+        var lines = body.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false).map(Array.init)
         for (line, start, count, new) in hits.reversed() {
-            lines[line].replaceSubrange(start..<start + count, with: Array(new))
+            lines[line].replaceSubrange(start..<start + count, with: Array(new.unicodeScalars))
         }
-        // Put each line back with the ending it had.
-        var out = ""
-        var rest = Substring(body)
+        var out = String.UnicodeScalarView()
         for (i, line) in lines.enumerated() {
-            out += String(line)
-            let written = BudLinks.lines(body)[i]
-            rest = rest.dropFirst(written.count)
-            if let end = rest.first {
-                out.append(end)
-                rest = rest.dropFirst()
-            }
+            if i > 0 { out.append("\n") }
+            out.append(contentsOf: line)
         }
-        return out
+        return String(out)
     }
 }
 
@@ -113,8 +134,8 @@ public struct TagCount: Hashable, Sendable {
     }
 }
 
-/// One bud a tag rename changed: its text before and after, as the vault writes it. `setText`
-/// with `before` undoes the rename for that bud.
+/// One bud a tag rename changed: its text before and after, as the vault writes it.
+/// `restoreText` puts `before` back while the bud still holds `after`.
 public struct TagEditRecord: Hashable, Sendable {
     public var path: String
     public var before: String
@@ -160,10 +181,10 @@ extension Tree {
         }
     }
 
-    /// Adds `tag` to a bud's own list unless it carries it already.
+    /// Adds `tag` to a bud's own list unless the list has it already, in any case.
     public mutating func addTag(_ id: UUID, _ tag: String) {
         guard let tag = BudTags.clean(tag), let i = buds.firstIndex(where: { $0.id == id }),
-              !buds[i].carries(tag) else { return }
+              !buds[i].tags.contains(where: { BudTags.key($0) == BudTags.key(tag) }) else { return }
         buds[i].tags.append(tag)
     }
 

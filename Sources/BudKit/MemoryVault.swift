@@ -177,13 +177,15 @@ public actor MemoryVault: Vault {
         }
     }
 
-    public func setText(_ path: String, _ text: String) async throws {
+    public func restoreText(_ path: String, from expected: String, to text: String) async throws -> Bool {
         let id = try known(path)
+        guard let now = tree.bud(id), Self.text(of: now) == expected else { return false }
         guard let data = text.data(using: .utf8), let written = try? JSONDecoder().decode(Written.self, from: data),
               let i = tree.buds.firstIndex(where: { $0.id == id }) else { throw VaultError.refused("Not a text from this vault") }
         tree.buds[i].tags = written.tags
         tree.buds[i].body = written.body
         save()
+        return true
     }
 
     private struct Written: Codable {
@@ -192,7 +194,10 @@ public actor MemoryVault: Vault {
     }
 
     private static func text(of bud: Bud) -> String {
-        let data = (try? JSONEncoder().encode(Written(tags: bud.tags, body: bud.body))) ?? Data()
+        // Sorted keys: the text is compared later, so the same bud must always give the same text.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(Written(tags: bud.tags, body: bud.body))) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 
