@@ -253,7 +253,7 @@ struct TopBar: View {
             .help("Light up what matches")
             .accessibilityLabel(lensSpoken)
             .accessibilityIdentifier("canvas-lens")
-            .popover(isPresented: still ? .constant(false) : $lensOpen, arrowEdge: .bottom) {
+            .popover(isPresented: still ? .constant(false) : $lensOpen, arrowEdge: .top) {
                 LensMenu(store: store)
                 #if os(iOS)
                 .presentationCompactAdaptation(.popover)
