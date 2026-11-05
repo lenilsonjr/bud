@@ -21,7 +21,7 @@ struct LensMenu: View {
         VStack(alignment: .leading, spacing: 2) {
             section("Built in", LensFacet.builtIns)
             if !tags.isEmpty { section("Tags", Array(tags)) }
-            let sources = Self.sources(in: store.tree)
+            let sources = Array(Self.sources(in: store.tree).prefix(Self.tagLimit))
             if !sources.isEmpty { section("Sources", sources) }
             links
             Divider().padding(.vertical, 4)

@@ -188,19 +188,20 @@ final class LensQueryTests: XCTestCase {
         let pr = t.add("Review the PR", todo: true, under: rootID)
         let note = t.add("Typed here", todo: false, under: rootID)
         let mac = t.add("Captured on the Mac", todo: false, under: rootID)
-        for (id, source) in [(issue.id, "linear:BUD-77"), (pr.id, "GitHub:bud#12"), (mac.id, "mac")] {
+        for (id, source) in [(issue.id, "mail:1234"), (pr.id, "Web:page-12"), (mac.id, "mac")] {
             if let i = t.buds.firstIndex(where: { $0.id == id }) { t.buds[i].source = source }
         }
 
-        XCTAssertEqual(LensFacet.source("linear").query.hits(t).map(\.id), [issue.id])
-        XCTAssertEqual(LensFacet.source("github").query.hits(t).map(\.id), [pr.id])
+        XCTAssertEqual(LensFacet.source("mail").query.hits(t).map(\.id), [issue.id])
+        XCTAssertEqual(LensFacet.source("web").query.hits(t).map(\.id), [pr.id])
         XCTAssertEqual(LensFacet.source("mac").query.hits(t).map(\.id), [mac.id])
-        XCTAssertFalse(LensFacet.source("linear").query.hits(t).contains { $0.id == note.id })
-        XCTAssertEqual(LensFacet.source("github").name, "From GitHub")
-        XCTAssertEqual(LensFacet.query(of: [.source("linear"), .openTodos])?.hits(t).map(\.id), [issue.id])
-        XCTAssertEqual(LensFacet.query(of: [.source("linear"), .source("github")])?.hits(t).map(\.id), [],
+        XCTAssertFalse(LensFacet.source("mail").query.hits(t).contains { $0.id == note.id })
+        XCTAssertEqual(LensFacet.source("web").name, "From Web")
+        XCTAssertEqual(LensFacet.query(of: [.source("mail"), .openTodos])?.hits(t).map(\.id), [issue.id])
+        XCTAssertEqual(LensFacet.query(of: [.source("mail"), .source("web")])?.hits(t).map(\.id), [],
                        "one bud has one source")
-        XCTAssertEqual(LensQuery.sourceKey(" Linear :x"), "linear")
+        XCTAssertEqual(LensQuery.sourceKey(" Mail :x"), "mail")
         XCTAssertNil(LensQuery.sourceKey(":x"))
+        XCTAssertEqual(LensQuery.sourceKey("desktop"), "mac", "the Mac's capture panel")
     }
 }

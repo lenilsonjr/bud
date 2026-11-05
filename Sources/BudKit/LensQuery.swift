@@ -27,7 +27,7 @@ public struct LensQuery: Hashable, Sendable {
     /// Something was added somewhere below the bud in the last `grownDays` days.
     public var grown: Bool
     /// Where the bud came from: the part of its source before any ":", in any case
-    /// (`linear:BUD-77` is from `linear`).
+    /// (`mail:1234` is from `mail`).
     public var source: String?
     /// How far back "Recently grown" looks.
     public static let grownDays = 7
@@ -50,12 +50,21 @@ public struct LensQuery: Hashable, Sendable {
         self.source = source.flatMap(Self.sourceKey)
     }
 
+    /// Where "Recently grown" starts: `grownDays` days before the start of today, so the window
+    /// moves at midnight with the rest of the day's lenses, not by the minute.
+    static func grownSince(_ now: Date, calendar: Calendar) -> Date {
+        let today = calendar.startOfDay(for: now)
+        return calendar.date(byAdding: .day, value: -grownDays, to: today) ?? today
+    }
+
     /// The source a bud's provenance names: what comes before any ":", lowercased; nil for none.
     public static func sourceKey(_ provenance: String?) -> String? {
         guard let provenance else { return nil }
         let key = provenance.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first
             .map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
-        return key.isEmpty ? nil : key
+        guard !key.isEmpty else { return nil }
+        // The Mac's capture panel says "desktop"; it is the Mac all the same.
+        return key == "desktop" ? "mac" : key
     }
 
     public static let todos = LensQuery(kind: .todo, state: .open)
@@ -89,7 +98,7 @@ public struct LensQuery: Hashable, Sendable {
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
-        let growers = grown ? tree.grown(since: now.addingTimeInterval(-Double(Self.grownDays) * 86_400)) : []
+        let growers = grown ? tree.grown(since: Self.grownSince(now, calendar: calendar)) : []
         return matches(
             bud, holders: holders, growers: growers, around: around(in: tree, links: nil),
             start: calendar.startOfDay(for: now)
@@ -175,7 +184,7 @@ public struct LensQuery: Hashable, Sendable {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
         let start = calendar.startOfDay(for: now)
         let around = around(in: tree, links: links)
-        let growers = grown ? tree.grown(since: now.addingTimeInterval(-Double(Self.grownDays) * 86_400)) : []
+        let growers = grown ? tree.grown(since: Self.grownSince(now, calendar: calendar)) : []
         return tree.walk(under: rootID).filter {
             matches($0, holders: holders, growers: growers, around: around, start: start)
         }
