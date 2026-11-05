@@ -29,7 +29,7 @@ struct CardStyle {
     static func caption(for bud: Bud, in tree: Tree) -> String {
         let kids = tree.children(of: bud.id)
         if kids.isEmpty { return bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note" }
-        let open = tree.openCount(under: bud.id)
+        let open = tree.openChildren(of: bud.id)
         return "\(kids.count) inside" + (open > 0 ? " · \(open) open" : "")
     }
 }
