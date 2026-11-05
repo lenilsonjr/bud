@@ -148,6 +148,7 @@ public final class SourceStore: ObservableObject {
         calendarSeen[id] = nil
         problems[id] = nil
         removed.insert(id)
+        waiting.remove(id)
         save()
         publish()
         if let vault {
@@ -333,6 +334,8 @@ public final class SourceStore: ObservableObject {
     /// Reads the list and the leases again, after a sync brought someone else's changes.
     public func reloadShared() async {
         guard let vault else { return }
+        // What was here before the read: an account connected while this reads is kept.
+        let known = Set(configs.map(\.id))
         guard var stored = try? await vault.shared(.sources) else { return }
         // Once only, the accounts this device kept itself join the vault's list; after that an
         // account missing from the vault was disconnected somewhere. Also the ones connected
@@ -340,14 +343,17 @@ public final class SourceStore: ObservableObject {
         let unshared = defaults.bool(forKey: Self.movedKey) ? configs.filter { waiting.contains($0.id) } : configs
         var moved = true
         for config in unshared where stored[config.id] == nil && !removed.contains(config.id) {
-            if let text = await share(config) { stored[config.id] = text } else { moved = false }
+            guard let text = await share(config) else { moved = false; continue }
+            waiting.remove(config.id)
+            stored[config.id] = text
+            // Disconnected while it was being written: the removal may have landed first.
+            if removed.contains(config.id) { try? await vault.setShared(.sources, config.id, nil) }
         }
-        if moved {
-            defaults.set(true, forKey: Self.movedKey)
-            waiting.removeAll()
-        }
+        if moved { defaults.set(true, forKey: Self.movedKey) }
         var list = stored.filter { !removed.contains($0.key) }.values
             .compactMap { try? Self.decoder.decode(SourceConfig.self, from: Data($0.utf8)) }
+        let ids = Set(list.map(\.id))
+        list += configs.filter { !known.contains($0.id) && !ids.contains($0.id) && !removed.contains($0.id) }
         list.sort { ($0.added ?? .distantPast, $0.id) < ($1.added ?? .distantPast, $1.id) }
         let leased = (try? await vault.shared(.leases)) ?? [:]
         leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
