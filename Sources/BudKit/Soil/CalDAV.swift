@@ -94,6 +94,7 @@ public struct CalDAV: Sendable {
         if status == 401 || status == 403 { throw SourceError.unauthorized }
         guard (200..<300).contains(status) else { throw SourceError.status(status) }
         guard let tree = XMLNode.parse(data) else { throw SourceError.unreadable(method) }
+        tree.dropMissing()
         return tree
     }
 
@@ -137,6 +138,13 @@ final class XMLNode: @unchecked Sendable {
     /// Every element of this name at any depth, in document order.
     func all(_ name: String) -> [XMLNode] {
         (self.name == name ? [self] : []) + children.flatMap { $0.all(name) }
+    }
+
+    /// Takes out each `propstat` whose status is not 200: a property the server does not have comes
+    /// back empty under a 404, and reads as present otherwise.
+    func dropMissing() {
+        children.removeAll { $0.name == "propstat" && !($0.first("status")?.text.contains(" 200") ?? true) }
+        for child in children { child.dropMissing() }
     }
 
     static func parse(_ data: Data) -> XMLNode? {
@@ -193,8 +201,15 @@ enum ICS {
     static func events(in text: String) -> [Event] {
         var events: [Event] = []
         var current: Event?
+        // An alarm inside an event has its own UID and SUMMARY; its lines are not the event's.
+        var nested = 0
         for line in unfold(text) {
             let (name, params, value) = split(line)
+            if current != nil, name == "BEGIN", value != "VEVENT" { nested += 1; continue }
+            if current != nil, nested > 0 {
+                if name == "END" { nested -= 1 }
+                continue
+            }
             switch name {
             case "BEGIN" where value == "VEVENT":
                 current = Event(uid: "", summary: "Untitled event", cancelled: false)

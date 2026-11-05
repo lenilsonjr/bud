@@ -52,8 +52,8 @@ final class LiveRulesTests: XCTestCase {
         let mail = Bud(text: "Lease draft", from: "mail:M-1")
         let unflagged = SourceItem(id: "M-1", title: "Lease draft")
         let flagged = SourceItem(id: "M-1", title: "Lease draft", todo: true)
-        XCTAssertEqual(LiveRules.changes(for: mail, kind: .mail, sighting: .seen(flagged), last: SourceSnapshot(unflagged), now: now).changes, [.state(.open)])
-        XCTAssertEqual(LiveRules.changes(for: mail, kind: .mail, sighting: .seen(unflagged), last: SourceSnapshot(flagged), now: now).changes, [.state(.done)])
+        XCTAssertEqual(LiveRules.changes(for: mail, kind: .mail, sighting: .seen(flagged), last: SourceSnapshot(unflagged), now: now).changes, [.state(.open), .mark("flagged \(stamp)")])
+        XCTAssertEqual(LiveRules.changes(for: mail, kind: .mail, sighting: .seen(unflagged), last: SourceSnapshot(flagged), now: now).changes, [.state(.done), .mark("unflagged \(stamp)")])
     }
 
     func testTheFromStateReadsBackAsAMark() {
@@ -64,5 +64,39 @@ final class LiveRulesTests: XCTestCase {
         XCTAssertEqual(moved?.at, now)
         XCTAssertNil(SourceMark(fromState: nil))
         XCTAssertNil(SourceMark(fromState: " "))
+    }
+}
+
+final class LiveRulesCatchUpTests: XCTestCase {
+    func testADeviceThatLookedBeforeAnotherOneChangedTheBudCatchesUpWithoutWriting() {
+        let then = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = then.addingTimeInterval(3600)
+        let last = SourceSnapshot(SourceItem(id: "E-1", title: "A"), at: then)
+        let stamp = ISO8601DateFormatter().string(from: then.addingTimeInterval(600))
+        let bud = Bud(text: "My B", from: "calendar:E-1", fromState: "renamed \(stamp)")
+        let result = LiveRules.changes(for: bud, kind: .calendar, sighting: .seen(SourceItem(id: "E-1", title: "B")), last: last, now: later)
+        XCTAssertEqual(result.changes, [], "the edit made after the other device renamed it stands")
+        XCTAssertEqual(result.seen?.title, "B")
+    }
+
+    func testAnAlarmInsideAnEventDoesNotTakeItsUidOrTitle() {
+        let text = "BEGIN:VEVENT\nUID:event\nSUMMARY:Dentist\nBEGIN:VALARM\nUID:alarm\nSUMMARY:Reminder\nEND:VALARM\nDTSTART:20261106T090000Z\nEND:VEVENT"
+        let events = ICS.events(in: text)
+        XCTAssertEqual(events.map(\.uid), ["event"])
+        XCTAssertEqual(events.first?.summary, "Dentist")
+        XCTAssertNotNil(events.first?.start)
+    }
+
+    func testAPropertyTheServerDoesNotHaveIsLeftOut() {
+        let xml = """
+        <d:multistatus xmlns:d="DAV:"><d:response><d:href>/c/</d:href>
+        <d:propstat><d:prop><cs:getctag xmlns:cs="http://calendarserver.org/ns/">42</cs:getctag></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
+        <d:propstat><d:prop><d:sync-token/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>
+        </d:response></d:multistatus>
+        """
+        let tree = XMLNode.parse(Data(xml.utf8))!
+        tree.dropMissing()
+        XCTAssertNil(tree.first("sync-token"))
+        XCTAssertEqual(tree.first("getctag")?.text, "42")
     }
 }
