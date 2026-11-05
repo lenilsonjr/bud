@@ -38,14 +38,14 @@ final class LinearIssuesTests: XCTestCase {
     func testChangesAreAskedForByUpdatedAtSinceTheLastRead() async throws {
         let http = ScriptedHTTP([
             ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": []}}}}", 200),
-            ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": [{\"id\": \"u1\"}]}}}}", 200),
+            ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": [{\"updatedAt\": \"2026-11-05T12:00:00.000Z\"}]}}}}", 200),
         ])
         let linear = LinearIssues(token: "k", http: http)
         let since = LinearIssues.instant("2026-11-05T11:30:00.000Z")!
         let quiet = try await linear.changed(since: since)
-        XCTAssertFalse(quiet)
+        XCTAssertNil(quiet)
         let moved = try await linear.changed(since: since)
-        XCTAssertTrue(moved)
+        XCTAssertNotNil(moved)
         let query = http.body(0)["query"] as? String ?? ""
         XCTAssertTrue(query.contains("updatedAt: { gt: \"2026-11-05T11:30:00.000Z\" }"), query)
     }
@@ -101,7 +101,7 @@ final class LinearSourceTests: XCTestCase {
         let http = ScriptedHTTP([
             (window("Ship"), 200),
             (empty, 200),
-            ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": [{\"id\": \"u\"}]}}}}", 200), (window("Ship it"), 200),
+            ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": [{\"updatedAt\": \"2026-11-05T12:00:00.000Z\"}]}}}}", 200), (window("Ship it"), 200),
             (window("Ship it now"), 200),
         ])
         let store = SourceStore(defaults: UserDefaults(suiteName: "lin-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
@@ -154,10 +154,28 @@ final class LinearLiveRulesTests: XCTestCase {
 
     func testCompletedTicksTheBudAndReopenedOpensIt() {
         let done = LiveRules.changes(for: bud, kind: .linear, sighting: .seen(issue(todo: false)), last: SourceSnapshot(issue()), now: now)
-        XCTAssertEqual(done.changes, [.state(.done), .mark("closed")])
+        XCTAssertEqual(done.changes, [.state(.done), .mark("closed \(stamp)")])
+        XCTAssertEqual(SourceMark(fromState: "closed \(stamp)")?.status, .closed)
+        XCTAssertEqual(SourceMark(fromState: "closed \(stamp)")?.at, now)
         let back = LiveRules.changes(
             for: Bud(text: "Ship", state: .open, from: "linear:ENG-1", fromState: "closed"), kind: .linear,
             sighting: .seen(issue()), last: done.seen, now: now)
+        XCTAssertEqual(back.changes, [.state(.open), .mark("reopened \(stamp)")])
+    }
+
+    func testTheBodyFollowsTheStateUntilItIsEdited() {
+        let started = SourceItem(id: "ENG-1", title: "Ship", detail: "ENG · In Progress", priority: 2, todo: true)
+        let planted = Bud(text: "Ship", state: .open, body: "ENG · Todo\n", from: "linear:ENG-1")
+        let result = LiveRules.changes(for: planted, kind: .linear, sighting: .seen(started), last: SourceSnapshot(issue()), now: now)
+        XCTAssertEqual(result.changes, [.body("ENG · In Progress")])
+        let edited = Bud(text: "Ship", state: .open, body: "ENG · Todo\nCall Sam first", from: "linear:ENG-1")
+        XCTAssertEqual(LiveRules.changes(for: edited, kind: .linear, sighting: .seen(started), last: SourceSnapshot(issue()), now: now).changes, [])
+    }
+
+    func testReopeningACancelledIssueSaysReopened() {
+        let back = LiveRules.changes(
+            for: Bud(text: "Ship", state: .done, from: "linear:ENG-1", fromState: "cancelled"), kind: .linear,
+            sighting: .seen(issue()), last: SourceSnapshot(issue(todo: false, cancelled: true)), now: now)
         XCTAssertEqual(back.changes, [.state(.open), .mark("reopened \(stamp)")])
     }
 
