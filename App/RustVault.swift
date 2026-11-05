@@ -31,7 +31,7 @@ final class RustVault: BudKit.Vault {
         try core.create(parent: parent, title: title, kind: kind == .todo ? .todo : .note, source: source)
     }
 
-    func plant(parent: String?, title: String, kind: BudKit.BudKind, from: String) async throws -> Planting {
+    func plant(parent: String?, title: String, kind: BudKit.BudKind, from: String, preferredPath: String?) async throws -> Planting {
         let planted = try core.plant(parent: parent, title: title, kind: kind == .todo ? .todo : .note, from: from)
         return Planting(path: planted.path, new: planted.new)
     }

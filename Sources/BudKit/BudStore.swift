@@ -292,6 +292,39 @@ public final class BudStore: ObservableObject {
         }
     }
 
+    /// Plants a source item where it was dropped, as a bud carrying its `from` key, and offers to
+    /// take it back. An item planted before is not planted twice: the canvas goes to its bud.
+    @discardableResult
+    public func plant(_ item: SourceItem, from account: SourceAccount, at target: PlantTarget) -> Bud {
+        let key = account.kind.key(item.id)
+        if let bud = tree.planted(from: key) {
+            if bud.parent == inboxID { inboxOpen = true } else { center = bud.parent }
+            lastPlanted = Planted(id: bud.id, at: Date())
+            toasts.show(Undoable(message: "Already planted in \(tree.title(of: bud.parent))", systemImage: "leaf"))
+            return bud
+        }
+        let parent: UUID
+        switch target {
+        case .inbox: parent = inboxID
+        case .under(let id): parent = id
+        }
+        var planted = Bud(text: item.title)
+        commit { planted = $0.plant(item.title, todo: item.todo, under: parent, from: key) }
+        let id = planted.id
+        write { [self] vault in
+            let planting = try await vault.plant(
+                parent: parentPath(parent), title: item.title, kind: item.todo ? .todo : .note, from: key,
+                preferredPath: id.uuidString
+            )
+            book.learn(id, at: planting.path)
+        }
+        lastPlanted = Planted(id: id, at: Date())
+        toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
+            Task { @MainActor in self?.remove(id) }
+        })
+        return planted
+    }
+
     /// The word a capture carries for the device it was made on.
     nonisolated public static var platformSource: String {
         #if os(macOS)
