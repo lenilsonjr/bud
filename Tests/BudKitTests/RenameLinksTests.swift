@@ -27,4 +27,27 @@ final class RenameLinksTests: XCTestCase {
         let a = Bud(text: "A", body: "[[Twin]]")
         XCTAssertEqual(Tree(buds: [one, two, a]).relinked(renaming: one.id, to: "Single"), [:])
     }
+
+    func testTakingAnotherBudsTitleKeepsItsLinks() {
+        let foo = Bud(text: "Foo")
+        let home = Bud(text: "Home")
+        let bar = Bud(text: "Bar", parent: home.id)
+        let z = Bud(text: "Z", body: "[[Bar]] and [[Foo]]")
+        let tree = Tree(buds: [foo, home, bar, z])
+        XCTAssertEqual(tree.relinked(renaming: foo.id, to: "Bar"), [z.id: "[[Home/Bar]] and [[Bar]]"])
+    }
+
+    func testRenamingAFolderKeepsPathLinksUnderIt() {
+        let home = Bud(text: "Home")
+        let twin = Bud(text: "Twin", parent: home.id)
+        let w = Bud(text: "W", body: "[[Home/Twin]]")
+        let tree = Tree(buds: [home, twin, Bud(text: "Twin"), w])
+        XCTAssertEqual(tree.relinked(renaming: home.id, to: "House"), [w.id: "[[House/Twin]]"])
+    }
+
+    func testTitlesALinkCannotCarryRewriteNothing() {
+        let a = Bud(text: "A")
+        let tree = Tree(buds: [a, Bud(text: "B", body: "[[A]]")])
+        for title in ["C# notes", "a|b", "x]]y", "a/b"] { XCTAssertEqual(tree.relinked(renaming: a.id, to: title), [:], title) }
+    }
 }

@@ -347,36 +347,41 @@ public final class BudStore: ObservableObject {
         return true
     }
 
-    /// A new title rewrites the links that named the bud, and offers to take both back.
+    /// A new title rewrites the links it would break, and offers to take both back. The bodies
+    /// are written only once the vault has taken the new title.
     public func update(_ id: UUID, text: String, todo: Bool) {
         guard let before = tree.bud(id) else { return }
         let relinked = text != before.text ? tree.relinked(renaming: id, to: text) : [:]
         let bodies = relinked.keys.reduce(into: [UUID: String]()) { $0[$1] = tree.bud($1)?.body }
-        commit { $0.update(id, text: text, todo: todo) }
+        commit { tree in
+            tree.update(id, text: text, todo: todo)
+            for (other, body) in relinked { tree.setBody(other, body) }
+        }
         write { [self] vault in
             if text != before.text { try await relocate(id) { try await $0.rename($1, to: text) } }
             if todo, before.state == nil { try await edit(id) { try await $0.setState($1, .open) } }
             if !todo, before.state != nil { try await edit(id) { try await $0.setState($1, nil) } }
+            for (other, body) in relinked { try await edit(other) { try await $0.setBody($1, body) } }
         }
         guard !relinked.isEmpty else { return }
-        rewrite(relinked)
         let count = relinked.count
         toasts.show(Undoable(message: count == 1 ? "Updated links in 1 bud" : "Updated links in \(count) buds", systemImage: "link") {
             [weak self] in
-            Task { @MainActor in
-                guard let self, let now = self.tree.bud(id) else { return }
-                self.commit { $0.update(id, text: before.text, todo: now.isTodo) }
-                self.write { [self] _ in try await self.relocate(id) { try await $0.rename($1, to: before.text) } }
-                self.rewrite(bodies)
-            }
+            Task { @MainActor in self?.undoRename(id, from: text, to: before.text, relinked: relinked, bodies: bodies) }
         })
     }
 
-    /// Sets several bodies at once, here and in the vault.
-    private func rewrite(_ bodies: [UUID: String]) {
-        commit { tree in for (id, body) in bodies { tree.setBody(id, body) } }
+    /// Takes a rename back, and the links it rewrote, where nothing has changed them since.
+    private func undoRename(_ id: UUID, from title: String, to old: String, relinked: [UUID: String], bodies: [UUID: String]) {
+        guard let now = tree.bud(id), now.text == title else { return }
+        let restore = bodies.filter { tree.bud($0.key)?.body == relinked[$0.key] }
+        commit { tree in
+            tree.update(id, text: old, todo: now.isTodo)
+            for (other, body) in restore { tree.setBody(other, body) }
+        }
         write { [self] _ in
-            for (id, body) in bodies { try await edit(id) { try await $0.setBody($1, body) } }
+            try await relocate(id) { try await $0.rename($1, to: old) }
+            for (other, body) in restore { try await edit(other) { try await $0.setBody($1, body) } }
         }
     }
 
