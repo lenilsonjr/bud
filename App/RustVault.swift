@@ -31,6 +31,11 @@ final class RustVault: BudKit.Vault {
         try core.create(parent: parent, title: title, kind: kind == .todo ? .todo : .note, source: source)
     }
 
+    func plant(parent: String?, title: String, kind: BudKit.BudKind, from: String) async throws -> Planting {
+        let planted = try core.plant(parent: parent, title: title, kind: kind == .todo ? .todo : .note, from: from)
+        return Planting(path: planted.path, new: planted.new)
+    }
+
     func setBody(_ path: String, _ text: String) async throws { try core.setBody(path: path, text: text) }
 
     func setState(_ path: String, _ state: BudKit.BudState?) async throws {
@@ -146,7 +151,7 @@ final class RustVault: BudKit.Vault {
         BudKit.BudRecord(
             path: bud.path, parent: bud.parent, title: bud.title, kind: bud.kind == .todo ? .todo : .note,
             state: bud.state.map { $0 == .done ? .done : .open }, when: bud.when.flatMap(date), due: bud.due.flatMap(date),
-            pinned: bud.pinned, created: bud.created.flatMap(date), source: bud.source, body: bud.body,
+            pinned: bud.pinned, created: bud.created.flatMap(date), source: bud.source, from: bud.from, body: bud.body,
             place: place(bud.place), tags: bud.tags
         )
     }

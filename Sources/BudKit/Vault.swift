@@ -25,6 +25,8 @@ public struct BudRecord: Codable, Hashable, Sendable {
     public var pinned: Bool
     public var created: Date?
     public var source: String?
+    /// The source item a planted bud came from, as in `mail:M1234`.
+    public var from: String?
     public var body: String
     public var place: BudPlace
     /// The tags in the bud's own list: its frontmatter `tags`, not the `#tags` in its body.
@@ -33,8 +35,9 @@ public struct BudRecord: Codable, Hashable, Sendable {
     public init(
         path: String, parent: String? = nil, title: String, kind: BudKind = .note, state: BudState? = nil,
         when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date? = nil, source: String? = nil,
-        body: String = "", place: BudPlace = .everything, tags: [String] = []
+        from: String? = nil, body: String = "", place: BudPlace = .everything, tags: [String] = []
     ) {
+        self.from = from
         self.path = path
         self.parent = parent
         self.title = title
@@ -48,6 +51,17 @@ public struct BudRecord: Codable, Hashable, Sendable {
         self.body = body
         self.place = place
         self.tags = tags
+    }
+}
+
+/// Where a planted item went, and whether planting made that bud or found the one it made before.
+public struct Planting: Hashable, Sendable {
+    public var path: String
+    public var new: Bool
+
+    public init(path: String, new: Bool) {
+        self.path = path
+        self.new = new
     }
 }
 
@@ -119,6 +133,9 @@ public protocol Vault: Sendable {
     /// Returns the new bud's path. A nil parent is the top level. `preferredPath` is the path the
     /// caller would like the bud to have; a vault that names its own buds may ignore it.
     func create(parent: String?, title: String, kind: BudKind, source: String?, preferredPath: String?) async throws -> String
+    /// Plants a source item under `parent` (nil is the top level) as a bud carrying `from`, or
+    /// finds the bud it was planted as before, outside the Trash.
+    func plant(parent: String?, title: String, kind: BudKind, from: String) async throws -> Planting
     func setBody(_ path: String, _ text: String) async throws
     /// A nil state makes the bud a note.
     func setState(_ path: String, _ state: BudState?) async throws

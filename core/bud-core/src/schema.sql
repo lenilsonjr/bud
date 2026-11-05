@@ -12,9 +12,12 @@ CREATE TABLE IF NOT EXISTS buds (
     source    TEXT,
     body      TEXT NOT NULL DEFAULT '',
     mtime     INTEGER NOT NULL,
-    place     TEXT NOT NULL
+    place     TEXT NOT NULL,
+    -- `from:` in the frontmatter: the source item a planted bud came from.
+    planted_from TEXT
 );
 CREATE INDEX IF NOT EXISTS buds_parent ON buds(parent);
+CREATE INDEX IF NOT EXISTS buds_planted_from ON buds(planted_from);
 CREATE INDEX IF NOT EXISTS buds_place ON buds(place);
 
 -- Full-text search over title and body. The text stays in `buds`; the triggers keep this index in

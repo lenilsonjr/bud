@@ -27,6 +27,9 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
     public var created: Date
     /// Where a capture came from: "mac", "ipad", "iphone" or "tv". Nil for ordinary buds.
     public var source: String?
+    /// The source item a planted bud came from, as in `mail:M1234`: its frontmatter `from`. Nil for
+    /// a bud made here.
+    public var from: String?
     /// The tags in the bud's own list (its frontmatter `tags`). The `#tags` in its body are read
     /// from the body: see `allTags`.
     public var tags: [String]
@@ -34,9 +37,10 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
     public init(
         id: UUID = UUID(), text: String, state: BudState? = nil, parent: UUID = rootID, order: Double = 0,
         body: String = "", when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date = Date(),
-        source: String? = nil, tags: [String] = []
+        source: String? = nil, from: String? = nil, tags: [String] = []
     ) {
         self.source = source
+        self.from = from
         self.tags = tags
         self.id = id
         self.text = text
@@ -64,6 +68,7 @@ public struct Bud: Identifiable, Codable, Hashable, Sendable {
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date()
         source = try c.decodeIfPresent(String.self, forKey: .source)
+        from = try c.decodeIfPresent(String.self, forKey: .from)
         tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
     }
 

@@ -14,6 +14,9 @@ pub struct Properties {
     pub pinned: bool,
     pub created: Option<String>,
     pub source: Option<String>,
+    /// Where a planted bud came from: the source and the item id, as in `mail:M1234`. The key
+    /// that finds an item already planted.
+    pub from: Option<String>,
 }
 
 /// Split a file into its frontmatter YAML (without the `---` fences) and its body.
@@ -68,6 +71,7 @@ pub fn parse(yaml: &str) -> Properties {
         pinned,
         created: text("created"),
         source: text("source"),
+        from: text("from"),
     }
 }
 
@@ -175,10 +179,12 @@ pub fn write_layout(text: &str, layout: &Layout) -> String {
 }
 
 /// The keys this module writes, in the order new ones are appended.
-const KEYS: [&str; 6] = ["state", "when", "due", "pinned", "created", "source"];
+const KEYS: [&str; 7] = [
+    "state", "when", "due", "pinned", "created", "source", "from",
+];
 
 /// The text of each key as it is written; none means the key is absent.
-fn wanted(props: &Properties) -> [Option<String>; 6] {
+fn wanted(props: &Properties) -> [Option<String>; 7] {
     [
         props.state.map(|s| s.as_str().to_string()),
         props.when.as_deref().map(scalar),
@@ -186,6 +192,7 @@ fn wanted(props: &Properties) -> [Option<String>; 6] {
         props.pinned.then(|| "true".to_string()),
         props.created.as_deref().map(scalar),
         props.source.as_deref().map(scalar),
+        props.from.as_deref().map(scalar),
     ]
 }
 
@@ -272,13 +279,14 @@ fn unchanged(key: usize, chunk: &str, current: &Properties) -> bool {
         2 => existing.due == current.due,
         3 => existing.pinned == current.pinned,
         4 => existing.created == current.created,
-        _ => existing.source == current.source,
+        5 => existing.source == current.source,
+        _ => existing.from == current.from,
     }
 }
 
-fn edit_block(yaml: &str, current: &Properties, wanted: &[Option<String>; 6], eol: &str) -> String {
+fn edit_block(yaml: &str, current: &Properties, wanted: &[Option<String>; 7], eol: &str) -> String {
     let mut out = String::with_capacity(yaml.len() + 64);
-    let mut seen = [false; 6];
+    let mut seen = [false; 7];
     let mut lines = yaml.split_inclusive('\n').peekable();
     while let Some(line) = lines.next() {
         let hit = KEYS.iter().position(|key| {
@@ -336,6 +344,7 @@ mod tests {
             pinned: true,
             created: Some("2026-10-02T11:00:00Z".into()),
             source: Some("phone".into()),
+            from: None,
         }
     }
 
@@ -513,7 +522,23 @@ mod tests {
                 pinned: true,
                 created: None,
                 source: Some("phone".into()),
+                from: None,
             }
+        );
+    }
+
+    #[test]
+    fn from_is_read_and_written_after_the_other_keys() {
+        let props = Properties {
+            state: Some(State::Open),
+            from: Some("mail:M-1".into()),
+            ..Default::default()
+        };
+        let out = write("Body\n", &props);
+        assert_eq!(out, "---\nstate: open\nfrom: mail:M-1\n---\nBody\n");
+        assert_eq!(
+            parse(split(&out).0.unwrap()).from.as_deref(),
+            Some("mail:M-1")
         );
     }
 
