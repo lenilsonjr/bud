@@ -34,6 +34,16 @@ struct DocumentView: View {
                 }
                 .pageColumn()
             }
+            #if os(iOS)
+            // On iPhone the keyboard covers the page: Done or a drag of the page ends the edit.
+            .scrollDismissesKeyboard(.immediately)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { bodyFocused = false }
+                }
+            }
+            #endif
             .background {
                 // ⌘↩ closes or reopens this bud, drawn nowhere.
                 Button("") { store.tick(id) }
@@ -134,7 +144,7 @@ struct DocumentView: View {
         } else {
             Group {
                 if draft.isEmpty {
-                    Text("Nothing written yet. Click to write.")
+                    Text(Self.emptyBody)
                         .foregroundStyle(Theme.text3)
                 } else {
                     RenderedBody(source: draft, tree: store.tree) { store.center = $0 }
@@ -147,6 +157,12 @@ struct DocumentView: View {
             .simultaneousGesture(TapGesture().onEnded { editing = true })
         }
     }
+
+    #if os(iOS)
+    static let emptyBody = "Nothing written yet. Tap to write."
+    #else
+    static let emptyBody = "Nothing written yet. Click to write."
+    #endif
 
     // MARK: link picker
 
@@ -422,7 +438,7 @@ struct RenderedBody: View {
             ForEach(Array(MarkdownBlocks.parse(source).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let level, let text):
-                    linked(text)
+                    readable(linked(text), text)
                         .tint(tint(for: text))
                         .textRole(level == 1 ? .title : .heading)
                         .foregroundStyle(Theme.text)
@@ -487,8 +503,31 @@ struct RenderedBody: View {
         return out
     }
 
+    /// A line read aloud as it reads on the page, links by their text, with an action to open
+    /// each bud it links to.
+    private func readable(_ line: Text, _ text: String) -> some View {
+        let runs = BudLinks.runs(text)
+        let spoken = runs.map { run -> String in
+            switch run {
+            case .text(let plain): return String(MarkdownBlocks.inline(plain).characters)
+            case .link(let link): return link.shown
+            }
+        }.joined()
+        let targets: [(String, UUID)] = runs.compactMap { run in
+            guard case .link(let link) = run, let id = tree?.resolve(link.target) else { return nil }
+            return (tree?.title(of: id) ?? link.shown, id)
+        }
+        return line
+            .accessibilityLabel(spoken)
+            .accessibilityActions {
+                ForEach(Array(targets.enumerated()), id: \.offset) { _, target in
+                    Button("Open \(target.0)") { open(target.1) }
+                }
+            }
+    }
+
     private func paragraph(_ text: String) -> some View {
-        linked(text)
+        readable(linked(text), text)
             .tint(tint(for: text))
             .textRole(.body)
             .lineSpacing(14 * 0.55)
