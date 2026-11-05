@@ -514,7 +514,9 @@ public final class BudStore: ObservableObject {
         var changed: [UUID] = []
         commit { changed = $0.renameTag(from, to: to) }
         guard !changed.isEmpty else { return }
+        let ticked = canvasFacets
         renameFacets(from, to: to)
+        let renamed = canvasFacets
         let edits = TagEdits()
         write { [self] vault in
             let records = try await vault.renameTag(from, to: to)
@@ -523,7 +525,12 @@ public final class BudStore: ObservableObject {
         let count = changed.count
         let message = count == 1 ? "Renamed #\(from) to #\(to) in 1 bud" : "Renamed #\(from) to #\(to) in \(count) buds"
         toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
-            Task { @MainActor in self?.undoRenameTag(edits) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.undoRenameTag(edits)
+                // The lens goes back too, unless it has been changed since.
+                if self.canvasFacets.map(\.name) == renamed.map(\.name) { self.canvasFacets = ticked }
+            }
         })
     }
 
