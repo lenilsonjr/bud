@@ -335,3 +335,37 @@ fn a_bud_restored_while_a_peer_deletes_it_forever_is_kept_under_a_new_identity()
     assert_eq!(a.read("Gift ideas.md"), b.read("Gift ideas.md"));
     assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
 }
+
+#[test]
+fn a_folder_bud_that_gets_its_file_from_an_edit_stays_one_bud_on_the_peer() {
+    let (mut a, mut b) = pair();
+    let id = a
+        .vault
+        .doc_id("Routines")
+        .unwrap()
+        .expect("the folder has a document");
+    a.vault.set_pinned("Routines", true).unwrap();
+    a.vault.add_tag("Routines.md", "home").unwrap();
+    assert_eq!(
+        a.vault.doc_id("Routines.md").unwrap(),
+        Some(id.clone()),
+        "the document follows the file"
+    );
+    assert_eq!(a.vault.doc_id("Routines").unwrap(), None);
+
+    a.vault.sync().unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(b.vault.doc_id("Routines.md").unwrap(), Some(id));
+    assert!(b.read("Routines.md").contains("pinned: true"));
+    let named = |r: &Replica| {
+        r.vault
+            .all()
+            .unwrap()
+            .into_iter()
+            .filter(|bud| bud.title.starts_with("Routines"))
+            .count()
+    };
+    assert_eq!(named(&a), 1);
+    assert_eq!(named(&b), 1);
+    assert_eq!(fingerprint(a.dir.path()), fingerprint(b.dir.path()));
+}
