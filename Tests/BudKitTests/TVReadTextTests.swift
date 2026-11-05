@@ -39,8 +39,8 @@ final class TVReadTextTests: XCTestCase {
     func testLinkedFromCountsTheBudsThatLinkHere() {
         let target = Bud(text: "Garden")
         let tree = Tree(buds: [target, Bud(text: "A", body: "See [[Garden]]."), Bud(text: "B", body: "[[garden|it]] and [[Garden]]")])
-        XCTAssertEqual(TVReadText.linkedFromLine(in: tree, to: target.id), "Linked from · 2")
-        XCTAssertNil(TVReadText.linkedFromLine(in: Tree(buds: [target]), to: target.id))
+        XCTAssertEqual(TVReadText.linkedFromLine(count: tree.backlinks(to: target.id).count), "Linked from · 2")
+        XCTAssertNil(TVReadText.linkedFromLine(count: Tree(buds: [target]).backlinks(to: target.id).count))
         XCTAssertEqual(BudLinks.shown("See [[Garden|the garden]] and `[[x]]`"), "See the garden and `[[x]]`")
     }
 }
