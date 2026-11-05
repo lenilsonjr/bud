@@ -69,6 +69,17 @@ final class LinksTests: XCTestCase {
         XCTAssertEqual(tree.backlinks(to: list.id).map(\.sentence), ["See Launch/Welcome list.md."])
     }
 
+    func testALineComesApartAtItsLinks() {
+        XCTAssertEqual(BudLinks.runs("so [[Visa & NIF]] comes **first**, `[[code]]` [[A|b]]"), [
+            .text("so "),
+            .link(.init(target: "Visa & NIF", label: nil)),
+            .text(" comes **first**, `[[code]]` "),
+            .link(.init(target: "A", label: "b")),
+        ])
+        XCTAssertEqual(BudLinks.runs(""), [.text("")])
+        XCTAssertEqual(BudLinks.runs("plain"), [.text("plain")])
+    }
+
     func testAPlantedBudsSourceIsNotALinkedFromRow() {
         // A bud planted from a link keeps where it came from as `source`, which is no body link.
         let parent = Bud(text: "Moving")

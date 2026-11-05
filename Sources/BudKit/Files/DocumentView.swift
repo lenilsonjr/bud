@@ -115,7 +115,7 @@ struct DocumentView: View {
                     Text("Nothing written yet. Click to write.")
                         .foregroundStyle(Theme.text3)
                 } else {
-                    RenderedBody(source: draft)
+                    RenderedBody(source: draft, tree: store.tree) { store.center = $0 }
                 }
             }
             .textRole(.body)
@@ -266,16 +266,20 @@ struct BacklinkRow: View {
 }
 
 /// The body as a page: each block from `MarkdownBlocks` drawn in the type scale, links in
-/// amethyst and clickable, paragraphs with 1.55 line height.
+/// amethyst and clickable, paragraphs with 1.55 line height. A `[[link]]` to a bud reads in leaf
+/// with the link icon and a click opens that bud; one that names no bud reads grey, dotted, with
+/// a dashed circle.
 struct RenderedBody: View {
     let source: String
+    var tree: Tree?
+    var open: (UUID) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(MarkdownBlocks.parse(source).enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let level, let text):
-                    Text(MarkdownBlocks.inline(text))
+                    linked(text)
                         .textRole(level == 1 ? .title : .heading)
                         .foregroundStyle(Theme.text)
                         .padding(.top, level == 1 ? 4 : 2)
@@ -298,10 +302,40 @@ struct RenderedBody: View {
             }
         }
         .tint(Theme.amethyst)
+        .environment(\.openURL, OpenURLAction { url in
+            guard url.scheme == Self.scheme, let id = url.host().flatMap(UUID.init(uuidString:)) else { return .systemAction }
+            open(id)
+            return .handled
+        })
+    }
+
+    private static let scheme = "bud"
+
+    /// One line of text with its `[[links]]` drawn as links to buds.
+    private func linked(_ text: String) -> Text {
+        var out = Text("")
+        for run in BudLinks.runs(text) {
+            switch run {
+            case .text(let plain):
+                out = out + Text(MarkdownBlocks.inline(plain))
+            case .link(let link):
+                var shown = AttributedString(link.shown)
+                if let id = tree?.resolve(link.target) {
+                    shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
+                    shown.foregroundColor = Theme.leaf
+                    out = out + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf) + Text(" ") + Text(shown).fontWeight(.semibold)
+                } else {
+                    shown.foregroundColor = Theme.text3
+                    shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
+                    out = out + Text(shown) + Text(" ") + Text(Image(systemName: "circle.dashed")).foregroundStyle(Theme.text3)
+                }
+            }
+        }
+        return out
     }
 
     private func paragraph(_ text: String) -> some View {
-        Text(MarkdownBlocks.inline(text))
+        linked(text)
             .textRole(.body)
             .lineSpacing(14 * 0.55)
             .foregroundStyle(Theme.text)

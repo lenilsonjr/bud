@@ -99,6 +99,27 @@ public enum BudLinks {
         return out
     }
 
+    /// A line of text cut at its links, for a renderer that draws links its own way.
+    public enum Run: Equatable, Sendable {
+        case text(String)
+        case link(Written)
+    }
+
+    /// `text` as plain runs and links, in order; links in code stay plain text.
+    public static func runs(_ text: String) -> [Run] {
+        let written = Array(text)
+        let found = links(in: Self.blankingCode(written))
+        var out: [Run] = []
+        var i = 0
+        for (link, range) in found {
+            if range.lowerBound > i { out.append(.text(String(written[i..<range.lowerBound]))) }
+            out.append(.link(link))
+            i = range.upperBound
+        }
+        if i < written.count || out.isEmpty { out.append(.text(String(written[i...]))) }
+        return out
+    }
+
     private static func split(_ inner: String) -> Written? {
         let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         let label = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
