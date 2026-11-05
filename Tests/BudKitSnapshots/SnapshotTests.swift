@@ -438,6 +438,28 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheLinkPicker() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let tree = Tree.seed()
+        let here = try XCTUnwrap(tree.buds.first { $0.text == "Pick a name" })
+        let picker = try XCTUnwrap(LinkPicker(typing: "Keep it under [[s"))
+        let rows = picker.candidates(in: tree, excluding: here.id, limit: 3).map { LinkPickerList.Row.bud($0) } + [.plant("s")]
+        for scheme in [ColorScheme.light, .dark] {
+            let view = LinkPickerList(rows: rows, pick: 0, tree: tree, here: here.text) { _ in }
+                .padding(24)
+                .frame(width: 480)
+                .background(Theme.canvas)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("link-picker-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheCaptureSheet() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
