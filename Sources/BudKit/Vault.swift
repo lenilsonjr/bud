@@ -27,6 +27,8 @@ public struct BudRecord: Codable, Hashable, Sendable {
     public var source: String?
     /// The source item a planted bud came from, as in `mail:M1234`.
     public var from: String?
+    /// How a planted bud stands with its source, as in `moved 2026-11-05T21:00:00Z`.
+    public var fromState: String?
     public var body: String
     public var place: BudPlace
     /// The tags in the bud's own list: its frontmatter `tags`, not the `#tags` in its body.
@@ -35,9 +37,10 @@ public struct BudRecord: Codable, Hashable, Sendable {
     public init(
         path: String, parent: String? = nil, title: String, kind: BudKind = .note, state: BudState? = nil,
         when: Date? = nil, due: Date? = nil, pinned: Bool = false, created: Date? = nil, source: String? = nil,
-        from: String? = nil, body: String = "", place: BudPlace = .everything, tags: [String] = []
+        from: String? = nil, fromState: String? = nil, body: String = "", place: BudPlace = .everything, tags: [String] = []
     ) {
         self.from = from
+        self.fromState = fromState
         self.path = path
         self.parent = parent
         self.title = title
@@ -141,6 +144,8 @@ public protocol Vault: Sendable {
     func setState(_ path: String, _ state: BudState?) async throws
     func setWhen(_ path: String, _ when: Date?) async throws
     func setDue(_ path: String, _ due: Date?) async throws
+    /// How a planted bud stands with its source; nil clears it.
+    func setFromState(_ path: String, _ state: String?) async throws
     func setPinned(_ path: String, _ pinned: Bool) async throws
     /// Returns the new path.
     func rename(_ path: String, to title: String) async throws -> String

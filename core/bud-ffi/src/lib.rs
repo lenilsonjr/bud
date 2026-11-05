@@ -86,6 +86,8 @@ pub struct BudRecord {
     pub source: Option<String>,
     /// Where a planted bud came from, as in `mail:M1234`.
     pub from: Option<String>,
+    /// How a planted bud stands with its source, as in `moved 2026-11-05T21:00:00Z`.
+    pub from_state: Option<String>,
     pub body: String,
     pub place: BudPlace,
     /// The tags of its frontmatter list; the `#tags` in its body are read from the body.
@@ -656,6 +658,11 @@ impl Vault {
         Ok(self.core().set_due(&path, due.as_deref())?)
     }
 
+    /// How a planted bud stands with its source; none clears it.
+    pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
+        Ok(self.core().set_from_state(&path, state.as_deref())?)
+    }
+
     /// When the bud was first made (an ISO moment), for a bud brought in from elsewhere; none
     /// clears it.
     pub fn set_created(&self, path: String, created: Option<String>) -> Result<()> {
@@ -903,6 +910,7 @@ impl From<bud_core::Bud> for BudRecord {
             created: bud.created,
             source: bud.source,
             from: bud.from,
+            from_state: bud.from_state,
             body: bud.body,
             place: bud.place.into(),
             tags: bud.tags,
