@@ -45,6 +45,7 @@ final class RustVault: BudKit.Vault {
     func setWhen(_ path: String, _ when: Date?) async throws { try core.setWhen(path: path, when: when.map(Self.day)) }
     func setDue(_ path: String, _ due: Date?) async throws { try core.setDue(path: path, due: due.map(Self.day)) }
     func setPinned(_ path: String, _ pinned: Bool) async throws { try core.setPinned(path: path, pinned: pinned) }
+    func setFromState(_ path: String, _ state: String?) async throws { try core.setFromState(path: path, state: state) }
     func rename(_ path: String, to title: String) async throws -> String { try core.rename(path: path, newTitle: title) }
     func move(_ path: String, to parent: String?) async throws -> String { try core.moveTo(path: path, newParent: parent) }
 
@@ -151,7 +152,7 @@ final class RustVault: BudKit.Vault {
         BudKit.BudRecord(
             path: bud.path, parent: bud.parent, title: bud.title, kind: bud.kind == .todo ? .todo : .note,
             state: bud.state.map { $0 == .done ? .done : .open }, when: bud.when.flatMap(date), due: bud.due.flatMap(date),
-            pinned: bud.pinned, created: bud.created.flatMap(date), source: bud.source, from: bud.from, body: bud.body,
+            pinned: bud.pinned, created: bud.created.flatMap(date), source: bud.source, from: bud.from, fromState: bud.fromState, body: bud.body,
             place: place(bud.place), tags: bud.tags
         )
     }

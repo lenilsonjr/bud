@@ -119,6 +119,7 @@ private actor FolderVault: Vault {
     func setWhen(_ path: String, _ when: Date?) async throws { records[try file(path)].when = when }
     func setDue(_ path: String, _ due: Date?) async throws { records[try file(path)].due = due }
     func setPinned(_ path: String, _ pinned: Bool) async throws { records[try file(path)].pinned = pinned }
+    func setFromState(_ path: String, _ state: String?) async throws { records[try file(path)].fromState = state }
     func reorder(_ paths: [String], under parent: String?) async throws {}
     func emptyTrash() async throws { records.removeAll { $0.place == .trash } }
     func deleteForever(_ path: String) async throws {
