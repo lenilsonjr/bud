@@ -55,6 +55,12 @@ public final class BudStore: ObservableObject {
         didSet { if lens != nil { place = nil } }
     }
     /// The question the canvas is asked: its hits stay lit and the rest fades. Nil for none.
+    /// The rows ticked in the canvas lens menu, in the order they were ticked; they set
+    /// `canvasLens` to the question they ask together.
+    @Published public var canvasFacets: [LensFacet] = [] {
+        didSet { if canvasFacets != oldValue { canvasLens = LensFacet.query(of: canvasFacets) } }
+    }
+
     @Published public var canvasLens: LensQuery? = nil {
         didSet { if canvasLens != oldValue { relight() } }
     }

@@ -86,11 +86,11 @@ final class LensQueryTests: XCTestCase {
         XCTAssertLessThan(lensLevel(1, match: nil, lensOn: true), lightLevel(role: .deep, lifted: false))
     }
 
-    func testTheCanvasPresetsHaveDistinctNamesAndQuestions() {
-        let presets = LensQuery.canvasPresets
-        XCTAssertEqual(Set(presets.map(\.name)).count, presets.count)
-        XCTAssertEqual(Set(presets.map(\.query)).count, presets.count)
-        XCTAssertFalse(presets.contains { $0.query.isEmpty })
+    func testTheBuiltInLensRowsHaveDistinctNamesAndQuestions() {
+        let rows = LensFacet.builtIns
+        XCTAssertEqual(Set(rows.map(\.name)).count, rows.count)
+        XCTAssertEqual(Set(rows.map(\.query)).count, rows.count)
+        XCTAssertFalse(rows.contains { $0.query.isEmpty })
     }
 
     func testVoiceOverHearsWhereACardStandsUnderALens() {
@@ -115,5 +115,17 @@ final class LensQueryTests: XCTestCase {
         XCTAssertEqual(Set(LensQuery(tags: ["HOME"]).hits(tree).map(\.id)), [a.id, b.id])
         XCTAssertEqual(LensQuery(tags: ["home", "errands"]).hits(tree).map(\.id), [b.id], "every tag must hold")
         XCTAssertEqual(LensQuery(state: .open, tags: ["home"]).hits(tree).map(\.id), [])
+    }
+
+    func testTickedFacetsCombineAndAContradictionMatchesNothing() {
+        let open = Bud(text: "Open", state: .open, tags: ["home"])
+        let done = Bud(text: "Done", state: .done, tags: ["home"])
+        let note = Bud(text: "Note", tags: ["work"])
+        let tree = Tree(buds: [open, done, note])
+        XCTAssertNil(LensFacet.query(of: []))
+        XCTAssertEqual(LensFacet.query(of: [.openTodos, .tag("home")])?.hits(tree).map(\.id), [open.id])
+        XCTAssertEqual(Set(LensFacet.query(of: [.tag("home")])?.hits(tree).map(\.id) ?? []), [open.id, done.id])
+        XCTAssertEqual(LensFacet.query(of: [.openTodos, .done])?.hits(tree).map(\.id), [], "open and done at once")
+        XCTAssertEqual(LensFacet.query(of: [.tag("home"), .tag("work")])?.hits(tree).map(\.id), [])
     }
 }

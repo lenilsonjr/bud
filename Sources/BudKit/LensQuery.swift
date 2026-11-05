@@ -22,6 +22,9 @@ public struct LensQuery: Hashable, Sendable {
     /// Tags the bud must carry, every one, in its list or its body, in any case; a tag also
     /// matches the tags nested under it (`#home` matches `#home/kitchen`).
     public var tags: Set<String>
+    /// Two facets that ask for different things in one slot, a to-do that is open and done:
+    /// nothing answers.
+    public var never = false
 
     public init(
         kind: Kind? = nil, state: BudState? = nil, day: Day? = nil, pinned: Bool = false, holdsOpen: Bool = false,
@@ -41,14 +44,24 @@ public struct LensQuery: Hashable, Sendable {
 
     public var isEmpty: Bool { self == LensQuery() }
 
-    /// The questions the canvas offers until the lens menu is designed, by the name it shows.
-    public static let canvasPresets: [(name: String, query: LensQuery)] = [
-        ("Open to-dos", .todos),
-        ("Holds open to-dos", LensQuery(holdsOpen: true)),
-        ("Today", .today),
-        ("Overdue", LensQuery(day: .overdue)),
-        ("Pinned", .pinnedBuds),
-    ]
+    /// Both questions at once: a bud answers when it answers each. Two different answers asked
+    /// of one slot (a note and a to-do, open and done) leave a question nothing answers.
+    public func and(_ other: LensQuery) -> LensQuery {
+        var out = self
+        func merge<T: Equatable>(_ mine: T?, _ theirs: T?) -> T? {
+            guard let mine, let theirs else { return mine ?? theirs }
+            if mine != theirs { out.never = true }
+            return mine
+        }
+        out.kind = merge(kind, other.kind)
+        out.state = merge(state, other.state)
+        out.day = merge(day, other.day)
+        out.pinned = pinned || other.pinned
+        out.holdsOpen = holdsOpen || other.holdsOpen
+        out.tags = tags.union(other.tags)
+        out.never = out.never || never || other.never
+        return out
+    }
 
     /// Whether one bud answers the question.
     public func matches(_ bud: Bud, in tree: Tree, on now: Date = Date(), calendar: Calendar = .current) -> Bool {
@@ -59,6 +72,7 @@ public struct LensQuery: Hashable, Sendable {
     /// The day's start and the buds holding an open to-do are worked out once per question, not
     /// once per bud.
     private func matches(_ bud: Bud, holders: Set<UUID>, start: Date) -> Bool {
+        if never { return false }
         if let kind, (kind == .todo) != bud.isTodo { return false }
         if let state, bud.state != state { return false }
         if pinned && !bud.pinned { return false }

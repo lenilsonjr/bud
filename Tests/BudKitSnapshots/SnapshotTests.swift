@@ -69,12 +69,24 @@ final class SnapshotTests: XCTestCase {
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let store = BudStore(fileURL: nil)
-        store.canvasLens = .todos
+        // Two ticked rows: open to-dos that carry #home. The chips follow the breadcrumb.
+        for bud in store.tree.walk(under: rootID).filter({ $0.state == .open }).prefix(3) { store.addTag(bud.id, "home") }
+        store.canvasFacets = [.openTodos, .tag("home")]
+        XCTAssertEqual(store.canvasLens, LensQuery.todos.and(LensQuery(tags: ["home"])))
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
             let file = folder.appendingPathComponent("canvas-lens-\(scheme == .dark ? "dark" : "light").png")
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            let view = LensMenu(store: store)
+                .padding(24)
+                .background(Theme.raised)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("lens-menu-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
         }
     }
 

@@ -119,6 +119,12 @@ public struct OrbitCanvas: View {
                 closeBar()
             } else if opened != nil {
                 close()
+            } else if store.canvasLens != nil {
+                // Escape clears the whole lens before it steps out.
+                withAnimation(.easeOut(duration: 0.35)) {
+                    store.canvasFacets = []
+                    store.canvasLens = nil
+                }
             } else {
                 stepOut()
             }
