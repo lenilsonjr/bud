@@ -147,6 +147,7 @@ public final class SourceStore: ObservableObject {
         seen[id] = nil
         calendarSeen[id] = nil
         problems[id] = nil
+        removed.insert(id)
         save()
         publish()
         if let vault {
@@ -332,16 +333,21 @@ public final class SourceStore: ObservableObject {
     /// Reads the list and the leases again, after a sync brought someone else's changes.
     public func reloadShared() async {
         guard let vault else { return }
-        let stored = (try? await vault.shared(.sources)) ?? [:]
-        var list = stored.values.compactMap { try? Self.decoder.decode(SourceConfig.self, from: Data($0.utf8)) }
-        // Once only: after that an empty list in the vault means every source was disconnected.
-        if !defaults.bool(forKey: Self.movedKey) {
-            defaults.set(true, forKey: Self.movedKey)
-            if stored.isEmpty, !configs.isEmpty {
-                for config in configs { await share(config) }
-                list = configs
-            }
+        guard var stored = try? await vault.shared(.sources) else { return }
+        // Once only, the accounts this device kept itself join the vault's list; after that an
+        // account missing from the vault was disconnected somewhere. Also the ones connected
+        // before the vault was attached.
+        let unshared = defaults.bool(forKey: Self.movedKey) ? configs.filter { waiting.contains($0.id) } : configs
+        var moved = true
+        for config in unshared where stored[config.id] == nil && !removed.contains(config.id) {
+            if let text = await share(config) { stored[config.id] = text } else { moved = false }
         }
+        if moved {
+            defaults.set(true, forKey: Self.movedKey)
+            waiting.removeAll()
+        }
+        var list = stored.filter { !removed.contains($0.key) }.values
+            .compactMap { try? Self.decoder.decode(SourceConfig.self, from: Data($0.utf8)) }
         list.sort { ($0.added ?? .distantPast, $0.id) < ($1.added ?? .distantPast, $1.id) }
         let leased = (try? await vault.shared(.leases)) ?? [:]
         leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
@@ -352,10 +358,28 @@ public final class SourceStore: ObservableObject {
         }
     }
 
-    private func share(_ config: SourceConfig) async {
-        guard let vault, let data = try? Self.encoder.encode(config) else { return }
-        try? await vault.setShared(.sources, config.id, String(decoding: data, as: UTF8.self))
+    /// Puts an account's settings in the vault and hands back what was written; nil when it could
+    /// not, or before a vault is attached, when it waits for one.
+    @discardableResult
+    private func share(_ config: SourceConfig) async -> String? {
+        guard let vault, let data = try? Self.encoder.encode(config) else {
+            waiting.insert(config.id)
+            return nil
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        do {
+            try await vault.setShared(.sources, config.id, text)
+            return text
+        } catch {
+            waiting.insert(config.id)
+            return nil
+        }
     }
+
+    /// Accounts connected here and not yet in the vault.
+    private var waiting: Set<String> = []
+    /// Accounts disconnected here, which a read of the vault before the removal lands must not bring back.
+    private var removed: Set<String> = []
 
     /// Takes or renews the lease of each account this device reads, unless another device holds
     /// one that still runs, and says which kinds this device keeps live now.
@@ -365,10 +389,14 @@ public final class SourceStore: ObservableObject {
             let leased = (try? await vault.shared(.leases)) ?? [:]
             leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
         }
-        var held = Set<SourceKind>(), blocked = Set<SourceKind>()
+        // A kind is kept live here when this device holds the lease of any of its accounts; two
+        // devices holding two accounts of one kind write the same values, which merge as one.
+        var held = Set<SourceKind>()
         for config in configs where problems[config.id] == nil && readAt[config.id] != nil && tokens.token(for: config.id) != nil {
-            if let lease = leases[config.id], lease.holder != device, lease.until > now {
-                blocked.insert(config.kind)
+            if let lease = leases[config.id], lease.holder != device, lease.until > now { continue }
+            held.insert(config.kind)
+            // Renewed only when half run out: each write is history the vault keeps.
+            if let lease = leases[config.id], lease.holder == device, lease.until.timeIntervalSince(now) > Self.leaseLength / 2 {
                 continue
             }
             let lease = Lease(holder: device, name: deviceName, until: now.addingTimeInterval(Self.leaseLength), synced: now)
@@ -376,9 +404,8 @@ public final class SourceStore: ObservableObject {
             if let vault, let data = try? Self.encoder.encode(lease) {
                 try? await vault.setShared(.leases, config.id, String(decoding: data, as: UTF8.self))
             }
-            held.insert(config.kind)
         }
-        return held.subtracting(blocked)
+        return held
     }
 
     /// The latest sync of any account of this kind, and the device that ran it.
