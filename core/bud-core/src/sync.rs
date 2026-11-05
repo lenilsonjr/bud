@@ -802,15 +802,18 @@ impl Vault {
         let mut wrote = false;
         let layout = layout_of(&doc);
         if props != file_props || frontmatter::write_layout(&file, &layout) != file {
+            // A folder's write gives it its file, and the document moves there with it.
             self.write_properties(&path, &props, Some(&layout))?;
             if !is_file {
-                self.docs_follow(&path, &format!("{path}.md"))?;
                 path.push_str(".md");
             }
             wrote = true;
         }
         if body != file_body {
             self.set_body(&path, &body)?;
+            if !path.ends_with(".md") {
+                path.push_str(".md");
+            }
             wrote = true;
         }
         let known = if wrote {
@@ -824,14 +827,6 @@ impl Vault {
         )?;
         report.written = usize::from(wrote);
         Ok(report)
-    }
-
-    fn docs_follow(&self, from: &str, to: &str) -> Result<()> {
-        lock(&self.conn).execute(
-            "UPDATE docs SET path = ?1 WHERE path = ?2",
-            params![to, from],
-        )?;
-        Ok(())
     }
 
     /// Record in the tree what the folder has: new buds, renames, moves, trashing.
