@@ -36,6 +36,10 @@ public struct OrbitCanvas: View {
     @State private var dragStart: CGPoint? = nil
     /// The ring card the held card would swap with if let go now, lit as the target.
     @State private var swapOver: UUID? = nil
+    /// The bud a source item in hand would be planted under if let go now, lit as the target.
+    @State private var plantOver: UUID? = nil
+    /// The source item in hand and where it is, drawn over everything while it moves.
+    @State private var inHand: (item: SourceItem, at: CGPoint)? = nil
     /// The inline bar while the person types new buds on the canvas.
     @State private var bar: InlineAdd? = nil
     /// The card the draft sits under, held while the pointer is on the draft so it does not move.
@@ -197,7 +201,7 @@ public struct OrbitCanvas: View {
                         id: id,
                         store: store,
                         role: placed.role,
-                        lit: lit == id || swapOver == id,
+                        lit: lit == id || swapOver == id || plantOver == id,
                         light: lensLevel(
                             lightLevel(role: placed.role, lifted: lifted.contains(id)),
                             match: store.canvasLight[id],
@@ -218,6 +222,7 @@ public struct OrbitCanvas: View {
             // Over the cards, under the lit one, so the card in hand stays reachable.
             if !compact { links(.chips, lit: overChip ? linkHeld : lit ?? linkHeld, layout: layout, size: size).zIndex(1.5) }
             inlineAdd(layout: layout, size: size)
+            soil(size: size)
             if let opened, let placed = layout.cards[opened] {
                 DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
                     // A card per bud, so another bud's card never inherits this one's draft.
@@ -233,6 +238,64 @@ public struct OrbitCanvas: View {
         .onChange(of: store.center) { _, _ in linkHeld = nil }
         .frame(width: size.width, height: size.height)
         .clipped()
+    }
+
+    // MARK: soil
+
+    /// The sources under the soil line, and the item in hand above them. A compact width gets the
+    /// soil as a sheet instead.
+    @ViewBuilder private func soil(size: CGSize) -> some View {
+        if !store.sources.isEmpty, !compact {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                SoilView(
+                    roots: store.roots(),
+                    folded: store.soilFolded,
+                    device: BudStore.deviceName,
+                    onFold: { withAnimation(.spring(duration: 0.35, bounce: 0.1)) { store.soilFolded.toggle() } },
+                    onDrag: { item, _, point in
+                        inHand = (item, point)
+                        plantOver = point.y < soilTop(in: size) ? card(at: point, in: size) : nil
+                    },
+                    onDrop: { item, account, point in
+                        inHand = nil
+                        plantOver = nil
+                        guard point.y < soilTop(in: size) else { return }
+                        let target = card(at: point, in: size).map(PlantTarget.under) ?? .inbox
+                        store.plant(item, from: account, at: target)
+                    }
+                )
+            }
+            .zIndex(4)
+            if let inHand {
+                Text(inHand.item.title)
+                    .textRole(.cardTitle)
+                    .foregroundStyle(Theme.cardInk)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .shadow(color: Theme.shadowStrong.opacity(0.5), radius: 10, y: 4)
+                    .position(inHand.at)
+                    .allowsHitTesting(false)
+                    .zIndex(5)
+            }
+        }
+    }
+
+    /// Where the soil line runs across the canvas.
+    private func soilTop(in size: CGSize) -> CGFloat {
+        size.height - (store.soilFolded ? SoilView.foldedHeight : SoilView.openHeight)
+    }
+
+    /// The card under a point on screen, if any.
+    private func card(at point: CGPoint, in size: CGSize) -> UUID? {
+        store.layout.order.reversed().first { id in
+            guard let placed = store.layout.cards[id] else { return false }
+            let center = screenPoint(placed.position, in: size)
+            let card = Metrics.size(hub: placed.hub)
+            return abs(point.x - center.x) < card.width * scale / 2 && abs(point.y - center.y) < card.height * scale / 2
+        }
     }
 
     private func links(_ part: LinkLayer.Part, lit: UUID?, layout: Layout, size: CGSize) -> some View {

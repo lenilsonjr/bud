@@ -93,6 +93,20 @@ public final class BudStore: ObservableObject {
         guard let lastPlanted, lastPlanted.id == id else { return false }
         return now.timeIntervalSince(lastPlanted.at) < Self.entryCue
     }
+    /// The accounts this device reads below the soil. Nothing in them reaches the vault until an
+    /// item is planted.
+    @Published public var sources: [SourceAccount] = []
+    /// Whether the soil is folded into its strip. Kept on this device only.
+    @Published public var soilFolded = UserDefaults.standard.bool(forKey: BudStore.soilFoldedKey) {
+        didSet { UserDefaults.standard.set(soilFolded, forKey: Self.soilFoldedKey) }
+    }
+    static let soilFoldedKey = "soilFolded"
+
+    /// One root per account, in the order the accounts were connected.
+    public func roots(now: Date = Date()) -> [Root] {
+        sources.map { Root($0, now: now) }
+    }
+
     /// The undo toast; every undoable change goes through it.
     public let toasts = ToastCenter()
     /// The devices paired with this vault, for Settings.
@@ -323,6 +337,16 @@ public final class BudStore: ObservableObject {
             Task { @MainActor in self?.remove(id) }
         })
         return planted
+    }
+
+    /// What a person calls this device: "Mac", "iPad", "iPhone" or "TV".
+    nonisolated public static var deviceName: String {
+        switch platformSource {
+        case "mac": return "Mac"
+        case "ipad": return "iPad"
+        case "iphone": return "iPhone"
+        default: return "TV"
+        }
     }
 
     /// The word a capture carries for the device it was made on.

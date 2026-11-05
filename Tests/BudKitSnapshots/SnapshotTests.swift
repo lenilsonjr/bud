@@ -228,6 +228,32 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheSoil() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        store.sources = SourceAccount.samples()
+        for (name, folded) in [("open", false), ("folded", true)] {
+            store.soilFolded = folded
+            for scheme in [ColorScheme.light, .dark] {
+                let data = try render(store: store, scheme: scheme)
+                let file = folder.appendingPathComponent("soil-\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+        // Nine items: three show, then "6 more below".
+        let nine = (1...9).map { SourceItem(id: "M-\($0)", title: "Message \($0)", detail: "Sender \($0)", date: Date().addingTimeInterval(Double(-$0 * 60))) }
+        store.sources = [SourceAccount(id: "nine", kind: .mail, name: "Mail", items: nine)]
+        store.soilFolded = false
+        let data = try render(store: store, scheme: .light)
+        try data.write(to: folder.appendingPathComponent("soil-nine-light.png"))
+        store.soilFolded = false
+    }
+
     func testRendersTheQuickAddSheet() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
