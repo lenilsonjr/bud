@@ -18,6 +18,11 @@ public struct OrbitCanvas: View {
     @State private var lamp: CGPoint? = nil
     @State private var opened: UUID? = nil
     @State private var viewport: CGSize = .zero
+    @Environment(\.compact) private var compact
+    @Environment(\.stillLit) private var stillLit
+    /// The card whose links show: the lit card, held after the light leaves it so its chips can
+    /// be reached, until another card lights or the canvas is tapped.
+    @State private var linkHeld: UUID? = nil
     @FocusState private var focused: Bool
     @State private var motion: MotionState
     @GestureState private var gripped = false
@@ -150,7 +155,7 @@ public struct OrbitCanvas: View {
     }
 
     private func canvas(size: CGSize, layout: Layout) -> some View {
-        let lit = litCard(in: layout, viewport: size)
+        let lit = litCard(in: layout, viewport: size) ?? stillLit
         let lifted = lit.map { store.tree.orbit(of: $0) } ?? []
         return ZStack {
             Theme.canvas
@@ -158,6 +163,7 @@ public struct OrbitCanvas: View {
                 .gesture(panGesture)
                 .onTapGesture(coordinateSpace: .local) { point in
                     focused = true
+                    linkHeld = nil
                     close()
                     if bar?.line == nil { bar = nil }
                     lamp = point
@@ -169,6 +175,8 @@ public struct OrbitCanvas: View {
                 lens: store.canvasLens == nil ? nil : store.canvasLight
             ) { screenPoint($0, in: size) }
                 .allowsHitTesting(false)
+            // iPhone lists links on the page, not on the canvas.
+            if !compact { links(.lines, lit: lit ?? linkHeld, layout: layout, size: size) }
             ForEach(layout.order, id: \.self) { id in
                 if let placed = layout.cards[id] {
                     CardView(
@@ -193,6 +201,7 @@ public struct OrbitCanvas: View {
                     .zIndex(dragging == id || lit == id ? 2 : (placed.role == .center ? 1 : 0))
                 }
             }
+            if !compact { links(.chips, lit: lit ?? linkHeld, layout: layout, size: size).zIndex(2.5) }
             inlineAdd(layout: layout, size: size)
             if let opened, let placed = layout.cards[opened] {
                 DetailCard(id: opened, store: store, onEnrich: { store.modal = .add(parent: opened) }, onClose: close)
@@ -203,8 +212,24 @@ public struct OrbitCanvas: View {
             }
         }
         .coordinateSpace(name: Self.space)
+        .onChange(of: lit) { _, now in if let now { linkHeld = now } }
+        .onChange(of: store.center) { _, _ in linkHeld = nil }
         .frame(width: size.width, height: size.height)
         .clipped()
+    }
+
+    private func links(_ part: LinkLayer.Part, lit: UUID?, layout: Layout, size: CGSize) -> some View {
+        LinkLayer(
+            part: part, lit: lit, layout: layout, graph: store.links, tree: store.tree, scale: scale, size: size,
+            screenPoint: { screenPoint($0, in: size) }, go: goTo
+        )
+    }
+
+    /// A ghost chip's bud, brought onto the canvas: centered when it holds buds, otherwise in
+    /// its parent's ring.
+    private func goTo(_ id: UUID) {
+        let target = store.tree.hasChildren(id) ? id : (store.tree.parent(of: id) ?? rootID)
+        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = target }
     }
 
     /// Pick a card up and let go: the others make room while it is held, and it settles back after.

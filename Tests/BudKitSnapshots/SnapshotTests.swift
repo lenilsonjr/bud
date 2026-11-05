@@ -35,6 +35,33 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheLinkLayer() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let ring = store.tree.children(of: newsletter.id)
+        XCTAssertGreaterThanOrEqual(ring.count, 3)
+        let lit = ring[0], near = ring[1], third = ring[2]
+        let far = try XCTUnwrap(store.tree.buds.first { !store.tree.ancestors(of: $0.id).contains(newsletter.id) && $0.id != newsletter.id && $0.parent != rootID })
+        store.setBody(lit.id, "Settle [[\(near.text)]] first, then see [[\(far.text)]].")
+        store.setBody(third.id, "Waits on [[\(lit.text)]].")
+        store.setBody(far.id, "Read with [[\(lit.text)]].")
+        store.center = newsletter.id
+        for (name, shown) in [("lit", Optional(lit.id)), ("unlit", nil)] {
+            for scheme in [ColorScheme.light, .dark] {
+                let view = BudRootView(store: store).frame(width: size.width, height: size.height).environment(\.stillLit, shown)
+                let data = try render(view, scheme: scheme)
+                let file = folder.appendingPathComponent("canvas-links-\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+    }
+
     func testRendersTheCanvasUnderALens() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
