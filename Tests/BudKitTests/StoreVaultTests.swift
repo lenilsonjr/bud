@@ -327,6 +327,27 @@ final class StoreVaultTests: XCTestCase {
 
     // MARK: planting from a source
 
+    func testTheSoilFoldStaysFoldedOnThisDevice() async {
+        let (store, _) = await loaded()
+        store.soilFolded = true
+        let (again, _) = await loaded()
+        XCTAssertTrue(again.soilFolded)
+        again.soilFolded = false
+        let (third, _) = await loaded()
+        XCTAssertFalse(third.soilFolded)
+    }
+
+    func testShowingTheSoilWritesNothing() async throws {
+        let (store, vault) = await loaded()
+        let before = try await vault.snapshot()
+        store.sources = SourceAccount.samples()
+        XCTAssertEqual(store.roots().count, 4)
+        await store.reload()
+        await store.settle()
+        let after = try await vault.snapshot()
+        XCTAssertEqual(after, before)
+    }
+
     private let account = SourceAccount(id: "work", kind: .mail, name: "Work mail")
     private let item = SourceItem(id: "M-7", title: "Lease renewal draft", detail: "Harbor Lettings", todo: true)
 
