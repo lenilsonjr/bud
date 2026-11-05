@@ -71,4 +71,22 @@ final class TagsTests: XCTestCase {
         let tree = Tree(buds: [bud])
         XCTAssertEqual(Tree(records: tree.records()).bud(bud.id)?.tags, ["home"])
     }
+
+    func testThePickerOffersTagsInAnyCaseWithCountsAndCreatesLast() {
+        let counts = [TagCount(tag: "home", buds: 3), TagCount(tag: "finance", buds: 4), TagCount(tag: "finland trip", buds: 1), TagCount(tag: "refine", buds: 1)]
+        XCTAssertEqual(TagChoices.rows(for: "Home", in: counts, excluding: []), [.tag(counts[0])])
+        XCTAssertEqual(
+            TagChoices.rows(for: "#fin", in: counts, excluding: []),
+            [.tag(counts[1]), .tag(counts[2]), .tag(counts[3]), .create("fin")]
+        )
+        XCTAssertEqual(TagChoices.rows(for: "home", in: counts, excluding: ["HOME"]), [], "carried already")
+        XCTAssertEqual(TagChoices.rows(for: "two words", in: counts, excluding: []), [])
+    }
+
+    func testChipsShowTheListThenBodyTagsInText() {
+        let bud = Bud(text: "Apartment hunt", body: "Ask about noise #neighbourhood and #Home", tags: ["home", "lisbon"])
+        XCTAssertEqual(bud.tagChips, [
+            TagChip(tag: "home", inText: false), TagChip(tag: "lisbon", inText: false), TagChip(tag: "neighbourhood", inText: true),
+        ])
+    }
 }

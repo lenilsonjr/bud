@@ -487,6 +487,39 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTagsOnAPageAndTheTagPicker() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let all = store.tree.walk(under: rootID)
+        let target = try XCTUnwrap(all.first { $0.text == "Short names read better in the inbox" })
+        store.addTag(target.id, "home")
+        store.addTag(target.id, "lisbon")
+        store.setBody(target.id, target.body + "\n\nAsk about noise on the street #neighbourhood")
+        for other in all.filter({ $0.id != target.id }).prefix(4) { store.addTag(other.id, "finance") }
+        store.openAsFile(target.id)
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("tags-on-a-page-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        XCTAssertEqual(store.tree.bud(target.id)?.tagChips.map(\.inText), [false, false, true])
+        let counts = [TagCount(tag: "finance", buds: 4), TagCount(tag: "finland-trip", buds: 1)]
+        for scheme in [ColorScheme.light, .dark] {
+            let view = TagPicker(carried: ["home"], counts: counts, query: "fin") { _ in }
+                .padding(24)
+                .background(Theme.canvas)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("tag-picker-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 2_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheCaptureSheet() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
