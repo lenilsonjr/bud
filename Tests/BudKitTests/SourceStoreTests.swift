@@ -84,7 +84,42 @@ final class SourcesTextTests: XCTestCase {
 
     func testProblemsAreSaidPlainly() {
         XCTAssertEqual(SourcesText.problem(SourceError.unauthorized), "The token was refused.")
-        XCTAssertEqual(SourcesText.problem(SourceError.unreadable("x")), "That address did not answer like a JMAP server.")
+        XCTAssertEqual(SourcesText.problem(SourceError.unreadable("x")), "That address did not answer as expected.")
         XCTAssertEqual(SourcesText.problem(SourceError.status(500)), "Couldn't reach that address.")
+    }
+}
+
+@MainActor
+final class CalendarSourceTests: XCTestCase {
+    private let server = URL(string: "https://cal.example.org/")!
+    private let calendar = URL(string: "https://cal.example.org/calendars/sam/home/")!
+    private func token(_ value: String) -> String {
+        "<d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop><d:sync-token>\(value)</d:sync-token></d:prop></d:propstat></d:response></d:multistatus>"
+    }
+    private func report(_ title: String) -> String {
+        "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:response><d:propstat><d:prop><c:calendar-data>BEGIN:VEVENT\nUID:\(title)\nSUMMARY:\(title)\nDTSTART:20261110T070000Z\nEND:VEVENT</c:calendar-data></d:prop></d:propstat></d:response></d:multistatus>"
+    }
+
+    func testACalendarIsReadAgainOnlyWhenItsTokenMovesOrAnHourPasses() async {
+        let http = ScriptedHTTP([
+            (token("1"), 207), (report("Dentist"), 207),
+            (token("1"), 207),
+            (token("2"), 207), (report("Flight"), 207),
+            (token("2"), 207), (report("Flight"), 207),
+        ])
+        let defaults = UserDefaults(suiteName: "cal-\(UUID().uuidString)")!
+        let store = SourceStore(defaults: defaults, tokens: MemoryTokens(), http: http)
+        var now = Date(timeIntervalSince1970: 1_793_900_000)
+        store.clock = { now }
+        await store.connectCalendar(name: "Home", server: server, user: "sam", password: "p", calendar: calendar)
+        XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Dentist"])
+        await store.refresh()
+        XCTAssertEqual(http.asked.count, 3, "same token: no report")
+        await store.refresh()
+        XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Flight"])
+        now += 3601
+        await store.refresh()
+        XCTAssertEqual(http.asked.count, 7, "an hour on: the window is read again")
+        XCTAssertEqual(store.accounts.first?.kind, .calendar)
     }
 }

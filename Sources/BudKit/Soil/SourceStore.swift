@@ -8,17 +8,25 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var kind: SourceKind
     public var name: String
-    /// Mail: the JMAP session resource.
+    /// Mail: the JMAP session resource. Calendar: the CalDAV server.
     public var session: URL?
     /// Mail: the mailbox the soil shows.
     public var mailbox: String?
+    /// Calendar: the user name and the calendar the soil shows.
+    public var user: String?
+    public var calendar: URL?
 
-    public init(id: String = UUID().uuidString, kind: SourceKind, name: String, session: URL? = nil, mailbox: String? = nil) {
+    public init(
+        id: String = UUID().uuidString, kind: SourceKind, name: String, session: URL? = nil, mailbox: String? = nil,
+        user: String? = nil, calendar: URL? = nil
+    ) {
         self.id = id
         self.kind = kind
         self.name = name
         self.session = session
         self.mailbox = mailbox
+        self.user = user
+        self.calendar = calendar
     }
 }
 
@@ -37,8 +45,13 @@ public final class SourceStore: ObservableObject {
     private let defaults: UserDefaults
     private let tokens: TokenStore
     private let http: HTTP
+    /// Now; a test moves it.
+    var clock: () -> Date = Date.init
     /// What each mail account last read, so the next read can ask what changed first.
     private var seen: [String: (endpoint: JMAPMail.Endpoint, state: String?)] = [:]
+    /// Each calendar's sync token and when its window was last read; the window moves with the
+    /// clock, so it is read again after an hour even when the token stands still.
+    private var calendarSeen: [String: (token: String?, at: Date)] = [:]
     private var items: [String: [SourceItem]] = [:]
     private var polling: Task<Void, Never>?
 
@@ -83,6 +96,26 @@ public final class SourceStore: ObservableObject {
         return config
     }
 
+    // MARK: connecting a calendar
+
+    /// Checks a server, user name and app password and hands back the calendars to choose from.
+    public func calendars(server: URL, user: String, password: String) async throws -> [CalDAV.Calendar] {
+        try await CalDAV(server: server, user: user, password: password, http: http).calendars()
+    }
+
+    /// Adds a calendar account that reads one calendar, keeps its password on this device, and reads it.
+    @discardableResult
+    public func connectCalendar(name: String, server: URL, user: String, password: String, calendar: URL) async -> SourceConfig {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = SourceConfig(
+            kind: .calendar, name: trimmed.isEmpty ? SourceKind.calendar.name : trimmed, session: server, user: user, calendar: calendar)
+        tokens.set(password, for: config.id)
+        configs.append(config)
+        save()
+        await read(config)
+        return config
+    }
+
     /// Signs this device in to an account another device connected.
     public func signIn(_ id: String, token: String) async {
         guard let config = configs.first(where: { $0.id == id }) else { return }
@@ -96,6 +129,7 @@ public final class SourceStore: ObservableObject {
         configs.removeAll { $0.id == id }
         items[id] = nil
         seen[id] = nil
+        calendarSeen[id] = nil
         problems[id] = nil
         save()
         publish()
@@ -137,13 +171,22 @@ public final class SourceStore: ObservableObject {
                 let window = try await mail.window(at: endpoint, mailbox: mailbox)
                 items[config.id] = window.items
                 seen[config.id] = (endpoint, window.state)
-            case .calendar, .github, .linear:
+            case .calendar:
+                guard let server = config.session, let user = config.user, let calendar = config.calendar else { return }
+                let cal = CalDAV(server: server, user: user, password: token, http: http)
+                let now = clock()
+                let syncToken = try await cal.syncToken(of: calendar)
+                if let last = calendarSeen[config.id], let syncToken, last.token == syncToken, now.timeIntervalSince(last.at) < 3600 { break }
+                items[config.id] = try await cal.window(of: calendar, now: now)
+                calendarSeen[config.id] = (syncToken, now)
+            case .github, .linear:
                 break
             }
             problems[config.id] = nil
         } catch SourceError.unauthorized {
             problems[config.id] = "The token was refused. Sign in again on this device."
             seen[config.id] = nil
+            calendarSeen[config.id] = nil
         } catch {
             problems[config.id] = "Couldn't reach \(config.name). Bud will try again."
         }
