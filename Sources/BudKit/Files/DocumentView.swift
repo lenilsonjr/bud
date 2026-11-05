@@ -1,5 +1,8 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
+#if os(iOS)
+import GameController
+#endif
 
 /// A bud as its own file: the doc bar with its path, the properties the lenses read, the body,
 /// and what is inside it. The body autosaves half a second after the last keystroke.
@@ -178,9 +181,10 @@ struct DocumentView: View {
 
     // MARK: link picker
 
-    /// The link being typed while the editor is open, unless Esc closed the picker on it.
+    /// The link being typed while the editor is open, unless Esc closed the picker on it. A
+    /// `[[` left open in the text from before does not open it: only typing does.
     private var linkPicker: LinkPicker? {
-        guard editing, let picker = LinkPicker(typing: draft), picker.range.lowerBound != closedAt else { return nil }
+        guard editing, armed, let picker = LinkPicker(typing: draft), picker.range.lowerBound != closedAt else { return nil }
         return picker
     }
 
@@ -350,18 +354,30 @@ struct LinkPickerList: View {
                     .foregroundStyle(Theme.text3)
                     .padding(8)
             }
-            Divider()
-            Text("↑↓ choose · ↩ link · ⇥ link with a label · esc close")
-                .textRole(.caption)
-                .foregroundStyle(Theme.text3)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+            if Self.hasKeys {
+                Divider()
+                Text("↑↓ choose · ↩ link · ⇥ link with a label · esc close")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
         }
         .padding(6)
         .frame(maxWidth: 420, alignment: .leading)
         .background(Theme.raised, in: shape)
         .overlay(shape.stroke(Theme.line, lineWidth: 1))
         .accessibilityIdentifier("link-picker")
+    }
+
+    /// Whether the keys in the hint work: always on the Mac; on iPhone and iPad only with a
+    /// hardware keyboard attached.
+    private static var hasKeys: Bool {
+        #if os(iOS)
+        GCKeyboard.coalesced != nil
+        #else
+        true
+        #endif
     }
 
     @ViewBuilder private func line(_ row: Row, picked: Bool) -> some View {
@@ -514,11 +530,12 @@ struct RenderedBody: View {
             case .link(let link):
                 var shown = AttributedString(link.shown)
                 if let id = tree?.resolve(link.target) {
+                    // The arrow is a character of the link, not an image beside it: an image
+                    // cannot carry the link, so a tap on it fell through to the editor.
+                    shown += AttributedString("\u{00A0}\u{2197}")
                     shown.link = URL(string: "\(Self.scheme)://\(id.uuidString)")
                     shown.foregroundColor = Theme.leaf
-                    // The icon follows the words: in front of them it shifts the link's tap area
-                    // and its spoken label off the words.
-                    out = out + Text(shown).fontWeight(.semibold) + Text("\u{00A0}") + Text(Image(systemName: "link")).foregroundStyle(Theme.leaf).accessibilityLabel("")
+                    out = out + Text(shown).fontWeight(.semibold)
                 } else {
                     shown.foregroundColor = Theme.text3
                     shown.underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.text3)
