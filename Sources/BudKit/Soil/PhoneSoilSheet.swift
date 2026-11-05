@@ -7,6 +7,7 @@ struct PhoneSoilSheet: View {
     @ObservedObject var store: BudStore
     @State private var shown: String?
     @State private var planting: Pick?
+    @Environment(\.stillPicture) private var still
 
     struct Pick: Identifiable {
         let item: SourceItem
@@ -18,13 +19,11 @@ struct PhoneSoilSheet: View {
         let roots = store.roots()
         let root = roots.first { $0.id == shown } ?? roots.first
         VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(roots) { each in
-                        Button { shown = each.id } label: { tab(each, on: each.id == root?.id) }
-                            .buttonStyle(.plain)
-                    }
-                }
+            // A still picture draws nothing inside a scroll view.
+            if still {
+                tabs(roots, on: root?.id)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) { tabs(roots, on: root?.id) }
             }
             if let root {
                 list(root)
@@ -37,6 +36,15 @@ struct PhoneSoilSheet: View {
             MoveToPicker(store: store, planting: planting.item, from: planting.account)
         }
         .accessibilityIdentifier("phone-soil")
+    }
+
+    private func tabs(_ roots: [Root], on id: String?) -> some View {
+        HStack(spacing: 8) {
+            ForEach(roots) { each in
+                Button { shown = each.id } label: { tab(each, on: each.id == id) }
+                    .buttonStyle(.plain)
+            }
+        }
     }
 
     private func tab(_ root: Root, on: Bool) -> some View {
@@ -64,7 +72,7 @@ struct PhoneSoilSheet: View {
             .buttonStyle(.budSecondary)
         } else {
             let items = Root.order(root.account.items, kind: root.account.kind, now: Date())
-            ScrollView {
+            MaybeScroll {
                 VStack(spacing: 6) {
                     ForEach(items) { item in
                         row(item, in: root.account)
