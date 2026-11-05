@@ -514,9 +514,18 @@ fn a_deletion_that_could_not_remove_the_file_is_tried_again_on_the_next_sync() {
     a.vault.sync().unwrap();
 
     let trash = b.dir.path().join(".trash");
+    let probe = trash.join("probe");
+    std::fs::write(&probe, "").unwrap();
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o555)).unwrap();
+    if std::fs::remove_file(&probe).is_ok() {
+        // Root removes files from a read-only folder: nothing here can make the removal fail.
+        std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("skipped: a read-only folder does not stop this user");
+        return;
+    }
     send(&a, &mut b);
     std::fs::set_permissions(&trash, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_file(&probe).unwrap();
     assert!(b.exists(&trashed), "the file could not go");
 
     b.vault.sync().unwrap();
