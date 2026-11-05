@@ -7,8 +7,9 @@ import Security
 /// device that was signed in, and another device sees the account locked.
 public protocol TokenStore: Sendable {
     func token(for account: String) -> String?
-    /// Nil forgets it.
-    func set(_ token: String?, for account: String)
+    /// Nil forgets it. False when the token could not be kept.
+    @discardableResult
+    func set(_ token: String?, for account: String) -> Bool
 }
 
 /// Tokens in memory, for tests, previews and Linux.
@@ -23,9 +24,11 @@ public final class MemoryTokens: TokenStore, @unchecked Sendable {
         return tokens[account]
     }
 
-    public func set(_ token: String?, for account: String) {
+    @discardableResult
+    public func set(_ token: String?, for account: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
         tokens[account] = token
+        return true
     }
 }
 
@@ -45,13 +48,14 @@ public struct KeychainTokens: TokenStore {
         return String(data: data, encoding: .utf8)
     }
 
-    public func set(_ token: String?, for account: String) {
+    @discardableResult
+    public func set(_ token: String?, for account: String) -> Bool {
         SecItemDelete(base(account) as CFDictionary)
-        guard let token else { return }
+        guard let token else { return true }
         var item = base(account)
         item[kSecValueData as String] = Data(token.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
     private func base(_ account: String) -> [String: Any] {

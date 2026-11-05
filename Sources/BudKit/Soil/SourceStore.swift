@@ -89,11 +89,16 @@ public final class SourceStore: ObservableObject {
     public func connectMail(name: String, session: URL, token: String, mailbox: String) async -> SourceConfig {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = SourceConfig(kind: .mail, name: trimmed.isEmpty ? SourceKind.mail.name : trimmed, session: session, mailbox: mailbox)
-        tokens.set(token, for: config.id)
         configs.append(config)
         save()
+        keep(token, for: config)
         await read(config)
         return config
+    }
+
+    /// Keeps a token on this device, or says it could not.
+    private func keep(_ token: String, for config: SourceConfig) {
+        if !tokens.set(token, for: config.id) { problems[config.id] = "Couldn't keep the token on this device." }
     }
 
     // MARK: connecting a calendar
@@ -109,9 +114,9 @@ public final class SourceStore: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = SourceConfig(
             kind: .calendar, name: trimmed.isEmpty ? SourceKind.calendar.name : trimmed, session: server, user: user, calendar: calendar)
-        tokens.set(password, for: config.id)
         configs.append(config)
         save()
+        keep(password, for: config)
         await read(config)
         return config
     }
@@ -119,7 +124,7 @@ public final class SourceStore: ObservableObject {
     /// Signs this device in to an account another device connected.
     public func signIn(_ id: String, token: String) async {
         guard let config = configs.first(where: { $0.id == id }) else { return }
-        tokens.set(token, for: id)
+        keep(token, for: config)
         await read(config)
     }
 
@@ -217,38 +222,49 @@ public final class SourceStore: ObservableObject {
     public func sightings(for planted: [(from: String, when: Date?)]) async -> [String: Sighting] {
         var found: [String: Sighting] = [:]
         let now = clock()
-        for config in configs where problems[config.id] == nil {
-            guard let token = tokens.token(for: config.id), readAt[config.id] != nil else { continue }
-            let mine = planted.filter { SourceRowText.origin($0.from).kind == config.kind && found[$0.from] == nil }
-            guard !mine.isEmpty else { continue }
-            let window = Dictionary((items[config.id] ?? []).map { (config.kind.key($0.id), $0) }, uniquingKeysWith: { a, _ in a })
-            var asked: [String] = []
-            for item in mine {
-                if let seen = window[item.from] {
-                    found[item.from] = .seen(seen)
-                } else if config.kind == .calendar, let when = item.when,
-                          // A bud keeps the day only, so today's events may already have left the window.
-                          let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now)),
-                          when >= tomorrow, when < now.addingTimeInterval(13 * 86_400) {
-                    found[item.from] = .gone
-                } else if config.kind == .mail {
-                    asked.append(SourceRowText.origin(item.from).id)
+        for kind in SourceKind.allCases {
+            let accounts = configs.filter { $0.kind == kind }
+            let readable = accounts.filter { problems[$0.id] == nil && readAt[$0.id] != nil && tokens.token(for: $0.id) != nil }
+            let mine = planted.filter { SourceRowText.origin($0.from).kind == kind }
+            guard !readable.isEmpty, !mine.isEmpty else { continue }
+            // Only when every account of this kind was read can an item missing from all of them be gone.
+            let everyone = readable.count == accounts.count
+            for config in readable {
+                for item in items[config.id] ?? [] where found[kind.key(item.id)] == nil {
+                    found[kind.key(item.id)] = .seen(item)
                 }
             }
-            guard config.kind == .mail, !asked.isEmpty, let session = config.session,
-                  let endpoint = seen[config.id]?.endpoint else { continue }
-            do {
-                let answer = try await JMAPMail(session: session, token: token, http: http).emails(at: endpoint, ids: asked)
-                for item in answer.found { found[config.kind.key(item.id)] = .seen(item) }
-                // Another mail account may still hold it; only the last one asked says gone.
-                if configs.last(where: { $0.kind == .mail }) == config {
-                    for id in answer.missing { found[config.kind.key(id)] = .gone }
+            var left = mine.filter { found[$0.from] == nil }
+            switch kind {
+            case .calendar:
+                // A bud keeps the day only, so today's events may already have left the window.
+                guard everyone, let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now)) else { break }
+                for item in left {
+                    if let when = item.when, when >= tomorrow, when < now.addingTimeInterval(13 * 86_400) { found[item.from] = .gone }
                 }
-            } catch {
-                continue
+            case .mail:
+                var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
+                var answered = 0
+                for config in readable where !left.isEmpty {
+                    guard let token = tokens.token(for: config.id), let session = config.session,
+                          let endpoint = seen[config.id]?.endpoint else { continue }
+                    let ids = left.map { SourceRowText.origin($0.from).id }
+                    guard let answer = try? await JMAPMail(session: session, token: token, http: http).emails(at: endpoint, ids: ids) else { continue }
+                    answered += 1
+                    for item in answer.found {
+                        found[kind.key(item.id)] = .seen(item)
+                        missingEverywhere.remove(item.id)
+                    }
+                    left = left.filter { found[$0.from] == nil }
+                }
+                if everyone, answered == readable.count {
+                    for id in missingEverywhere { found[kind.key(id)] = .gone }
+                }
+            case .github, .linear:
+                break
             }
         }
-        return found
+        return found.filter { key, _ in planted.contains { $0.from == key } }
     }
 
     private func save() {

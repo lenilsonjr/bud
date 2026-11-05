@@ -15,6 +15,9 @@ struct SoilView: View {
     /// An item in hand, at a point in the canvas's space; nil when it is let go.
     let onDrag: (SourceItem, SourceAccount, CGPoint) -> Void
     let onDrop: (SourceItem, SourceAccount, CGPoint) -> Void
+    /// The grip let go, dropped or cancelled: a cancelled drag never reaches `onDrop`.
+    var onRelease: () -> Void = {}
+    @GestureState private var holding = false
 
     static let openHeight: CGFloat = 236
     static let foldedHeight: CGFloat = 52
@@ -31,6 +34,7 @@ struct SoilView: View {
         .background(Theme.sidebar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("soil")
+        .onChange(of: holding) { _, now in if !now { onRelease() } }
     }
 
     /// The soil line, with the handle that folds and opens the roots.
@@ -133,6 +137,7 @@ struct SoilView: View {
         .contentShape(shape)
         .gesture(
             DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.space))
+                .updating($holding) { _, state, _ in state = true }
                 .onChanged { onDrag(item, account, $0.location) }
                 .onEnded { onDrop(item, account, $0.location) }
         )
