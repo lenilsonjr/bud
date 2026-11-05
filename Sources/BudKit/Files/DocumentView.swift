@@ -24,6 +24,8 @@ struct DocumentView: View {
                     properties(bud)
                     bodyEditor
                     inside(bud)
+                    linkedFrom
+                    enrichField(bud)
                 }
                 .pageColumn()
             }
@@ -165,20 +167,90 @@ struct DocumentView: View {
                 }
                 .buttonStyle(.plain)
             }
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .foregroundStyle(Theme.text3)
-                TextField("Enrich \(bud.text)…", text: $enrich)
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id)
-                        enrich = ""
-                    }
-            }
-            .textRole(.body)
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
         }
+    }
+
+    private func enrichField(_ bud: Bud) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+                .foregroundStyle(Theme.text3)
+            TextField("Enrich \(bud.text)…", text: $enrich)
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id)
+                    enrich = ""
+                }
+        }
+        .textRole(.body)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+    }
+
+    // MARK: linked from
+
+    /// The buds whose body links here, each with where it lives and the sentence the link sits
+    /// in; a click goes to that bud. Nothing is drawn while no bud links here.
+    @ViewBuilder private var linkedFrom: some View {
+        let links = store.tree.backlinks(to: id)
+        if !links.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("LINKED FROM · \(links.count)")
+                    .textRole(.eyebrow)
+                    .foregroundStyle(Theme.text3)
+                ForEach(links) { link in
+                    Button { store.center = link.from } label: {
+                        BacklinkRow(link: link, tree: store.tree)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+/// One "Linked from" row: the linking bud and where it lives, the sentence below with the link
+/// marked in leaf.
+struct BacklinkRow: View {
+    let link: Backlink
+    let tree: Tree
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward")
+                    .foregroundStyle(Theme.leaf)
+                Text(tree.title(of: link.from))
+                    .textRole(.label)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Theme.text)
+                Text((["Everything"] + tree.breadcrumb(of: link.from)).joined(separator: " › "))
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(Theme.text3)
+            }
+            Text(marked)
+                .textRole(.body)
+                .foregroundStyle(Theme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(Theme.raised, in: shape)
+        .overlay(shape.stroke(Theme.line, lineWidth: 1))
+        .contentShape(shape)
+    }
+
+    private var marked: AttributedString {
+        var text = AttributedString(link.sentence)
+        if let range = text.range(of: link.shown) {
+            text[range].foregroundColor = Theme.leaf
+            text[range].backgroundColor = Theme.leafSoft
+        }
+        return text
     }
 }
 

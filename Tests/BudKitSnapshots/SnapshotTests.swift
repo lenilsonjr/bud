@@ -106,6 +106,32 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    func testRendersTheLinkedFromSection() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let all = store.tree.walk(under: rootID)
+        let target = try XCTUnwrap(all.first { $0.text == "Short names read better in the inbox" })
+        let others = all.filter { $0.id != target.id && $0.body.isEmpty }.prefix(2)
+        XCTAssertEqual(others.count, 2)
+        for (bud, sentence) in zip(others, [
+            "Keep it brief. Remember [[Short names read better in the inbox]] when naming the next one. Then ship.",
+            "- As [[short names read better in the inbox|the inbox note]] says, a title is a promise",
+        ]) {
+            store.setBody(bud.id, sentence)
+        }
+        store.openAsFile(target.id)
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("linked-from-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     func testRendersTheTodayLens() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
