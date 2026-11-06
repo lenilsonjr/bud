@@ -91,13 +91,16 @@ struct OutlinePage: View {
                     .lineSpacing(14 * 0.55)
                     .foregroundStyle(Theme.text2)
             }
-            if !rest.isEmpty {
-                Text(rest)
-                    .textRole(.body)
-                    .lineSpacing(14 * 0.55)
-                    .foregroundStyle(Theme.text2)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("outline-body")
+            // Each paragraph a line of its own, spaced as the lede is from the first.
+            ForEach(Array(rest.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, paragraph in
+                let text = paragraph.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    Text(text)
+                        .textRole(.body)
+                        .lineSpacing(14 * 0.55)
+                        .foregroundStyle(Theme.text2)
+                        .textSelection(.enabled)
+                }
             }
         }
     }
