@@ -520,6 +520,17 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(tree.lede(of: roadmap.id), "Only one paragraph here.")
         XCTAssertEqual(tree.lede(of: UUID()), "")
     }
+
+    func testTheRestOfTheBodyFollowsTheLede() throws {
+        var tree = Tree.seed()
+        let roadmap = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
+        tree.setBody(roadmap.id, "\n\nWhy this quarter.\n\nFirst the soil.\n\nThen the library.\n")
+        XCTAssertEqual(tree.lede(of: roadmap.id), "Why this quarter.")
+        XCTAssertEqual(tree.afterLede(of: roadmap.id), "First the soil.\n\nThen the library.")
+        tree.setBody(roadmap.id, "Only one paragraph here.")
+        XCTAssertEqual(tree.afterLede(of: roadmap.id), "")
+        XCTAssertEqual(tree.afterLede(of: UUID()), "")
+    }
 }
 
 final class RecentSearchTests: XCTestCase {
