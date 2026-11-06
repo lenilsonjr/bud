@@ -35,9 +35,9 @@ final class LibraryTests: XCTestCase {
 
     func testAStampKeyNamesTheTemplateAndTheMinute() {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
         let date = calendar.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 9, minute: 0))!
-        XCTAssertEqual(Tree.stampKey("Weekly review", at: date), "tpl/Weekly review/2026-11-09T09:00")
+        XCTAssertEqual(Tree.stampKey("Weekly review", at: date), "tpl/Weekly review/2026-11-09T14:00Z", "the same on every device")
     }
 
     func testTheWarehouseWords() {

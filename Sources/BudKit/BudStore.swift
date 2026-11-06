@@ -976,30 +976,88 @@ extension BudStore {
         return made
     }
 
-    /// Reads the triggers from the vault, oldest first.
+    /// Reads the triggers from the vault, oldest first, once the writes queued here have landed.
+    /// Each trigger is two entries: its settings under its id, and who fires it with its log
+    /// under `<id>#fired`, so an edit on one device and a firing on another both stand.
     public func reloadTriggers() async {
+        await settle()
         guard let stored = try? await vault.shared(.triggers) else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let loaded = stored.values.compactMap { try? decoder.decode(Trigger.self, from: Data($0.utf8)) }
-            .sorted { ($0.created, $0.id) < ($1.created, $1.id) }
+        var loaded: [Trigger] = []
+        for (key, text) in stored where !key.hasSuffix(Self.firedSuffix) {
+            guard var trigger = try? Self.triggerDecoder.decode(Trigger.self, from: Data(text.utf8)) else { continue }
+            if let fired = stored[key + Self.firedSuffix],
+               let state = try? Self.triggerDecoder.decode(Fired.self, from: Data(fired.utf8)) {
+                trigger.holder = state.holder
+                trigger.holderName = state.holderName
+                trigger.log = state.log
+            }
+            loaded.append(trigger)
+        }
+        loaded.sort { ($0.created, $0.id) < ($1.created, $1.id) }
         if loaded != triggers { triggers = loaded }
     }
 
-    /// Adds or changes a trigger, here and in the vault.
+    /// Adds a trigger or changes its settings, here and in the vault; a new one brings who fires it.
     public func save(_ trigger: Trigger) {
-        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) { triggers[i] = trigger } else { triggers.append(trigger) }
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = .sortedKeys
-        guard let data = try? encoder.encode(trigger) else { return }
-        let text = String(decoding: data, as: UTF8.self)
+        let isNew = !triggers.contains { $0.id == trigger.id }
+        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) {
+            // Who fires it and its log are the firing's to change.
+            var kept = trigger
+            kept.holder = triggers[i].holder
+            kept.holderName = triggers[i].holderName
+            kept.log = triggers[i].log
+            triggers[i] = kept
+        } else {
+            triggers.append(trigger)
+        }
+        var settings = trigger
+        settings.holder = nil
+        settings.holderName = nil
+        settings.log = []
+        guard let text = Self.triggerText(settings) else { return }
         write { vault in try await vault.setShared(.triggers, trigger.id, text) }
+        if isNew { record(trigger) }
+    }
+
+    /// Writes who fires a trigger and its log, and nothing of its settings.
+    private func record(_ trigger: Trigger) {
+        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) {
+            triggers[i].holder = trigger.holder
+            triggers[i].holderName = trigger.holderName
+            triggers[i].log = trigger.log
+        }
+        guard let text = Self.triggerText(Fired(holder: trigger.holder, holderName: trigger.holderName, log: trigger.log)) else { return }
+        write { vault in try await vault.setShared(.triggers, trigger.id + Self.firedSuffix, text) }
     }
 
     public func deleteTrigger(_ id: String) {
         triggers.removeAll { $0.id == id }
-        write { vault in try await vault.setShared(.triggers, id, nil) }
+        write { vault in
+            try await vault.setShared(.triggers, id, nil)
+            try await vault.setShared(.triggers, id + Self.firedSuffix, nil)
+        }
+    }
+
+    /// Who fires a trigger and what it fired, kept apart from its settings.
+    private struct Fired: Codable {
+        var holder: String?
+        var holderName: String?
+        var log: [Trigger.Firing]
+    }
+
+    private static let firedSuffix = "#fired"
+
+    private static var triggerDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private static func triggerText(_ value: some Encodable) -> String? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// The vault path a copy goes into for a place on screen: nil for Everything.
@@ -1028,7 +1086,7 @@ extension BudStore {
             } else {
                 skipped = "no template \(trigger.template) in the Warehouse"
             }
-            save(trigger.fired(occurrence, device: device, deviceName: Self.deviceName, skipped: skipped))
+            record(trigger.fired(occurrence, device: device, deviceName: Self.deviceName, skipped: skipped))
         }
     }
 
