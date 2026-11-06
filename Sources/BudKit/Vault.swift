@@ -201,7 +201,7 @@ public protocol Vault: Sendable {
 
 /// The maps a vault keeps beside the buds.
 public enum SharedMap: String, Sendable {
-    case sources, leases
+    case sources, leases, triggers
 }
 
 extension Vault {

@@ -908,6 +908,17 @@ impl Vault {
         self.set_shared("leases", id, lease)
     }
 
+    /// The Library's triggers, by id, as the app wrote them: what each stamps, when, into where,
+    /// and its firing log.
+    pub fn triggers(&self) -> Result<Vec<(String, String)>> {
+        self.shared("triggers")
+    }
+
+    /// Keep one trigger; none deletes it.
+    pub fn set_trigger(&mut self, id: &str, trigger: Option<&str>) -> Result<()> {
+        self.set_shared("triggers", id, trigger)
+    }
+
     /// A map of text the tree document carries beside the buds, sorted by key.
     fn shared(&self, name: &str) -> Result<Vec<(String, String)>> {
         let tree = self.load_tree()?;
