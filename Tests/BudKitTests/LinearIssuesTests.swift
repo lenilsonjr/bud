@@ -179,6 +179,13 @@ final class LinearLiveRulesTests: XCTestCase {
         XCTAssertEqual(back.changes, [.state(.open), .mark("reopened \(stamp)")])
     }
 
+    func testACancelledIssueThatIsDoneAfterAllSaysClosed() {
+        let done = LiveRules.changes(
+            for: Bud(text: "Ship", state: .done, from: "linear:ENG-1", fromState: "cancelled"), kind: .linear,
+            sighting: .seen(issue(todo: false)), last: SourceSnapshot(issue(todo: false, cancelled: true)), now: now)
+        XCTAssertEqual(done.changes, [.mark("closed \(stamp)")])
+    }
+
     func testCancelledTicksTheBudAndSaysCancelled() {
         let result = LiveRules.changes(
             for: bud, kind: .linear, sighting: .seen(issue(todo: false, cancelled: true)), last: SourceSnapshot(issue()), now: now)

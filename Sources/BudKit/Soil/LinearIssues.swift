@@ -41,17 +41,18 @@ public struct LinearIssues: Sendable {
     }
 
     /// When the newest update after `since` to an issue assigned to you was made, closed ones
-    /// included; nil when there was none. A reply Bud cannot read counts as an update now.
+    /// included; nil when there was none. A reply Bud cannot read counts as an update at `since`,
+    /// so the window is read and this device's clock never stands in for Linear's.
     public func changed(since: Date) async throws -> Date? {
         let data = try await query("""
         query { viewer { assignedIssues(first: 1, includeArchived: true, orderBy: updatedAt, \
         filter: { updatedAt: { gt: "\(Self.stamp(since))" } }) { nodes { updatedAt } } } }
         """)
         guard let nodes = ((data["viewer"] as? [String: Any])?["assignedIssues"] as? [String: Any])?["nodes"] as? [[String: Any]] else {
-            return Date()
+            return since
         }
         guard let newest = nodes.first else { return nil }
-        return (newest["updatedAt"] as? String).flatMap(Self.instant) ?? Date()
+        return (newest["updatedAt"] as? String).flatMap(Self.instant) ?? since
     }
 
     /// Particular issues by identifier, whatever their state or assignee now: the ones found, and

@@ -91,7 +91,8 @@ public enum LiveRules {
             mark = .some("\(item.todo ? "flagged" : "unflagged") \(stamp)")
         }
         if item.cancelled != last.cancelled {
-            mark = .some(item.cancelled ? "cancelled" : nil)
+            // An issue that went from cancelled to done is closed, not live.
+            mark = .some(item.cancelled ? "cancelled" : kind == .linear && !item.todo ? "closed \(stamp)" : nil)
         } else if item.cancelled, bud.fromState != "cancelled" {
             mark = .some("cancelled")
         }
