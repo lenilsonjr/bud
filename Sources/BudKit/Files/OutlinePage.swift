@@ -1,8 +1,9 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// A folder's page (C1): the page header, the lede, and the outline of what is inside, one
-/// level open, each row opening one more level in place. Everything's page is the same with
+/// A folder's page (C1): the page header, the lede and the rest of the body, and the outline of
+/// what is inside, one level open, each row opening one more level in place. Document swaps it
+/// for the thread's document, where its body is edited. Everything's page is the same with
 /// the threads as rows. A leaf has the document view instead.
 struct OutlinePage: View {
     @ObservedObject var store: BudStore
@@ -57,6 +58,7 @@ struct OutlinePage: View {
     /// The eyebrow, the title with Show closed and Enrich at its right, and the lede.
     private func header(_ id: UUID, hidden: Int) -> some View {
         let lede = store.tree.lede(of: id)
+        let rest = store.tree.afterLede(of: id)
         return VStack(alignment: .leading, spacing: 8) {
             Text(eyebrow(id))
                 .textRole(.eyebrow)
@@ -89,11 +91,25 @@ struct OutlinePage: View {
                     .lineSpacing(14 * 0.55)
                     .foregroundStyle(Theme.text2)
             }
+            if !rest.isEmpty {
+                Text(rest)
+                    .textRole(.body)
+                    .lineSpacing(14 * 0.55)
+                    .foregroundStyle(Theme.text2)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("outline-body")
+            }
         }
     }
 
-    /// Show closed and Enrich (Add at Everything), beside the title or under it on a phone.
+    /// Document, Show closed and Enrich (Add at Everything), beside the title or under it on a phone.
     @ViewBuilder private func headerButtons(_ id: UUID) -> some View {
+        if id != rootID {
+            Button { store.documentOf = id } label: { BudButtonLabel(title: "Document", systemImage: "doc.text") }
+                .buttonStyle(.budGhost)
+                .help("Read and edit this thread's body")
+                .accessibilityIdentifier("outline-document")
+        }
         Button { showClosed.toggle() } label: { BudButtonLabel(title: "Show closed") }
             .buttonStyle(showClosed ? .budGhost : .budSecondary)
         Button { store.modal = .adding(under: id) } label: {

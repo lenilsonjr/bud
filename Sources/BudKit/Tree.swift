@@ -265,6 +265,16 @@ public struct Tree: Codable, Equatable, Sendable {
             .first { !$0.isEmpty } ?? ""
     }
 
+    /// What a bud's body says after its lede, the paragraphs an outline page shows under it.
+    public func afterLede(of id: UUID) -> String {
+        guard let body = bud(id)?.body else { return "" }
+        var paragraphs = body.components(separatedBy: "\n\n")
+        while let first = paragraphs.first, first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { paragraphs.removeFirst() }
+        guard !paragraphs.isEmpty else { return "" }
+        paragraphs.removeFirst()
+        return paragraphs.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Today: open to-dos due on or before the day (overdue first), and buds scheduled for the
     /// day or earlier. A bud that is both due and scheduled shows once, under Due.
     public func today(on day: Date = Date(), calendar: Calendar = .current) -> (due: [Bud], scheduled: [Bud]) {
