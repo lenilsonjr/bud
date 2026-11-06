@@ -100,6 +100,18 @@ struct DocumentView: View {
                     .foregroundStyle(Theme.text3)
             }
             .textRole(.caption)
+            if store.tree.hasChildren(id) {
+                Button {
+                    flush()
+                    store.documentOf = nil
+                } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.leaf)
+                .help("Show the outline")
+                .accessibilityIdentifier("document-outline")
+            }
             Button {
                 flush()
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }

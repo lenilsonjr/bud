@@ -42,6 +42,7 @@ public final class BudStore: ObservableObject {
                 relayout()
                 lens = nil
                 place = nil
+                documentOf = nil
             }
         }
     }
@@ -53,6 +54,8 @@ public final class BudStore: ObservableObject {
         set { place = newValue ? .inbox : nil }
     }
     @Published public var surface: Surface = .canvas
+    /// A thread Files shows as its document rather than its outline, until the center moves.
+    @Published public var documentOf: UUID?
     /// The lens Files shows instead of the center's page; a change of center clears it.
     @Published public var lens: Lens? = nil {
         didSet { if lens != nil { place = nil } }

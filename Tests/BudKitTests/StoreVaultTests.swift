@@ -401,6 +401,17 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
     }
 
+    func testAThreadShownAsItsDocumentShowsItsOutlineAgainOnceTheCenterMoves() async throws {
+        let (store, _) = await loaded()
+        let threads = store.tree.children(of: rootID).filter { store.tree.hasChildren($0.id) }
+        let a = try XCTUnwrap(threads.first), b = try XCTUnwrap(threads.dropFirst().first)
+        store.center = a.id
+        store.documentOf = a.id
+        store.center = b.id
+        store.center = a.id
+        XCTAssertNil(store.documentOf)
+    }
+
     // MARK: keeping planted buds live
 
     func testAMovedEventMovesItsPlantedBudAndMarksIt() async throws {
