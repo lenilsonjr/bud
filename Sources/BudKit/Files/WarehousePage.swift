@@ -48,7 +48,9 @@ struct WarehousePage: View {
                 Text(template.text)
                     .textRole(.label)
                     .foregroundStyle(Theme.text)
-                Text(WarehouseText.caption(buds: store.tree.descendants(of: template.id).count + 1))
+                Text(WarehouseText.caption(
+                    buds: store.tree.descendants(of: template.id).count + 1,
+                    triggers: store.triggers.filter { $0.template == template.text }.count))
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
             }
@@ -107,8 +109,9 @@ public enum WarehouseText {
         templates == 1 ? "1 template" : "\(templates) templates"
     }
 
-    /// `Template · 3 buds`: the template and everything inside it.
-    public static func caption(buds: Int) -> String {
-        "Template · \(buds == 1 ? "1 bud" : "\(buds) buds")"
+    /// `Template · 3 buds · used by 1 trigger`: the template and everything inside it.
+    public static func caption(buds: Int, triggers: Int = 0) -> String {
+        let used = triggers == 0 ? "" : " · used by \(triggers == 1 ? "1 trigger" : "\(triggers) triggers")"
+        return "Template · \(buds == 1 ? "1 bud" : "\(buds) buds")\(used)"
     }
 }
