@@ -49,7 +49,12 @@ final class RustVault: BudKit.Vault {
     func setFromState(_ path: String, _ state: String?) async throws { try core.setFromState(path: path, state: state) }
 
     func shared(_ map: SharedMap) async throws -> [String: String] {
-        let entries = map == .sources ? try core.sources() : try core.leases()
+        let entries: [SharedEntry]
+        switch map {
+        case .sources: entries = try core.sources()
+        case .leases: entries = try core.leases()
+        case .triggers: entries = try core.triggers()
+        }
         return Dictionary(entries.map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
     }
 
@@ -57,6 +62,7 @@ final class RustVault: BudKit.Vault {
         switch map {
         case .sources: try core.setSource(id: key, settings: value)
         case .leases: try core.setLease(id: key, lease: value)
+        case .triggers: try core.setTrigger(id: key, trigger: value)
         }
     }
     func rename(_ path: String, to title: String) async throws -> String { try core.rename(path: path, newTitle: title) }
