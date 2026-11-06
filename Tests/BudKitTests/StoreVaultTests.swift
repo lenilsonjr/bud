@@ -445,6 +445,52 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(again?.id, copy.id, "the same occurrence is stamped once")
     }
 
+    func testADueTriggerStampsItsTemplateOnceAndLogsTheFiring() async throws {
+        let (store, _) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
+        store.add("Clear the inbox", todo: true, under: template.id)
+        store.keepAsTemplate(template.id)
+        await store.settle()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let monday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 9)))
+        store.save(Trigger(
+            name: "Monday review", template: "Weekly review", into: store.triggerPath(of: thread.id), intoName: thread.text,
+            rule: .init(every: .week, hour: 9, weekday: 2), created: monday.addingTimeInterval(-86_400)))
+        await store.settle()
+        await store.reloadTriggers()
+        XCTAssertEqual(store.triggers.count, 1, "the trigger is in the vault")
+
+        store.fireTriggers(now: monday.addingTimeInterval(60), device: "mac", calendar: calendar)
+        await store.settle()
+        let copies = store.tree.children(of: thread.id).filter { $0.text == "Weekly review" }
+        XCTAssertEqual(copies.count, 1)
+        XCTAssertEqual(copies.first?.from, Tree.stampKey("Weekly review", at: monday))
+        XCTAssertEqual(store.tree.children(of: copies[0].id).map(\.text), ["Clear the inbox"])
+        XCTAssertEqual(store.triggers.first?.log.first?.at, monday)
+        XCTAssertEqual(store.triggers.first?.holder, "mac")
+
+        store.fireTriggers(now: monday.addingTimeInterval(120), device: "mac", calendar: calendar)
+        await store.settle()
+        XCTAssertEqual(store.tree.children(of: thread.id).filter { $0.text == "Weekly review" }.count, 1, "fired once")
+        store.fireTriggers(now: monday.addingTimeInterval(7 * 86_400 + 4000), device: "phone", calendar: calendar)
+        await store.settle()
+        XCTAssertEqual(store.tree.children(of: thread.id).filter { $0.text == "Weekly review" }.count, 2, "another device takes over after the grace")
+        XCTAssertEqual(store.triggers.first?.holder, "phone")
+    }
+
+    func testATriggerWhoseTemplateIsGoneLogsWhyAndStampsNothing() async throws {
+        let (store, _) = await loaded()
+        let created = Date(timeIntervalSince1970: 1_800_000_000)
+        store.save(Trigger(name: "Daily", template: "Nowhere", into: nil, intoName: "Everything", rule: .init(every: .day), created: created))
+        let before = store.tree.buds.count
+        store.fireTriggers(now: created.addingTimeInterval(2 * 86_400), device: "mac")
+        await store.settle()
+        XCTAssertEqual(store.tree.buds.count, before)
+        XCTAssertEqual(store.triggers.first?.log.first?.skipped, "no template Nowhere in the Warehouse")
+    }
+
     // MARK: keeping planted buds live
 
     func testAMovedEventMovesItsPlantedBudAndMarksIt() async throws {

@@ -41,6 +41,8 @@ enum Launch {
         #if !os(tvOS)
         // The TV shows no soil, only the source rows of buds planted elsewhere.
         store.follow(SourceStore.shared)
+        // The TV keeps a copy of the vault and fires no trigger of its own.
+        store.startTriggers()
         #endif
         let devices = store.devices
         let platform = platform
