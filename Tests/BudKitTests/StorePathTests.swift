@@ -9,6 +9,7 @@ private actor FolderVault: Vault {
     private var records: [BudRecord] = []
 
     nonisolated var inboxPath: String { "Inbox" }
+    nonisolated var warehousePath: String { "Warehouse" }
 
     func snapshot() async throws -> [BudRecord] { records }
 
@@ -20,12 +21,14 @@ private actor FolderVault: Vault {
     private func folder(_ path: String) -> String { String(path.dropLast(3)) }
 
     func create(parent: String?, title: String, kind: BudKind, source: String?, preferredPath: String?) async throws -> String {
-        let inbox = parent == inboxPath
-        let home = inbox ? parent : parent.map(folder)
+        let inbox = parent == inboxPath, warehouse = parent == warehousePath
+        let home = inbox || warehouse ? parent : parent.map(folder)
         let path = (home.map { $0 + "/" } ?? "") + title + ".md"
+        let place: BudPlace = inbox ? .inbox : warehouse ? .warehouse
+            : parent.flatMap { p in records.first { $0.path == p }?.place } ?? .everything
         records.append(BudRecord(
-            path: path, parent: inbox ? nil : parent, title: title, kind: kind,
-            state: kind == .todo ? .open : nil, source: source, place: inbox ? .inbox : .everything
+            path: path, parent: inbox || warehouse ? nil : parent, title: title, kind: kind,
+            state: kind == .todo ? .open : nil, source: source, place: place
         ))
         return path
     }
@@ -133,7 +136,8 @@ private actor FolderVault: Vault {
         self.records = []
         var planted: [String: String] = [:]
         for record in records where record.place != .trash {
-            let parent = record.place == .inbox && record.parent == nil ? inboxPath : record.parent.flatMap { planted[$0] }
+            let top = record.place == .inbox ? inboxPath : record.place == .warehouse ? warehousePath : nil
+            let parent = record.parent == nil ? top : record.parent.flatMap { planted[$0] }
             planted[record.path] = try await create(
                 parent: parent, title: record.title, kind: record.kind, source: record.source, preferredPath: nil
             )

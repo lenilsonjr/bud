@@ -1,6 +1,6 @@
 //! Editing through the vault: every operation is a file operation first, then the index row.
 
-use bud_core::{sanitize_filename, Bud, Error, Kind, Place, State, Vault};
+use bud_core::{sanitize_filename, Bud, Error, Kind, Lens, Place, State, Vault};
 use pretty_assertions::assert_eq;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -662,4 +662,30 @@ fn planting_an_item_twice_finds_the_bud_it_made() {
         vault.planted("mail:M-1").unwrap().is_none(),
         "a trashed bud is planted again"
     );
+}
+
+#[test]
+fn a_template_in_the_warehouse_stays_out_of_the_lenses_until_it_leaves() {
+    let (mut vault, _dir, _index) = vault_with(&[
+        ("Weekly review.md", "---\nstate: open\npinned: true\n---\n"),
+        (
+            "Weekly review/Clear the inbox.md",
+            "---\nstate: open\n---\n",
+        ),
+    ]);
+    assert_eq!(vault.lens(Lens::Todos).unwrap().len(), 2);
+    let kept = vault
+        .move_to("Weekly review.md", Some("Warehouse"))
+        .unwrap();
+    assert_eq!(kept, "Warehouse/Weekly review.md");
+    let template = vault.bud(&kept).unwrap().unwrap();
+    assert_eq!(template.place, Place::Warehouse);
+    assert_eq!(template.parent, None);
+    assert_eq!(vault.roots(Place::Warehouse).unwrap().len(), 1);
+    assert!(vault.lens(Lens::Todos).unwrap().is_empty());
+    assert!(vault.lens(Lens::Pinned).unwrap().is_empty());
+    assert!(vault.today("2099-01-01").unwrap().is_empty());
+    assert_matches_rescan(&mut vault);
+    vault.move_to(&kept, None).unwrap();
+    assert_eq!(vault.lens(Lens::Todos).unwrap().len(), 2);
 }

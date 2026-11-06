@@ -252,10 +252,10 @@ public actor MemoryVault: Vault {
         return id
     }
 
-    /// The parent a path names: nil is Everything; the Inbox and every bud are themselves.
+    /// The parent a path names: nil is Everything; the Inbox, the Warehouse and every bud are themselves.
     private func parentID(_ path: String?) throws -> UUID {
         guard let path else { return rootID }
-        guard let id = UUID(uuidString: path), id == rootID || id == inboxID || tree.bud(id) != nil else {
+        guard let id = UUID(uuidString: path), [rootID, inboxID, warehouseID].contains(id) || tree.bud(id) != nil else {
             throw VaultError.notFound(path)
         }
         return id
