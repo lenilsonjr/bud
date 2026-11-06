@@ -467,6 +467,15 @@ final class StoreVaultTests: XCTestCase {
         await store.settle()
         XCTAssertEqual(store.tree.children(of: thread.id).filter { $0.text == "Weekly review" }.count, 2, "another device takes over after the grace")
         XCTAssertEqual(store.triggers.first?.holder, "phone")
+
+        // A pause keeps the log, and a reload brings both back.
+        var paused = try XCTUnwrap(store.triggers.first)
+        paused.enabled = false
+        paused.log = []
+        store.save(paused)
+        await store.reloadTriggers()
+        XCTAssertEqual(store.triggers.first?.enabled, false)
+        XCTAssertEqual(store.triggers.first?.log.count, 2, "settings never carry the log")
     }
 
     func testATriggerWhoseTemplateIsGoneLogsWhyAndStampsNothing() async throws {

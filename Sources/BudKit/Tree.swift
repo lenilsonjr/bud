@@ -390,11 +390,13 @@ public struct Tree: Codable, Equatable, Sendable {
         return bud
     }
 
-    /// `tpl/Weekly review/2026-11-09T09:00`: the template and the minute it was stamped for.
+    /// `tpl/Weekly review/2026-11-09T09:00Z`: the template and the minute it was stamped for, in UTC.
     public static func stampKey(_ template: String, at date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        // UTC, so two devices in different zones name one occurrence alike.
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm'Z'"
         return "tpl/\(template)/\(formatter.string(from: date))"
     }
 

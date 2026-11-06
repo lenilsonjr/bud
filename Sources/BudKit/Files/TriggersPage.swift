@@ -162,10 +162,14 @@ struct NewTriggerSheet: View {
         let clock = Calendar.current.dateComponents([.hour, .minute], from: time)
         let rule = Trigger.Rule(every: every, hour: clock.hour ?? 9, minute: clock.minute ?? 0, weekday: weekday, day: day)
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.save(Trigger(
+        var trigger = Trigger(
             name: trimmed.isEmpty ? template : trimmed, template: template, into: store.triggerPath(of: into),
             intoName: store.tree.title(of: into), rule: rule
-        ))
+        )
+        // The device that made it fires it, so the first occurrence is not stamped everywhere.
+        trigger.holder = BudStore.deviceID
+        trigger.holderName = BudStore.deviceName
+        store.save(trigger)
         close()
     }
 }
