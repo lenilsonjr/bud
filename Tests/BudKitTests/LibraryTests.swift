@@ -43,5 +43,6 @@ final class LibraryTests: XCTestCase {
     func testTheWarehouseWords() {
         XCTAssertEqual(WarehouseText.count(1), "1 template")
         XCTAssertEqual(WarehouseText.caption(buds: 3), "Template · 3 buds")
+        XCTAssertEqual(WarehouseText.caption(buds: 3, triggers: 1), "Template · 3 buds · used by 1 trigger")
     }
 }

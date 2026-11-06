@@ -19,9 +19,9 @@ public enum Lens: String, CaseIterable, Sendable {
 
 /// A place that holds buds and has a page of its own in Files, beside Everything's tree: the
 /// Inbox (captures), the Archive (finished chapters), the Trash (recoverable branches), and the
-/// Library's Warehouse (templates).
+/// Library's Warehouse (templates) and Triggers (what stamps them).
 public enum Place: String, CaseIterable, Sendable {
-    case inbox = "Inbox", archive = "Archive", trash = "Trash", warehouse = "Warehouse"
+    case inbox = "Inbox", archive = "Archive", trash = "Trash", warehouse = "Warehouse", triggers = "Triggers"
 }
 
 /// The tree, the current center of the web, and the layout derived from both.
@@ -112,6 +112,9 @@ public final class BudStore: ObservableObject {
     private var soilFeed: AnyCancellable?
 
     private var liveFeed: AnyCancellable?
+    /// The Library's triggers, as the vault has them.
+    @Published public internal(set) var triggers: [Trigger] = []
+    var firing: Task<Void, Never>?
     private weak var soil: SourceStore?
     private var keepingLive = false
 
@@ -242,6 +245,7 @@ public final class BudStore: ObservableObject {
             Task { @MainActor in
                 await self?.reload()
                 await self?.soil?.reloadShared()
+                await self?.reloadTriggers()
             }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
@@ -251,6 +255,7 @@ public final class BudStore: ObservableObject {
         }
         Task { @MainActor [weak self] in
             await self?.reload()
+            await self?.reloadTriggers()
             await self?.startWatching()
         }
     }
@@ -852,6 +857,7 @@ public final class BudStore: ObservableObject {
     public func openArchive() { open(.archive) }
     public func openTrash() { open(.trash) }
     public func openWarehouse() { open(.warehouse) }
+    public func openTriggers() { open(.triggers) }
 
     // MARK: the Library
 
@@ -958,4 +964,85 @@ public final class BudStore: ObservableObject {
 private final class TagEdits {
     var byID: [UUID: TagEditRecord] = [:]
 }
+// MARK: the Library's triggers
+
+extension BudStore {
+    /// This install, as a trigger's holder names it: the same id the soil's leases use.
+    public static var deviceID: String {
+        let defaults = UserDefaults.standard
+        if let known = defaults.string(forKey: SourceStore.deviceKey) { return known }
+        let made = UUID().uuidString
+        defaults.set(made, forKey: SourceStore.deviceKey)
+        return made
+    }
+
+    /// Reads the triggers from the vault, oldest first.
+    public func reloadTriggers() async {
+        guard let stored = try? await vault.shared(.triggers) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let loaded = stored.values.compactMap { try? decoder.decode(Trigger.self, from: Data($0.utf8)) }
+            .sorted { ($0.created, $0.id) < ($1.created, $1.id) }
+        if loaded != triggers { triggers = loaded }
+    }
+
+    /// Adds or changes a trigger, here and in the vault.
+    public func save(_ trigger: Trigger) {
+        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) { triggers[i] = trigger } else { triggers.append(trigger) }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        guard let data = try? encoder.encode(trigger) else { return }
+        let text = String(decoding: data, as: UTF8.self)
+        write { vault in try await vault.setShared(.triggers, trigger.id, text) }
+    }
+
+    public func deleteTrigger(_ id: String) {
+        triggers.removeAll { $0.id == id }
+        write { vault in try await vault.setShared(.triggers, id, nil) }
+    }
+
+    /// The vault path a copy goes into for a place on screen: nil for Everything.
+    public func triggerPath(of place: UUID) -> String? { parentPath(place) }
+
+    /// The place a trigger stamps into, when it is still there.
+    func place(of trigger: Trigger) -> UUID? {
+        guard let into = trigger.into else { return rootID }
+        if into == vault.inboxPath { return inboxID }
+        let id = book.id(for: into)
+        return tree.bud(id) == nil ? nil : id
+    }
+
+    /// Fires every trigger due on this device now: stamps its template into its place for the
+    /// occurrence, or logs why it could not, and keeps the trigger on this device.
+    public func fireTriggers(now: Date = Date(), device: String = BudStore.deviceID, calendar: Calendar = .current) {
+        for trigger in triggers {
+            guard let occurrence = trigger.due(at: now, device: device, calendar: calendar) else { continue }
+            var skipped: String?
+            if let template = tree.templates().first(where: { $0.text == trigger.template }) {
+                if let place = place(of: trigger) {
+                    stamp(template.id, into: place, key: Tree.stampKey(template.text, at: occurrence), at: occurrence)
+                } else {
+                    skipped = "\(trigger.intoName) is gone"
+                }
+            } else {
+                skipped = "no template \(trigger.template) in the Warehouse"
+            }
+            save(trigger.fired(occurrence, device: device, deviceName: Self.deviceName, skipped: skipped))
+        }
+    }
+
+    /// Checks the triggers every minute while the app runs.
+    public func startTriggers() {
+        guard firing == nil else { return }
+        firing = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.reloadTriggers()
+                self?.fireTriggers()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+}
+
 #endif

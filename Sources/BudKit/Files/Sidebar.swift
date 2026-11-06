@@ -60,6 +60,9 @@ struct Sidebar: View {
                         store.openWarehouse()
                     }
                     .budDrop { store.keepAsTemplate($0) }
+                    place("Triggers", glyph: "clock.arrow.circlepath", count: store.triggers.filter(\.enabled).count, selected: store.place == .triggers) {
+                        store.openTriggers()
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)
