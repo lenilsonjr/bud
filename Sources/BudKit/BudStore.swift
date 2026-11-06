@@ -42,6 +42,7 @@ public final class BudStore: ObservableObject {
                 relayout()
                 lens = nil
                 place = nil
+                documentOf = nil
             }
         }
     }
