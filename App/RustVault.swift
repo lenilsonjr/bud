@@ -19,6 +19,7 @@ final class RustVault: BudKit.Vault {
     }
 
     var inboxPath: String { "Inbox" }
+    var warehousePath: String { "Warehouse" }
 
     /// A bud that is only a folder gets its file on its first edit.
     func pathAfterEdit(_ path: String) -> String { path.hasSuffix(".md") ? path : path + ".md" }
@@ -93,7 +94,8 @@ final class RustVault: BudKit.Vault {
         var planted: [String: String] = [:]
         for record in records where record.place != .trash {
             let inInbox = record.parent == nil ? record.place == .inbox : record.parent == inboxID.uuidString
-            let parent = inInbox ? inboxPath : record.parent.flatMap { planted[$0] }
+            let inWarehouse = record.parent == nil ? record.place == .warehouse : record.parent == warehouseID.uuidString
+            let parent = inInbox ? inboxPath : inWarehouse ? warehousePath : record.parent.flatMap { planted[$0] }
             do {
                 let path = try core.create(
                     parent: parent, title: record.title, kind: record.kind == .todo ? .todo : .note, source: record.source
@@ -178,6 +180,7 @@ final class RustVault: BudKit.Vault {
         case .everything: return .everything
         case .inbox: return .inbox
         case .archive: return .archive
+        case .warehouse: return .warehouse
         case .trash: return .trash
         }
     }

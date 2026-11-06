@@ -160,7 +160,7 @@ fn ensure_folders(root: &Path, conn: &Connection, dir: &str) -> Result<()> {
 }
 
 impl Vault {
-    /// Create `<parent folder>/<title>.md`: the root for none, `Inbox` or `Archive` for a place,
+    /// Create `<parent folder>/<title>.md`: the root for none, `Inbox`, `Archive` or `Warehouse` for a place,
     /// else the folder beside the parent bud's file, made when it is not there yet. The file has
     /// `created` now, `state: open` for a to-do, `source` when given and an empty body. A taken
     /// name gets " 2", " 3". Returns the new bud's path.
@@ -260,7 +260,7 @@ impl Vault {
         self.relocate(path, &new_dir)
     }
 
-    /// Move a bud under `new_parent` (a bud's path, `Inbox`, `Archive`, or none for the root),
+    /// Move a bud under `new_parent` (a bud's path, `Inbox`, `Archive`, `Warehouse`, or none for the root),
     /// with its folder and descendants. Returns the new path. Moving a bud into itself or one of
     /// its own descendants is an error.
     pub fn move_to(&mut self, path: &str, new_parent: Option<&str>) -> Result<String> {
@@ -472,7 +472,7 @@ impl Vault {
     pub(crate) fn parent_dir(&self, parent: Option<&str>) -> Result<String> {
         match parent {
             None => Ok(String::new()),
-            Some(place @ ("Inbox" | "Archive")) => Ok(place.to_string()),
+            Some(place @ ("Inbox" | "Archive" | "Warehouse")) => Ok(place.to_string()),
             Some(path) => {
                 self.bud(path)?
                     .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;

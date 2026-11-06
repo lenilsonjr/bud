@@ -7,6 +7,9 @@ public let rootID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 /// The Inbox place: where a capture lands until it is given a home. Not a bud and not under the
 /// root, so the canvas, the lenses and the tree never see what is in it.
 public let inboxID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+/// The Library's Warehouse: templates, each a bud with what is inside it, copied into a place
+/// when stamped.
+public let warehouseID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 
 public enum BudState: String, Codable, Sendable {
     case open, done
@@ -152,7 +155,7 @@ public struct Tree: Codable, Equatable, Sendable {
 
     /// nil for the root; the root for first-layer buds.
     public func parent(of id: UUID) -> UUID? {
-        id == rootID || id == inboxID ? nil : (bud(id)?.parent ?? rootID)
+        id == rootID || id == inboxID || id == warehouseID ? nil : (bud(id)?.parent ?? rootID)
     }
 
     /// Nearest first, root last.
@@ -171,6 +174,7 @@ public struct Tree: Codable, Equatable, Sendable {
     public func title(of id: UUID) -> String {
         if id == rootID { return "Everything" }
         if id == inboxID { return "Inbox" }
+        if id == warehouseID { return "Warehouse" }
         return bud(id)?.text ?? ""
     }
 
@@ -386,6 +390,17 @@ public struct Tree: Codable, Equatable, Sendable {
         return bud
     }
 
+    /// `tpl/Weekly review/2026-11-09T09:00`: the template and the minute it was stamped for.
+    public static func stampKey(_ template: String, at date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        return "tpl/\(template)/\(formatter.string(from: date))"
+    }
+
+    /// The templates in the Warehouse, in their order.
+    public func templates() -> [Bud] { children(of: warehouseID) }
+
     /// The bud a source item was planted as, outside the Trash.
     public func planted(from key: String) -> Bud? {
         buds.first { $0.from == key }
@@ -401,7 +416,7 @@ public struct Tree: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func move(_ id: UUID, under parent: UUID) -> Bool {
         guard let i = buds.firstIndex(where: { $0.id == id }) else { return false }
-        guard parent == rootID || parent == inboxID || bud(parent) != nil else { return false }
+        guard parent == rootID || parent == inboxID || parent == warehouseID || bud(parent) != nil else { return false }
         guard parent != id, !descendants(of: id).contains(parent) else { return false }
         let last = children(of: parent).last?.order ?? 0
         buds[i].parent = parent
@@ -492,7 +507,7 @@ public struct Tree: Codable, Equatable, Sendable {
         trashed.removeAll { ids.contains($0.id) }
         var next = (children(of: rootID).last?.order ?? 0) + 1
         for var bud in branch where !present.contains(bud.id) {
-            let parentKnown = bud.parent == rootID || bud.parent == inboxID || ids.contains(bud.parent) || self.bud(bud.parent) != nil
+            let parentKnown = [rootID, inboxID, warehouseID].contains(bud.parent) || ids.contains(bud.parent) || self.bud(bud.parent) != nil
             if !parentKnown {
                 bud.parent = rootID
                 bud.order = next

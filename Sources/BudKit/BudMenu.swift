@@ -136,6 +136,9 @@ struct BudMenuItems: View {
         if reorder { BudShiftItems(id: id, store: store) }
         Button("Move to…", systemImage: "arrow.turn.down.right", action: onMove)
         if let onTag { Button("Tag…", systemImage: "number", action: onTag) }
+        if !store.tree.ancestors(of: id).contains(warehouseID), !store.tree.ancestors(of: id).contains(inboxID) {
+            Button("Keep as template", systemImage: "square.on.square.dashed") { store.keepAsTemplate(id) }
+        }
         Divider()
         Button("Trash", systemImage: "trash", role: .destructive) { store.trash(id) }
     }

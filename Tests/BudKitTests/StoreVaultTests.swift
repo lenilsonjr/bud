@@ -401,6 +401,39 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
     }
 
+    // MARK: the Library
+
+    func testKeepingABudAsATemplateMovesItToTheWarehouseAndStampingCopiesItIn() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
+        let step = try XCTUnwrap(store.add("Clear the inbox", todo: true, under: template.id))
+        store.setBody(step.id, "Down to zero.")
+        await store.settle()
+        XCTAssertTrue(store.keepAsTemplate(template.id))
+        await store.settle()
+        XCTAssertEqual(store.tree.templates().map(\.id), [template.id])
+        var records = try await vault.snapshot()
+        XCTAssertEqual(records.first { $0.title == "Weekly review" }?.place, .warehouse)
+
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let copy = try XCTUnwrap(store.stamp(template.id, into: thread.id, at: at))
+        await store.settle()
+        XCTAssertEqual(copy.parent, thread.id)
+        XCTAssertEqual(copy.from, Tree.stampKey("Weekly review", at: at))
+        let inside = store.tree.children(of: copy.id)
+        XCTAssertEqual(inside.map(\.text), ["Clear the inbox"])
+        XCTAssertEqual(inside.first?.body, "Down to zero.")
+        XCTAssertEqual(store.toasts.current?.action.message, "Stamped Weekly review into \(thread.text)")
+        records = try await vault.snapshot()
+        let stamped = records.filter { $0.title == "Weekly review" }
+        XCTAssertEqual(Set(stamped.map(\.place)), [.warehouse, .everything])
+        XCTAssertEqual(records.filter { $0.title == "Clear the inbox" }.count, 2, "the template keeps its own")
+
+        let again = store.stamp(template.id, into: thread.id, at: at)
+        XCTAssertEqual(again?.id, copy.id, "the same occurrence is stamped once")
+    }
+
     // MARK: keeping planted buds live
 
     func testAMovedEventMovesItsPlantedBudAndMarksIt() async throws {

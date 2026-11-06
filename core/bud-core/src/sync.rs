@@ -478,6 +478,7 @@ fn place_root(place: Place) -> Option<&'static str> {
     match place {
         Place::Inbox => Some("Inbox"),
         Place::Archive => Some("Archive"),
+        Place::Warehouse => Some("Warehouse"),
         _ => None,
     }
 }

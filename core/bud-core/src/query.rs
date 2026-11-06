@@ -48,7 +48,8 @@ pub enum Lens {
 const BY_URGENCY: &str = "ORDER BY due IS NULL, due, when_date IS NULL, when_date,
      created IS NULL, created, path";
 
-const OPEN_TODO: &str = "state = 'open' AND place != 'trash'";
+/// Templates in the Warehouse are not to-dos until a copy is stamped.
+const OPEN_TODO: &str = "state = 'open' AND place NOT IN ('trash', 'warehouse')";
 
 /// The first `days` characters of a date, so `2026-11-02T09:00` counts as the day `2026-11-02`.
 const DUE_DAY: &str = "substr(due, 1, 10)";
@@ -213,7 +214,7 @@ impl Vault {
         let sql = match lens {
             Lens::Todos => format!("{SELECT} WHERE {OPEN_TODO} {BY_URGENCY}"),
             Lens::Pinned => format!(
-                "{SELECT} WHERE pinned = 1 AND place != 'trash'
+                "{SELECT} WHERE pinned = 1 AND place NOT IN ('trash', 'warehouse')
                  ORDER BY created IS NULL, created, title COLLATE NOCASE, path"
             ),
         };
