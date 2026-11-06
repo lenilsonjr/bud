@@ -40,7 +40,7 @@ extension BudRecord {
             let rest = String(path.dropFirst(trash.count))
             if live.contains(rest + ".md") { return .some(rest + ".md") }
             if live.contains(rest) { return .some(rest) }
-            if rest == "Inbox" || rest == "Archive" { return .some(nil) }
+            if rest == "Inbox" || rest == "Archive" || rest == "Warehouse" { return .some(nil) }
             return nil
         }
         var stands: [String: String?] = [:]
@@ -65,8 +65,9 @@ extension Tree {
         if trashed.contains(where: { branch in branch.buds.contains { $0.id == id } }) { return .trash }
         let chain = [id] + ancestors(of: id)
         if chain.contains(inboxID) { return .inbox }
+        if chain.contains(warehouseID) { return .warehouse }
         let top = chain.last { $0 != rootID }
-        if let top, top != inboxID, bud(top)?.isDone == true { return .archive }
+        if let top, bud(top)?.isDone == true { return .archive }
         return .everything
     }
 
@@ -80,9 +81,10 @@ extension Tree {
         )
     }
 
-    /// Every bud as a record: Everything's tree in reading order, then the Inbox, then the Trash.
+    /// Every bud as a record: Everything's tree in reading order, then the Inbox, the Warehouse,
+    /// then the Trash.
     public func records() -> [BudRecord] {
-        let live = (walk(under: rootID) + walk(under: inboxID)).map { record(of: $0, place: place(of: $0.id)) }
+        let live = (walk(under: rootID) + walk(under: inboxID) + walk(under: warehouseID)).map { record(of: $0, place: place(of: $0.id)) }
         let gone = trashed.flatMap { branch in branch.buds.map { record(of: $0, place: .trash) } }
         return live + gone
     }
@@ -91,6 +93,15 @@ extension Tree {
     /// Trash is one the records place there whose parent is not in the Trash with it; `trashedAt`
     /// says when each went in, for a branch the caller has seen before. `id` names the bud at a
     /// path, so one a vault moved can keep the id it had.
+    /// The root a top-level record hangs from in its place.
+    static func home(of place: BudPlace) -> UUID {
+        switch place {
+        case .inbox: return inboxID
+        case .warehouse: return warehouseID
+        default: return rootID
+        }
+    }
+
     public init(
         records: [BudRecord], trashedAt: (UUID) -> Date? = { _ in nil }, id: (String) -> UUID = Bud.id(forPath:)
     ) {
@@ -99,7 +110,7 @@ extension Tree {
             if let up = record.parent {
                 parent = id(up)
             } else {
-                parent = record.place == .inbox ? inboxID : rootID
+                parent = Self.home(of: record.place)
             }
             return Bud(
                 id: id(record.path), text: record.title,
@@ -118,7 +129,7 @@ extension Tree {
         var gone: [Bud] = []
         for record in records {
             let isGone = record.place == .trash
-            let parent = record.parent.map(id) ?? (record.place == .inbox ? inboxID : rootID)
+            let parent = record.parent.map(id) ?? Self.home(of: record.place)
             let made = bud(from: record, order: next(under: parent, trashed: isGone))
             if isGone { gone.append(made) } else { live.append(made) }
         }

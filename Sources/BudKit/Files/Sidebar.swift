@@ -54,6 +54,15 @@ struct Sidebar: View {
                     place("Today", glyph: "sun.max", count: today.due.count + today.scheduled.count, selected: store.lens == .today) { store.lens = .today }
                     place("To-dos", glyph: "checkmark.square", count: nil, selected: store.lens == .todos) { store.lens = .todos }
                     place("Pinned", glyph: "pin", count: nil, selected: store.lens == .pinned) { store.lens = .pinned }
+                    // Kept apart from the threads: templates, and what stamps them.
+                    eyebrow("Library").padding(.top, 14)
+                    place("Warehouse", glyph: "square.on.square.dashed", count: store.tree.templates().count, selected: store.place == .warehouse) {
+                        store.openWarehouse()
+                    }
+                    .budDrop { store.keepAsTemplate($0) }
+                    place("Triggers", glyph: "clock.arrow.circlepath", count: store.triggers.filter(\.enabled).count, selected: store.place == .triggers) {
+                        store.openTriggers()
+                    }
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 12)

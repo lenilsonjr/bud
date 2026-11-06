@@ -18,9 +18,10 @@ public enum Lens: String, CaseIterable, Sendable {
 }
 
 /// A place that holds buds and has a page of its own in Files, beside Everything's tree: the
-/// Inbox (captures), the Archive (finished chapters) and the Trash (recoverable branches).
+/// Inbox (captures), the Archive (finished chapters), the Trash (recoverable branches), and the
+/// Library's Warehouse (templates) and Triggers (what stamps them).
 public enum Place: String, CaseIterable, Sendable {
-    case inbox = "Inbox", archive = "Archive", trash = "Trash"
+    case inbox = "Inbox", archive = "Archive", trash = "Trash", warehouse = "Warehouse", triggers = "Triggers"
 }
 
 /// The tree, the current center of the web, and the layout derived from both.
@@ -108,6 +109,9 @@ public final class BudStore: ObservableObject {
     private var soilFeed: AnyCancellable?
 
     private var liveFeed: AnyCancellable?
+    /// The Library's triggers, as the vault has them.
+    @Published public internal(set) var triggers: [Trigger] = []
+    var firing: Task<Void, Never>?
     private weak var soil: SourceStore?
     private var keepingLive = false
 
@@ -238,6 +242,7 @@ public final class BudStore: ObservableObject {
             Task { @MainActor in
                 await self?.reload()
                 await self?.soil?.reloadShared()
+                await self?.reloadTriggers()
             }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
@@ -247,6 +252,7 @@ public final class BudStore: ObservableObject {
         }
         Task { @MainActor [weak self] in
             await self?.reload()
+            await self?.reloadTriggers()
             await self?.startWatching()
         }
     }
@@ -314,7 +320,8 @@ public final class BudStore: ObservableObject {
     /// The path a vault knows a parent by: Everything is the top level, nil.
     private func parentPath(_ id: UUID) -> String? {
         if id == rootID { return nil }
-        return id == inboxID ? vault.inboxPath : path(id)
+        if id == inboxID { return vault.inboxPath }
+        return id == warehouseID ? vault.warehousePath : path(id)
     }
 
     /// Runs a write to a bud's body or properties, and follows the bud to the file the vault may
@@ -832,6 +839,8 @@ public final class BudStore: ObservableObject {
     public func go(to id: UUID, inFiles: Bool) {
         if tree.ancestors(of: id).contains(inboxID) {
             openInbox()
+        } else if tree.ancestors(of: id).contains(warehouseID) {
+            openWarehouse()
         } else if inFiles {
             openAsFile(id)
         } else {
@@ -844,6 +853,63 @@ public final class BudStore: ObservableObject {
     public func openInbox() { open(.inbox) }
     public func openArchive() { open(.archive) }
     public func openTrash() { open(.trash) }
+    public func openWarehouse() { open(.warehouse) }
+    public func openTriggers() { open(.triggers) }
+
+    // MARK: the Library
+
+    /// Keeps a bud and what is inside it in the Warehouse as a template.
+    @discardableResult
+    public func keepAsTemplate(_ id: UUID) -> Bool {
+        move(id, under: warehouseID)
+    }
+
+    /// Stamps a copy of a template, with everything inside it, as the last child of `parent`. The
+    /// copy carries `from: tpl/<template>/<when>`, which also keeps one occurrence from being
+    /// stamped twice: a key planted before goes to the copy already there. A to-do starts open.
+    @discardableResult
+    public func stamp(_ template: UUID, into parent: UUID, key: String? = nil, at now: Date = Date()) -> Bud? {
+        guard let top = tree.bud(template), tree.ancestors(of: template).contains(warehouseID) else { return nil }
+        let from = key ?? Tree.stampKey(top.text, at: now)
+        if let copy = tree.planted(from: from) { return copy }
+        let inside = tree.walk(under: template)
+        var copies: [UUID: UUID] = [template: UUID()]
+        for bud in inside { copies[bud.id] = UUID() }
+        var made: Bud?
+        commit { tree in
+            made = tree.plant(top.text, todo: top.isTodo, under: parent, from: from, id: copies[template]!)
+            if !top.body.isEmpty { tree.setBody(copies[template]!, top.body) }
+            for bud in inside {
+                guard let id = copies[bud.id], let up = copies[bud.parent] else { continue }
+                _ = tree.add(bud.text, todo: bud.isTodo, under: up, id: id)
+                if !bud.body.isEmpty { tree.setBody(id, bud.body) }
+            }
+        }
+        guard let made else { return nil }
+        write { [self] vault in
+            let planting = try await vault.plant(
+                parent: parentPath(parent), title: top.text, kind: top.isTodo ? .todo : .note, from: from,
+                preferredPath: made.id.uuidString
+            )
+            book.learn(made.id, at: planting.path)
+            guard planting.new else { return }
+            if !top.body.isEmpty { try await vault.setBody(planting.path, top.body) }
+            for bud in inside {
+                guard let id = copies[bud.id], let up = copies[bud.parent] else { continue }
+                let file = try await vault.create(
+                    parent: path(up), title: bud.text, kind: bud.isTodo ? .todo : .note, source: nil, preferredPath: id.uuidString
+                )
+                book.learn(id, at: file)
+                if !bud.body.isEmpty { try await vault.setBody(file, bud.body) }
+            }
+        }
+        lastPlanted = Planted(id: made.id, at: now)
+        toasts.show(Undoable(message: "Stamped \(top.text) into \(tree.title(of: parent))") { [weak self] in
+            Task { @MainActor in self?.remove(made.id) }
+        })
+        return made
+    }
+
 
     public func back() {
         guard center != rootID else { return }
@@ -895,4 +961,143 @@ public final class BudStore: ObservableObject {
 private final class TagEdits {
     var byID: [UUID: TagEditRecord] = [:]
 }
+// MARK: the Library's triggers
+
+extension BudStore {
+    /// This install, as a trigger's holder names it: the same id the soil's leases use.
+    public static var deviceID: String {
+        let defaults = UserDefaults.standard
+        if let known = defaults.string(forKey: SourceStore.deviceKey) { return known }
+        let made = UUID().uuidString
+        defaults.set(made, forKey: SourceStore.deviceKey)
+        return made
+    }
+
+    /// Reads the triggers from the vault, oldest first, once the writes queued here have landed.
+    /// Each trigger is two entries: its settings under its id, and who fires it with its log
+    /// under `<id>#fired`, so an edit on one device and a firing on another both stand.
+    public func reloadTriggers() async {
+        await settle()
+        guard let stored = try? await vault.shared(.triggers) else { return }
+        var loaded: [Trigger] = []
+        for (key, text) in stored where !key.hasSuffix(Self.firedSuffix) {
+            guard var trigger = try? Self.triggerDecoder.decode(Trigger.self, from: Data(text.utf8)) else { continue }
+            if let fired = stored[key + Self.firedSuffix],
+               let state = try? Self.triggerDecoder.decode(Fired.self, from: Data(fired.utf8)) {
+                trigger.holder = state.holder
+                trigger.holderName = state.holderName
+                trigger.log = state.log
+            }
+            loaded.append(trigger)
+        }
+        loaded.sort { ($0.created, $0.id) < ($1.created, $1.id) }
+        if loaded != triggers { triggers = loaded }
+    }
+
+    /// Adds a trigger or changes its settings, here and in the vault; a new one brings who fires it.
+    public func save(_ trigger: Trigger) {
+        let isNew = !triggers.contains { $0.id == trigger.id }
+        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) {
+            // Who fires it and its log are the firing's to change.
+            var kept = trigger
+            kept.holder = triggers[i].holder
+            kept.holderName = triggers[i].holderName
+            kept.log = triggers[i].log
+            triggers[i] = kept
+        } else {
+            triggers.append(trigger)
+        }
+        var settings = trigger
+        settings.holder = nil
+        settings.holderName = nil
+        settings.log = []
+        guard let text = Self.triggerText(settings) else { return }
+        write { vault in try await vault.setShared(.triggers, trigger.id, text) }
+        if isNew { record(trigger) }
+    }
+
+    /// Writes who fires a trigger and its log, and nothing of its settings.
+    private func record(_ trigger: Trigger) {
+        if let i = triggers.firstIndex(where: { $0.id == trigger.id }) {
+            triggers[i].holder = trigger.holder
+            triggers[i].holderName = trigger.holderName
+            triggers[i].log = trigger.log
+        }
+        guard let text = Self.triggerText(Fired(holder: trigger.holder, holderName: trigger.holderName, log: trigger.log)) else { return }
+        write { vault in try await vault.setShared(.triggers, trigger.id + Self.firedSuffix, text) }
+    }
+
+    public func deleteTrigger(_ id: String) {
+        triggers.removeAll { $0.id == id }
+        write { vault in
+            try await vault.setShared(.triggers, id, nil)
+            try await vault.setShared(.triggers, id + Self.firedSuffix, nil)
+        }
+    }
+
+    /// Who fires a trigger and what it fired, kept apart from its settings.
+    private struct Fired: Codable {
+        var holder: String?
+        var holderName: String?
+        var log: [Trigger.Firing]
+    }
+
+    private static let firedSuffix = "#fired"
+
+    private static var triggerDecoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private static func triggerText(_ value: some Encodable) -> String? {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// The vault path a copy goes into for a place on screen: nil for Everything.
+    public func triggerPath(of place: UUID) -> String? { parentPath(place) }
+
+    /// The place a trigger stamps into, when it is still there.
+    func place(of trigger: Trigger) -> UUID? {
+        guard let into = trigger.into else { return rootID }
+        if into == vault.inboxPath { return inboxID }
+        let id = book.id(for: into)
+        return tree.bud(id) == nil ? nil : id
+    }
+
+    /// Fires every trigger due on this device now: stamps its template into its place for the
+    /// occurrence, or logs why it could not, and keeps the trigger on this device.
+    public func fireTriggers(now: Date = Date(), device: String = BudStore.deviceID, calendar: Calendar = .current) {
+        for trigger in triggers {
+            guard let occurrence = trigger.due(at: now, device: device, calendar: calendar) else { continue }
+            var skipped: String?
+            if let template = tree.templates().first(where: { $0.text == trigger.template }) {
+                if let place = place(of: trigger) {
+                    stamp(template.id, into: place, key: Tree.stampKey(template.text, at: occurrence), at: occurrence)
+                } else {
+                    skipped = "\(trigger.intoName) is gone"
+                }
+            } else {
+                skipped = "no template \(trigger.template) in the Warehouse"
+            }
+            record(trigger.fired(occurrence, device: device, deviceName: Self.deviceName, skipped: skipped))
+        }
+    }
+
+    /// Checks the triggers every minute while the app runs.
+    public func startTriggers() {
+        guard firing == nil else { return }
+        firing = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.reloadTriggers()
+                self?.fireTriggers()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+    }
+}
+
 #endif

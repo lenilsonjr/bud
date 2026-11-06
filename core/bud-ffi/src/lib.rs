@@ -61,6 +61,7 @@ pub enum BudPlace {
     Everything,
     Inbox,
     Archive,
+    Warehouse,
     Trash,
 }
 
@@ -683,6 +684,15 @@ impl Vault {
         Ok(self.core().set_lease(&id, lease.as_deref())?)
     }
 
+    /// The Library's triggers, synced with the vault.
+    pub fn triggers(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().triggers()?))
+    }
+
+    pub fn set_trigger(&self, id: String, trigger: Option<String>) -> Result<()> {
+        Ok(self.core().set_trigger(&id, trigger.as_deref())?)
+    }
+
     /// How a planted bud stands with its source; none clears it.
     pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
         Ok(self.core().set_from_state(&path, state.as_deref())?)
@@ -907,6 +917,7 @@ impl From<bud_core::Place> for BudPlace {
             bud_core::Place::Everything => BudPlace::Everything,
             bud_core::Place::Inbox => BudPlace::Inbox,
             bud_core::Place::Archive => BudPlace::Archive,
+            bud_core::Place::Warehouse => BudPlace::Warehouse,
             bud_core::Place::Trash => BudPlace::Trash,
         }
     }

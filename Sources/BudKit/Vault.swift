@@ -7,7 +7,7 @@ public enum BudKind: String, Codable, Sendable {
 
 /// Where a bud lives: Everything's tree, the Inbox, the Archive (a finished thread) or the Trash.
 public enum BudPlace: String, Codable, Sendable {
-    case everything, inbox, archive, trash
+    case everything, inbox, archive, warehouse, trash
 }
 
 /// One bud as a vault has it, flat. It mirrors the record the Rust bindings export, with dates
@@ -126,6 +126,8 @@ public final class VaultWatch: @unchecked Sendable {
 public protocol Vault: Sendable {
     /// The path the Inbox goes by, as a parent.
     var inboxPath: String { get }
+    /// Where templates are kept: the parent path of a bud at the top of the Warehouse.
+    var warehousePath: String { get }
     /// The path a bud has after its body or a property is written: a vault on disk gives a bud
     /// that is only a folder a file of its own then.
     func pathAfterEdit(_ path: String) -> String
@@ -199,10 +201,11 @@ public protocol Vault: Sendable {
 
 /// The maps a vault keeps beside the buds.
 public enum SharedMap: String, Sendable {
-    case sources, leases
+    case sources, leases, triggers
 }
 
 extension Vault {
     public var inboxPath: String { inboxID.uuidString }
+    public var warehousePath: String { warehouseID.uuidString }
     public func pathAfterEdit(_ path: String) -> String { path }
 }
