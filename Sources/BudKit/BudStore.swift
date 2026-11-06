@@ -18,9 +18,10 @@ public enum Lens: String, CaseIterable, Sendable {
 }
 
 /// A place that holds buds and has a page of its own in Files, beside Everything's tree: the
-/// Inbox (captures), the Archive (finished chapters) and the Trash (recoverable branches).
+/// Inbox (captures), the Archive (finished chapters), the Trash (recoverable branches), and the
+/// Library's Warehouse (templates).
 public enum Place: String, CaseIterable, Sendable {
-    case inbox = "Inbox", archive = "Archive", trash = "Trash"
+    case inbox = "Inbox", archive = "Archive", trash = "Trash", warehouse = "Warehouse"
 }
 
 /// The tree, the current center of the web, and the layout derived from both.
@@ -317,7 +318,8 @@ public final class BudStore: ObservableObject {
     /// The path a vault knows a parent by: Everything is the top level, nil.
     private func parentPath(_ id: UUID) -> String? {
         if id == rootID { return nil }
-        return id == inboxID ? vault.inboxPath : path(id)
+        if id == inboxID { return vault.inboxPath }
+        return id == warehouseID ? vault.warehousePath : path(id)
     }
 
     /// Runs a write to a bud's body or properties, and follows the bud to the file the vault may
@@ -835,6 +837,8 @@ public final class BudStore: ObservableObject {
     public func go(to id: UUID, inFiles: Bool) {
         if tree.ancestors(of: id).contains(inboxID) {
             openInbox()
+        } else if tree.ancestors(of: id).contains(warehouseID) {
+            openWarehouse()
         } else if inFiles {
             openAsFile(id)
         } else {
@@ -847,6 +851,62 @@ public final class BudStore: ObservableObject {
     public func openInbox() { open(.inbox) }
     public func openArchive() { open(.archive) }
     public func openTrash() { open(.trash) }
+    public func openWarehouse() { open(.warehouse) }
+
+    // MARK: the Library
+
+    /// Keeps a bud and what is inside it in the Warehouse as a template.
+    @discardableResult
+    public func keepAsTemplate(_ id: UUID) -> Bool {
+        move(id, under: warehouseID)
+    }
+
+    /// Stamps a copy of a template, with everything inside it, as the last child of `parent`. The
+    /// copy carries `from: tpl/<template>/<when>`, which also keeps one occurrence from being
+    /// stamped twice: a key planted before goes to the copy already there. A to-do starts open.
+    @discardableResult
+    public func stamp(_ template: UUID, into parent: UUID, key: String? = nil, at now: Date = Date()) -> Bud? {
+        guard let top = tree.bud(template), tree.ancestors(of: template).contains(warehouseID) else { return nil }
+        let from = key ?? Tree.stampKey(top.text, at: now)
+        if let copy = tree.planted(from: from) { return copy }
+        let inside = tree.walk(under: template)
+        var copies: [UUID: UUID] = [template: UUID()]
+        for bud in inside { copies[bud.id] = UUID() }
+        var made: Bud?
+        commit { tree in
+            made = tree.plant(top.text, todo: top.isTodo, under: parent, from: from, id: copies[template]!)
+            if !top.body.isEmpty { tree.setBody(copies[template]!, top.body) }
+            for bud in inside {
+                guard let id = copies[bud.id], let up = copies[bud.parent] else { continue }
+                _ = tree.add(bud.text, todo: bud.isTodo, under: up, id: id)
+                if !bud.body.isEmpty { tree.setBody(id, bud.body) }
+            }
+        }
+        guard let made else { return nil }
+        write { [self] vault in
+            let planting = try await vault.plant(
+                parent: parentPath(parent), title: top.text, kind: top.isTodo ? .todo : .note, from: from,
+                preferredPath: made.id.uuidString
+            )
+            book.learn(made.id, at: planting.path)
+            guard planting.new else { return }
+            if !top.body.isEmpty { try await vault.setBody(planting.path, top.body) }
+            for bud in inside {
+                guard let id = copies[bud.id], let up = copies[bud.parent] else { continue }
+                let file = try await vault.create(
+                    parent: path(up), title: bud.text, kind: bud.isTodo ? .todo : .note, source: nil, preferredPath: id.uuidString
+                )
+                book.learn(id, at: file)
+                if !bud.body.isEmpty { try await vault.setBody(file, bud.body) }
+            }
+        }
+        lastPlanted = Planted(id: made.id, at: now)
+        toasts.show(Undoable(message: "Stamped \(top.text) into \(tree.title(of: parent))") { [weak self] in
+            Task { @MainActor in self?.remove(made.id) }
+        })
+        return made
+    }
+
 
     public func back() {
         guard center != rootID else { return }

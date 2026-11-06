@@ -61,6 +61,7 @@ struct FilesPage: View {
                 case .inbox: InboxPage(store: store)
                 case .archive: ArchivePage(store: store)
                 case .trash: TrashPage(store: store)
+                case .warehouse: WarehousePage(store: store)
                 }
             } else if store.center == rootID || (store.tree.hasChildren(store.center) && store.documentOf != store.center) {
                 OutlinePage(store: store)

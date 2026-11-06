@@ -23,7 +23,7 @@ pub struct Found {
     pub mtime: i64,
 }
 
-pub(crate) const RESERVED: [&str; 3] = ["Inbox", "Archive", ".trash"];
+pub(crate) const RESERVED: [&str; 4] = ["Inbox", "Archive", "Warehouse", ".trash"];
 
 pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
     walk_under(root, Path::new(""))
@@ -172,6 +172,7 @@ pub(crate) fn place_of(relative: &Path) -> Place {
         Some(Component::Normal(first)) => match first.to_string_lossy().as_ref() {
             "Inbox" => Place::Inbox,
             "Archive" => Place::Archive,
+            "Warehouse" => Place::Warehouse,
             ".trash" => Place::Trash,
             _ => Place::Everything,
         },

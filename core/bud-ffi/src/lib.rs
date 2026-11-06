@@ -61,6 +61,7 @@ pub enum BudPlace {
     Everything,
     Inbox,
     Archive,
+    Warehouse,
     Trash,
 }
 
@@ -907,6 +908,7 @@ impl From<bud_core::Place> for BudPlace {
             bud_core::Place::Everything => BudPlace::Everything,
             bud_core::Place::Inbox => BudPlace::Inbox,
             bud_core::Place::Archive => BudPlace::Archive,
+            bud_core::Place::Warehouse => BudPlace::Warehouse,
             bud_core::Place::Trash => BudPlace::Trash,
         }
     }

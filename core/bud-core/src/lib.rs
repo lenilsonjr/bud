@@ -81,6 +81,8 @@ pub enum Place {
     Everything,
     Inbox,
     Archive,
+    /// The Library's Warehouse: templates, kept out of the lenses until a copy is stamped.
+    Warehouse,
     Trash,
 }
 
@@ -124,6 +126,7 @@ impl Place {
             Place::Everything => "everything",
             Place::Inbox => "inbox",
             Place::Archive => "archive",
+            Place::Warehouse => "warehouse",
             Place::Trash => "trash",
         }
     }
@@ -133,6 +136,7 @@ impl Place {
             "everything" => Some(Place::Everything),
             "inbox" => Some(Place::Inbox),
             "archive" => Some(Place::Archive),
+            "warehouse" => Some(Place::Warehouse),
             "trash" => Some(Place::Trash),
             _ => None,
         }
