@@ -48,6 +48,9 @@ struct SourcesSection: View {
             if account.locked {
                 Button("Sign in") { present(.connectMail(account: account.id)) }
                     .buttonStyle(.budGhost)
+            } else if account.kind == .calendar {
+                Button("Calendars…") { present(.calendars(account: account.id)) }
+                    .buttonStyle(.budGhost)
             }
             Button("Disconnect") { sources.disconnect(account.id) }
                 .buttonStyle(.budGhost)
@@ -153,10 +156,11 @@ struct ConnectMailSheet: View {
         }
     }
 }
-/// Connect a calendar over CalDAV: the server, a user name and an app password, then the calendar
-/// the soil shows.
+/// Connect a calendar account over CalDAV: the server, a user name and an app password, then the
+/// calendars the soil shows. With an account, only the calendars: changing what a connected one reads.
 struct ConnectCalendarSheet: View {
     @ObservedObject var sources: SourceStore
+    var account: String?
     let close: () -> Void
 
     @State private var server = SourcesText.servers[0].url
@@ -165,14 +169,18 @@ struct ConnectCalendarSheet: View {
     @State private var user = ""
     @State private var password = ""
     @State private var calendars: [CalDAV.Calendar] = []
-    @State private var picked: URL?
+    @State private var picked: Set<URL> = []
     @State private var busy = false
     @State private var problem: String?
 
     var body: some View {
-        DialogBody(title: "Connect a calendar", text: SourcesText.calendarBody) {
+        DialogBody(title: account == nil ? "Connect a calendar" : "Calendars", text: SourcesText.calendarBody) {
             VStack(alignment: .leading, spacing: 10) {
-                if calendars.isEmpty {
+                if let account, calendars.isEmpty {
+                    Text(problem == nil ? "Asking the server for its calendars…" : "")
+                        .textRole(.caption).foregroundStyle(Theme.text3)
+                        .onAppear { load(account) }
+                } else if calendars.isEmpty {
                     ForEach(SourcesText.servers, id: \.url) { choice in
                         DialogChoice(on: server == choice.url, title: choice.name, caption: choice.caption) { server = choice.url }
                     }
@@ -190,10 +198,19 @@ struct ConnectCalendarSheet: View {
                         #endif
                     SecureField("App password", text: $password)
                 } else {
-                    Text("Show this calendar below the soil").textRole(.label).foregroundStyle(Theme.text2)
+                    HStack {
+                        Text("Show these calendars below the soil").textRole(.label).foregroundStyle(Theme.text2)
+                        Spacer()
+                        Button(picked.count == calendars.count ? "None" : "All") {
+                            picked = picked.count == calendars.count ? [] : Set(calendars.map(\.url))
+                        }
+                        .buttonStyle(.budGhost)
+                    }
                     DialogList {
                         ForEach(calendars) { calendar in
-                            DialogChoice(on: picked == calendar.url, title: calendar.name, caption: "") { picked = calendar.url }
+                            DialogChoice(on: picked.contains(calendar.url), title: calendar.name, caption: "") {
+                                if picked.contains(calendar.url) { picked.remove(calendar.url) } else { picked.insert(calendar.url) }
+                            }
                         }
                     }
                 }
@@ -206,24 +223,56 @@ struct ConnectCalendarSheet: View {
             Button(action: close) { BudButtonLabel(title: "Cancel") }
                 .buttonStyle(.budSecondary)
                 .keyboardShortcut(.cancelAction)
-            Button(action: next) { BudButtonLabel(title: busy ? "Checking…" : (calendars.isEmpty ? "Continue" : "Connect")) }
+            Button(action: next) { BudButtonLabel(title: busy ? "Checking…" : nextTitle) }
                 .buttonStyle(.budPrimary)
                 .keyboardShortcut(.defaultAction)
-                .disabled(busy || user.isEmpty || password.isEmpty || (!calendars.isEmpty && picked == nil))
+                .disabled(busy || (account == nil && (user.isEmpty || password.isEmpty)) || (!calendars.isEmpty && picked.isEmpty))
+        }
+    }
+
+    private var nextTitle: String {
+        if account != nil { return "Save" }
+        return calendars.isEmpty ? "Continue" : "Connect"
+    }
+
+    /// The chosen calendars, in the server's order.
+    private var chosen: [CalDAV.Calendar] { calendars.filter { picked.contains($0.url) } }
+
+    /// Changing a connected account: its calendars come with the password this device keeps.
+    private func load(_ account: String) {
+        busy = true
+        Task {
+            do {
+                let found = try await sources.calendars(of: account)
+                calendars = found
+                let reading = Set(sources.calendarPicks(of: account).map(\.url))
+                picked = reading.isEmpty ? Set(found.prefix(1).map(\.url)) : reading
+                if found.isEmpty { problem = SourcesText.noCalendars }
+            } catch {
+                problem = SourcesText.problem(error)
+            }
+            busy = false
         }
     }
 
     private func next() {
+        if let account {
+            // Saving reads the calendars over the network; the sheet does not wait for it.
+            let chosen = chosen
+            Task { await sources.setCalendars(account, chosen) }
+            close()
+            return
+        }
         let address = (server.isEmpty ? other : server).trimmingCharacters(in: .whitespaces)
         guard let url = URL(string: address), url.scheme == "https" else {
             problem = SourcesText.badAddress
             return
         }
-        if let picked {
-            // Connecting reads the calendar over the network; the sheet closes at once and the
+        if !calendars.isEmpty {
+            // Connecting reads the calendars over the network; the sheet closes at once and the
             // account's row shows meanwhile, so a second press cannot add it again.
-            let (name, user, password) = (name, user, password)
-            Task { await sources.connectCalendar(name: name, server: url, user: user, password: password, calendar: picked) }
+            let (name, user, password, chosen) = (name, user, password, chosen)
+            Task { await sources.connectCalendar(name: name, server: url, user: user, password: password, calendars: chosen) }
             close()
             return
         }
@@ -233,7 +282,7 @@ struct ConnectCalendarSheet: View {
             do {
                 let found = try await sources.calendars(server: url, user: user, password: password)
                 calendars = found
-                picked = found.first?.url
+                picked = Set(found.prefix(1).map(\.url))
                 if found.isEmpty { problem = SourcesText.noCalendars }
             } catch {
                 problem = SourcesText.problem(error)
@@ -306,7 +355,7 @@ public enum SourcesText {
     public static let connectBody = "Bud reads your newest mail over JMAP. Make an API token with read access to mail in your provider's settings."
     public static let defaultSession = "https://api.fastmail.com/jmap/session"
     public static let badAddress = "The address starts with https://."
-    public static let calendarBody = "Bud reads the next 14 days of one calendar over CalDAV. Use an app password, not your account password."
+    public static let calendarBody = "Bud reads the next 14 days of the calendars you pick over CalDAV. Use an app password, not your account password."
     public static let linearBody = "Bud shows the open issues assigned to you. Make a personal API key in Linear under Settings › Security & access."
     public static let noCalendars = "No calendar with events was found there."
     /// The servers most people use, ready to pick.
@@ -318,7 +367,9 @@ public enum SourcesText {
     public static func status(_ account: SourceAccount) -> String {
         if account.locked { return "Connected on another device" }
         let count = account.items.count
-        return count == 1 ? "1 item" : "\(count) items"
+        let items = count == 1 ? "1 item" : "\(count) items"
+        if account.calendars > 1 { return "\(account.calendars) calendars · \(items)" }
+        return items
     }
 
     public static func problem(_ error: Error) -> String {

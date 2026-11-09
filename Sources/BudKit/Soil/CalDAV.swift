@@ -14,6 +14,11 @@ public struct CalDAV: Sendable {
         public let url: URL
         public let name: String
         public var id: URL { url }
+
+        public init(url: URL, name: String) {
+            self.url = url
+            self.name = name
+        }
     }
 
     public let server: URL

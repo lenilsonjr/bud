@@ -74,10 +74,13 @@ public struct SourceAccount: Hashable, Codable, Sendable, Identifiable {
     /// True when this device holds no token for it.
     public var locked: Bool
     public var items: [SourceItem]
+    /// Calendar: how many calendars it reads.
+    public var calendars: Int
 
-    public init(id: String, kind: SourceKind, name: String? = nil, locked: Bool = false, items: [SourceItem] = []) {
+    public init(id: String, kind: SourceKind, name: String? = nil, locked: Bool = false, items: [SourceItem] = [], calendars: Int = 0) {
         self.id = id
         self.kind = kind
+        self.calendars = calendars
         self.name = name ?? kind.name
         self.locked = locked
         self.items = items
