@@ -147,6 +147,20 @@ final class CalendarSourceTests: XCTestCase {
         XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Dentist"], "the calendar dropped takes its items along")
         XCTAssertEqual(store.calendarPicks(of: config.id).map(\.name), ["Home"])
         XCTAssertEqual(http.asked.count, 9, "the calendar kept is read afresh")
+        await store.setCalendars(config.id, [])
+        XCTAssertEqual(store.calendarPicks(of: config.id).map(\.name), ["Home"], "an account reads at least one calendar")
+        XCTAssertEqual(http.asked.count, 9)
+    }
+
+    func testAnEventInTwoCalendarsOfOneAccountShowsOnce() async {
+        let work = URL(string: "https://cal.example.org/calendars/sam/work/")!
+        let http = ScriptedHTTP([(token("1"), 207), (report("Offsite"), 207), (token("a"), 207), (report("Offsite"), 207)])
+        let store = SourceStore(defaults: UserDefaults(suiteName: "dup-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
+        store.clock = { Date(timeIntervalSince1970: 1_793_900_000) }
+        await store.connectCalendar(
+            name: "Fastmail", server: server, user: "sam", password: "p",
+            calendars: [CalDAV.Calendar(url: calendar, name: "Home"), CalDAV.Calendar(url: work, name: "Work")])
+        XCTAssertEqual(store.accounts.first?.items.map(\.detail), ["Home"])
     }
 
     func testAnAccountSavedWithOneCalendarByAnOlderBuildStillReadsIt() throws {

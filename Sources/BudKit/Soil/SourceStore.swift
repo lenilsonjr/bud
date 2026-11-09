@@ -41,9 +41,14 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
         self.session = session
         self.mailbox = mailbox
         self.user = user
+        pick(calendars)
+        added = Date()
+    }
+
+    /// Reads these calendars, keeping the first in `calendar` for older builds.
+    public mutating func pick(_ calendars: [CalendarPick]) {
         calendar = calendars.first?.url
         self.calendars = calendars.isEmpty ? nil : calendars
-        added = Date()
     }
 
     /// The calendars the account reads: the list, or the one an older build saved.
@@ -179,11 +184,11 @@ public final class SourceStore: ObservableObject {
         configs.first { $0.id == id }?.calendarPicks ?? []
     }
 
-    /// Changes which calendars an account reads, and reads it again.
+    /// Changes which calendars an account reads, and reads it again. An empty pick changes nothing:
+    /// an account reads at least one calendar.
     public func setCalendars(_ id: String, _ calendars: [CalDAV.Calendar]) async {
-        guard let index = configs.firstIndex(where: { $0.id == id }) else { return }
-        configs[index].calendars = calendars.map { SourceConfig.CalendarPick(url: $0.url, name: $0.name) }
-        configs[index].calendar = calendars.first?.url
+        guard !calendars.isEmpty, let index = configs.firstIndex(where: { $0.id == id }) else { return }
+        configs[index].pick(calendars.map { SourceConfig.CalendarPick(url: $0.url, name: $0.name) })
         save()
         await share(configs[index])
         forgetCalendars(of: id)
@@ -191,7 +196,7 @@ public final class SourceStore: ObservableObject {
     }
 
     private func forgetCalendars(of id: String) {
-        for key in calendarSeen.keys where key == id || key.hasPrefix("\(id)#") { calendarSeen[key] = nil }
+        for key in calendarSeen.keys where key.hasPrefix("\(id)#") { calendarSeen[key] = nil }
         for key in calendarItems.keys where key.hasPrefix("\(id)#") { calendarItems[key] = nil }
     }
 
@@ -309,8 +314,9 @@ public final class SourceStore: ObservableObject {
                     calendarSeen[key] = (syncToken, now)
                     all += read
                 }
-                if picks.count > 1 { all.sort { ($0.date ?? .distantFuture, $0.id) < ($1.date ?? .distantFuture, $1.id) } }
-                items[config.id] = all
+                // An event in two of them, as an invitation a shared calendar also holds, shows once.
+                var ids = Set<String>()
+                items[config.id] = all.filter { ids.insert($0.id).inserted }
             case .linear:
                 let linear = LinearIssues(token: token, http: http)
                 let now = clock()
@@ -501,6 +507,10 @@ public final class SourceStore: ObservableObject {
         let leased = (try? await vault.shared(.leases)) ?? [:]
         leases = leased.compactMapValues { try? Self.decoder.decode(Lease.self, from: Data($0.utf8)) }
         if list != configs {
+            // An account whose calendars another device changed is read afresh.
+            for config in list where configs.first(where: { $0.id == config.id })?.calendarPicks != config.calendarPicks {
+                forgetCalendars(of: config.id)
+            }
             configs = list
             save()
             publish()
