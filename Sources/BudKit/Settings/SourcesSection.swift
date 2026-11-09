@@ -90,9 +90,11 @@ struct ConnectMailSheet: View {
                         .accessibilityIdentifier("source-token")
                 } else {
                     Text("Show this mailbox below the soil").textRole(.label).foregroundStyle(Theme.text2)
-                    ForEach(boxes) { box in
-                        DialogChoice(on: picked == box.id, title: box.name, caption: box.role == "inbox" ? "Your Inbox" : "") {
-                            picked = box.id
+                    DialogList {
+                        ForEach(boxes) { box in
+                            DialogChoice(on: picked == box.id, title: box.name, caption: box.role == "inbox" ? "Your Inbox" : "") {
+                                picked = box.id
+                            }
                         }
                     }
                 }
@@ -119,10 +121,10 @@ struct ConnectMailSheet: View {
 
     private func next() {
         if let account {
-            Task {
-                await sources.signIn(account, token: token)
-                close()
-            }
+            // The read behind the sign-in takes a while; the sheet does not wait for it.
+            busy = true
+            Task { await sources.signIn(account, token: token) }
+            close()
             return
         }
         guard let url = URL(string: session.trimmingCharacters(in: .whitespaces)), url.scheme == "https" else {
@@ -130,10 +132,11 @@ struct ConnectMailSheet: View {
             return
         }
         if let picked {
-            Task {
-                await sources.connectMail(name: name, session: url, token: token, mailbox: picked)
-                close()
-            }
+            // Connecting reads the account over the network; the sheet closes at once so a second
+            // press cannot add the account again.
+            busy = true
+            Task { await sources.connectMail(name: name, session: url, token: token, mailbox: picked) }
+            close()
             return
         }
         busy = true
@@ -188,8 +191,10 @@ struct ConnectCalendarSheet: View {
                     SecureField("App password", text: $password)
                 } else {
                     Text("Show this calendar below the soil").textRole(.label).foregroundStyle(Theme.text2)
-                    ForEach(calendars) { calendar in
-                        DialogChoice(on: picked == calendar.url, title: calendar.name, caption: "") { picked = calendar.url }
+                    DialogList {
+                        ForEach(calendars) { calendar in
+                            DialogChoice(on: picked == calendar.url, title: calendar.name, caption: "") { picked = calendar.url }
+                        }
                     }
                 }
                 if let problem {
@@ -215,10 +220,11 @@ struct ConnectCalendarSheet: View {
             return
         }
         if let picked {
-            Task {
-                await sources.connectCalendar(name: name, server: url, user: user, password: password, calendar: picked)
-                close()
-            }
+            // Connecting reads the calendar over the network; the sheet closes at once so a second
+            // press cannot add the account again.
+            busy = true
+            Task { await sources.connectCalendar(name: name, server: url, user: user, password: password, calendar: picked) }
+            close()
             return
         }
         busy = true
@@ -276,12 +282,13 @@ struct ConnectLinearSheet: View {
         Task {
             do {
                 let workspace = try await sources.linearWorkspace(token: key)
-                await sources.connectLinear(name: name.isEmpty ? workspace : name, token: key)
+                // Connecting reads the issues over the network; the sheet closes at once.
+                Task { await sources.connectLinear(name: name.isEmpty ? workspace : name, token: key) }
                 close()
             } catch {
                 problem = SourcesText.problem(error)
+                busy = false
             }
-            busy = false
         }
     }
 }

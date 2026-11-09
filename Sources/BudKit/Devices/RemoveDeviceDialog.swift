@@ -77,6 +77,19 @@ struct DialogBody<Choices: View, Actions: View>: View {
     }
 }
 
+/// A dialog's list of choices that may run long, as an account's forty calendars do: it scrolls
+/// past a height that keeps the title, the text and the buttons in view.
+struct DialogList<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) { content() }
+        }
+        .frame(maxHeight: 320)
+    }
+}
+
 /// One of a dialog's choices: a radio, a title and a note, lit when chosen.
 struct DialogChoice: View {
     let on: Bool
