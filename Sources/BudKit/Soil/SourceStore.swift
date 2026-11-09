@@ -105,6 +105,7 @@ public final class SourceStore: ObservableObject {
         save()
         await share(config)
         keep(token, for: config)
+        publish()
         await read(config)
         return config
     }
@@ -131,6 +132,7 @@ public final class SourceStore: ObservableObject {
         save()
         await share(config)
         keep(password, for: config)
+        publish()
         await read(config)
         return config
     }
@@ -152,6 +154,7 @@ public final class SourceStore: ObservableObject {
         save()
         await share(config)
         keep(token, for: config)
+        publish()
         await read(config)
         return config
     }
@@ -160,6 +163,7 @@ public final class SourceStore: ObservableObject {
     public func signIn(_ id: String, token: String) async {
         guard let config = configs.first(where: { $0.id == id }) else { return }
         keep(token, for: config)
+        publish()
         await read(config)
     }
 
