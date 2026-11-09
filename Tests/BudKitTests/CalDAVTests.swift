@@ -60,6 +60,31 @@ final class CalDAVTests: XCTestCase {
         XCTAssertEqual(http.asked[0].value(forHTTPHeaderField: "Authorization"), "Basic " + Data("sam:app-pass".utf8).base64EncodedString())
     }
 
+    func testARootWithoutDavIsAskedAtTheWellKnownPath() async throws {
+        let principal = """
+        <d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/calendars</d:href><d:propstat><d:prop>
+        <d:current-user-principal><d:href>/dav/principals/user/sam/</d:href></d:current-user-principal>
+        </d:prop></d:propstat></d:response></d:multistatus>
+        """
+        let home = """
+        <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/dav/principals/user/sam/</d:href>
+        <d:propstat><d:prop><c:calendar-home-set><d:href>/dav/calendars/user/sam/</d:href></c:calendar-home-set></d:prop></d:propstat>
+        </d:response></d:multistatus>
+        """
+        let list = """
+        <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+          <d:response><d:href>/dav/calendars/user/sam/home/</d:href><d:propstat><d:prop><d:displayname>Home</d:displayname>
+            <d:resourcetype><d:collection/><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>
+        </d:multistatus>
+        """
+        let http = ScriptedHTTP([("not here", 404), (principal, 207), (home, 207), (list, 207)])
+        let cal = CalDAV(server: server, user: "sam", password: "app-pass", http: http)
+        let calendars = try await cal.calendars()
+        XCTAssertEqual(calendars.map(\.name), ["Home"])
+        XCTAssertEqual(http.asked[1].url?.absoluteString, "https://cal.example.org/.well-known/caldav")
+        XCTAssertEqual(http.asked[2].url?.absoluteString, "https://cal.example.org/dav/principals/user/sam/")
+    }
+
     func testTheWindowMarksCancelledEvents() async throws {
         let report = """
         <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">

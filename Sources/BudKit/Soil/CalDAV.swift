@@ -30,11 +30,19 @@ public struct CalDAV: Sendable {
         self.http = http
     }
 
-    /// The calendars that hold events, by name.
+    /// The calendars that hold events, by name. A server that has no DAV at the address given
+    /// (Fastmail answers 404 at its root) is asked at `.well-known/caldav`, as RFC 6764 says.
     public func calendars() async throws -> [Calendar] {
-        let principal = try await href(
-            at: server, depth: 0,
-            prop: "<d:current-user-principal/>", inside: "current-user-principal")
+        let principal: URL
+        do {
+            principal = try await href(
+                at: server, depth: 0,
+                prop: "<d:current-user-principal/>", inside: "current-user-principal")
+        } catch SourceError.status(let status) where status == 404 || status == 405 {
+            principal = try await href(
+                at: server.appendingPathComponent(".well-known/caldav"), depth: 0,
+                prop: "<d:current-user-principal/>", inside: "current-user-principal")
+        }
         let home = try await href(
             at: principal, depth: 0,
             prop: "<c:calendar-home-set/>", inside: "calendar-home-set")
