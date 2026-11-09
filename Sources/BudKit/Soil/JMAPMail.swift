@@ -8,13 +8,31 @@ public protocol HTTP: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, Int)
 }
 
-/// The real network.
+/// The real network. A redirect is followed by sending the same request again at the new
+/// address, method and body included, which the session would not do for a PROPFIND.
 public struct NetworkHTTP: HTTP {
     public init() {}
 
     public func send(_ request: URLRequest) async throws -> (Data, Int) {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+        var request = request
+        for _ in 0..<5 {
+            let (data, response) = try await URLSession.shared.data(for: request, delegate: StayPut())
+            guard let http = response as? HTTPURLResponse else { return (data, 0) }
+            guard (300..<400).contains(http.statusCode), let location = http.value(forHTTPHeaderField: "Location"),
+                  let next = URL(string: location, relativeTo: request.url)
+            else { return (data, http.statusCode) }
+            request.url = next.absoluteURL
+        }
+        throw SourceError.unreadable("redirect")
+    }
+
+    private final class StayPut: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
     }
 }
 

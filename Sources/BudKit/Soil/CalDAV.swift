@@ -30,19 +30,9 @@ public struct CalDAV: Sendable {
         self.http = http
     }
 
-    /// The calendars that hold events, by name. A server that has no DAV at the address given
-    /// (Fastmail answers 404 at its root) is asked at `.well-known/caldav`, as RFC 6764 says.
+    /// The calendars that hold events, by name.
     public func calendars() async throws -> [Calendar] {
-        let principal: URL
-        do {
-            principal = try await href(
-                at: server, depth: 0,
-                prop: "<d:current-user-principal/>", inside: "current-user-principal")
-        } catch SourceError.status(let status) where status == 404 || status == 405 {
-            principal = try await href(
-                at: server.appendingPathComponent(".well-known/caldav"), depth: 0,
-                prop: "<d:current-user-principal/>", inside: "current-user-principal")
-        }
+        let principal = try await principal()
         let home = try await href(
             at: principal, depth: 0,
             prop: "<c:calendar-home-set/>", inside: "calendar-home-set")
@@ -82,6 +72,20 @@ public struct CalDAV: Sendable {
     }
 
     // MARK: requests
+
+    /// The principal behind the address given, or behind the host's `.well-known/caldav` (RFC 6764)
+    /// when that address has no DAV to answer with: Fastmail's root says 404, a web server's says
+    /// 405 or hands back a page. A refused password stops the search at once.
+    private func principal() async throws -> URL {
+        let wellKnown = URL(string: "/.well-known/caldav", relativeTo: server)?.absoluteURL ?? server
+        do {
+            return try await href(at: server, depth: 0, prop: "<d:current-user-principal/>", inside: "current-user-principal")
+        } catch SourceError.unauthorized {
+            throw SourceError.unauthorized
+        } catch where wellKnown != server {
+            return try await href(at: wellKnown, depth: 0, prop: "<d:current-user-principal/>", inside: "current-user-principal")
+        }
+    }
 
     private func href(at url: URL, depth: Int, prop: String, inside name: String) async throws -> URL {
         let tree = try await xml("PROPFIND", at: url, depth: depth, body: Self.propfind(prop))
