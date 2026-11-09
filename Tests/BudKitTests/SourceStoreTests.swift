@@ -122,6 +122,43 @@ final class CalendarSourceTests: XCTestCase {
         XCTAssertEqual(http.asked.count, 7, "an hour on: the window is read again")
         XCTAssertEqual(store.accounts.first?.kind, .calendar)
     }
+
+    func testAnAccountReadsEachOfItsCalendarsAndOnlyTheOnesThatMoved() async {
+        let work = URL(string: "https://cal.example.org/calendars/sam/work/")!
+        let http = ScriptedHTTP([
+            (token("1"), 207), (report("Dentist"), 207), (token("a"), 207), (report("Standup"), 207),
+            (token("1"), 207), (token("b"), 207), (report("Review"), 207),
+            (token("1"), 207), (report("Dentist"), 207),
+        ])
+        let defaults = UserDefaults(suiteName: "cals-\(UUID().uuidString)")!
+        let store = SourceStore(defaults: defaults, tokens: MemoryTokens(), http: http)
+        let now = Date(timeIntervalSince1970: 1_793_900_000)
+        store.clock = { now }
+        let picked = [CalDAV.Calendar(url: calendar, name: "Home"), CalDAV.Calendar(url: work, name: "Work")]
+        let config = await store.connectCalendar(name: "Fastmail", server: server, user: "sam", password: "p", calendars: picked)
+        XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Dentist", "Standup"])
+        XCTAssertEqual(store.accounts.first?.items.map(\.detail), ["Home", "Work"], "each item says which calendar it came from")
+        XCTAssertEqual(store.accounts.first?.calendars, 2)
+        XCTAssertEqual(SourcesText.status(store.accounts[0]), "2 calendars · 2 items")
+        await store.refresh()
+        XCTAssertEqual(http.asked.count, 7, "only the calendar whose token moved is read again")
+        XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Dentist", "Review"])
+        await store.setCalendars(config.id, [picked[0]])
+        XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Dentist"], "the calendar dropped takes its items along")
+        XCTAssertEqual(store.calendarPicks(of: config.id).map(\.name), ["Home"])
+        XCTAssertEqual(http.asked.count, 9, "the calendar kept is read afresh")
+    }
+
+    func testAnAccountSavedWithOneCalendarByAnOlderBuildStillReadsIt() throws {
+        let old = """
+        {"id": "c1", "kind": "calendar", "name": "Home", "session": "https://cal.example.org/", "user": "sam", "calendar": "\(calendar.absoluteString)"}
+        """
+        let config = try JSONDecoder().decode(SourceConfig.self, from: Data(old.utf8))
+        XCTAssertEqual(config.calendarPicks.map(\.url), [calendar])
+        let fresh = SourceConfig(kind: .calendar, name: "Both", session: server, user: "sam", calendars: [.init(url: calendar, name: "Home"), .init(url: URL(string: "https://cal.example.org/calendars/sam/work/")!, name: "Work")])
+        XCTAssertEqual(fresh.calendar, calendar, "an older build reads the first one")
+        XCTAssertEqual(fresh.calendarPicks.count, 2)
+    }
 }
 
 @MainActor

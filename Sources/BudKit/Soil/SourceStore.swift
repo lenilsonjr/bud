@@ -12,15 +12,28 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
     public var session: URL?
     /// Mail: the mailbox the soil shows.
     public var mailbox: String?
-    /// Calendar: the user name and the calendar the soil shows.
+    /// Calendar: the user name, and the calendars the soil shows. `calendar` is the first of them,
+    /// kept for a device on a build that reads one.
     public var user: String?
     public var calendar: URL?
+    public var calendars: [CalendarPick]?
     /// When it was connected, which keeps the roots in that order on every device.
     public var added: Date?
 
+    /// One calendar of an account, with the name its server gave it.
+    public struct CalendarPick: Codable, Hashable, Sendable {
+        public var url: URL
+        public var name: String
+
+        public init(url: URL, name: String) {
+            self.url = url
+            self.name = name
+        }
+    }
+
     public init(
         id: String = UUID().uuidString, kind: SourceKind, name: String, session: URL? = nil, mailbox: String? = nil,
-        user: String? = nil, calendar: URL? = nil
+        user: String? = nil, calendars: [CalendarPick] = []
     ) {
         self.id = id
         self.kind = kind
@@ -28,8 +41,14 @@ public struct SourceConfig: Codable, Hashable, Sendable, Identifiable {
         self.session = session
         self.mailbox = mailbox
         self.user = user
-        self.calendar = calendar
+        calendar = calendars.first?.url
+        self.calendars = calendars.isEmpty ? nil : calendars
         added = Date()
+    }
+
+    /// The calendars the account reads: the list, or the one an older build saved.
+    public var calendarPicks: [CalendarPick] {
+        calendars ?? calendar.map { [CalendarPick(url: $0, name: "")] } ?? []
     }
 }
 
@@ -52,9 +71,11 @@ public final class SourceStore: ObservableObject {
     var clock: () -> Date = Date.init
     /// What each mail account last read, so the next read can ask what changed first.
     private var seen: [String: (endpoint: JMAPMail.Endpoint, state: String?)] = [:]
-    /// Each calendar's sync token and when its window was last read; the window moves with the
-    /// clock, so it is read again after an hour even when the token stands still.
+    /// Each calendar's sync token and when its window was last read, by account and calendar; the
+    /// window moves with the clock, so it is read again after an hour even when the token stands
+    /// still. The items of each calendar are kept apart, so one that has not moved is not read again.
     private var calendarSeen: [String: (token: String?, at: Date)] = [:]
+    private var calendarItems: [String: [SourceItem]] = [:]
     /// Each Linear account's newest update and when it was last read in full; read again after an
     /// hour anyway, since an issue taken off you no longer counts as an update to your issues.
     private var linearSeen: [String: (updated: Date?, at: Date)] = [:]
@@ -122,12 +143,14 @@ public final class SourceStore: ObservableObject {
         try await CalDAV(server: server, user: user, password: password, http: http).calendars()
     }
 
-    /// Adds a calendar account that reads one calendar, keeps its password on this device, and reads it.
+    /// Adds a calendar account that reads the calendars picked, keeps its password on this device,
+    /// and reads it.
     @discardableResult
-    public func connectCalendar(name: String, server: URL, user: String, password: String, calendar: URL) async -> SourceConfig {
+    public func connectCalendar(name: String, server: URL, user: String, password: String, calendars: [CalDAV.Calendar]) async -> SourceConfig {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = SourceConfig(
-            kind: .calendar, name: trimmed.isEmpty ? SourceKind.calendar.name : trimmed, session: server, user: user, calendar: calendar)
+            kind: .calendar, name: trimmed.isEmpty ? SourceKind.calendar.name : trimmed, session: server, user: user,
+            calendars: calendars.map { SourceConfig.CalendarPick(url: $0.url, name: $0.name) })
         configs.append(config)
         save()
         await share(config)
@@ -135,6 +158,41 @@ public final class SourceStore: ObservableObject {
         publish()
         await read(config)
         return config
+    }
+
+    /// Adds a calendar account that reads one calendar.
+    @discardableResult
+    public func connectCalendar(name: String, server: URL, user: String, password: String, calendar: URL) async -> SourceConfig {
+        await connectCalendar(name: name, server: server, user: user, password: password, calendars: [CalDAV.Calendar(url: calendar, name: "")])
+    }
+
+    /// The calendars a connected account could read, found with the password this device keeps.
+    public func calendars(of id: String) async throws -> [CalDAV.Calendar] {
+        guard let config = configs.first(where: { $0.id == id }), let server = config.session, let user = config.user,
+              let password = tokens.token(for: id)
+        else { throw SourceError.unauthorized }
+        return try await calendars(server: server, user: user, password: password)
+    }
+
+    /// The calendars a connected account reads.
+    public func calendarPicks(of id: String) -> [SourceConfig.CalendarPick] {
+        configs.first { $0.id == id }?.calendarPicks ?? []
+    }
+
+    /// Changes which calendars an account reads, and reads it again.
+    public func setCalendars(_ id: String, _ calendars: [CalDAV.Calendar]) async {
+        guard let index = configs.firstIndex(where: { $0.id == id }) else { return }
+        configs[index].calendars = calendars.map { SourceConfig.CalendarPick(url: $0.url, name: $0.name) }
+        configs[index].calendar = calendars.first?.url
+        save()
+        await share(configs[index])
+        forgetCalendars(of: id)
+        await read(configs[index])
+    }
+
+    private func forgetCalendars(of id: String) {
+        for key in calendarSeen.keys where key == id || key.hasPrefix("\(id)#") { calendarSeen[key] = nil }
+        for key in calendarItems.keys where key.hasPrefix("\(id)#") { calendarItems[key] = nil }
     }
 
     // MARK: connecting Linear
@@ -173,7 +231,7 @@ public final class SourceStore: ObservableObject {
         configs.removeAll { $0.id == id }
         items[id] = nil
         seen[id] = nil
-        calendarSeen[id] = nil
+        forgetCalendars(of: id)
         linearSeen[id] = nil
         problems[id] = nil
         removed.insert(id)
@@ -225,13 +283,34 @@ public final class SourceStore: ObservableObject {
                 items[config.id] = window.items
                 seen[config.id] = (endpoint, window.state)
             case .calendar:
-                guard let server = config.session, let user = config.user, let calendar = config.calendar else { return }
+                guard let server = config.session, let user = config.user else { return }
+                let picks = config.calendarPicks
+                guard !picks.isEmpty else { return }
                 let cal = CalDAV(server: server, user: user, password: token, http: http)
                 let now = clock()
-                let syncToken = try await cal.syncToken(of: calendar)
-                if let last = calendarSeen[config.id], let syncToken, last.token == syncToken, now.timeIntervalSince(last.at) < 3600 { break }
-                items[config.id] = try await cal.window(of: calendar, now: now)
-                calendarSeen[config.id] = (syncToken, now)
+                var all: [SourceItem] = []
+                for pick in picks {
+                    let key = "\(config.id)#\(pick.url.absoluteString)"
+                    let syncToken = try await cal.syncToken(of: pick.url)
+                    if let last = calendarSeen[key], let syncToken, last.token == syncToken, now.timeIntervalSince(last.at) < 3600 {
+                        all += calendarItems[key] ?? []
+                        continue
+                    }
+                    var read = try await cal.window(of: pick.url, now: now)
+                    // With several calendars, an item says which one it came from.
+                    if picks.count > 1, !pick.name.isEmpty {
+                        read = read.map { item in
+                            var item = item
+                            item.detail = [pick.name, item.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                            return item
+                        }
+                    }
+                    calendarItems[key] = read
+                    calendarSeen[key] = (syncToken, now)
+                    all += read
+                }
+                if picks.count > 1 { all.sort { ($0.date ?? .distantFuture, $0.id) < ($1.date ?? .distantFuture, $1.id) } }
+                items[config.id] = all
             case .linear:
                 let linear = LinearIssues(token: token, http: http)
                 let now = clock()
@@ -253,7 +332,7 @@ public final class SourceStore: ObservableObject {
         } catch SourceError.unauthorized {
             problems[config.id] = "The token was refused. Sign in again on this device."
             seen[config.id] = nil
-            calendarSeen[config.id] = nil
+            forgetCalendars(of: config.id)
             linearSeen[config.id] = nil
         } catch {
             problems[config.id] = "Couldn't reach \(config.name). Bud will try again."
@@ -265,7 +344,8 @@ public final class SourceStore: ObservableObject {
         accounts = configs.map { config in
             SourceAccount(
                 id: config.id, kind: config.kind, name: config.name,
-                locked: tokens.token(for: config.id) == nil, items: (items[config.id] ?? []).filter { !$0.cancelled }
+                locked: tokens.token(for: config.id) == nil, items: (items[config.id] ?? []).filter { !$0.cancelled },
+                calendars: config.calendarPicks.count
             )
         }
         refreshed += 1
