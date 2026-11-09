@@ -299,7 +299,7 @@ public enum SourcesText {
     /// The servers most people use, ready to pick.
     public static let servers: [(name: String, caption: String, url: String)] = [
         ("iCloud", "Make an app password at account.apple.com", "https://caldav.icloud.com/"),
-        ("Fastmail", "Make an app password in Settings › Privacy & Security", "https://caldav.fastmail.com/"),
+        ("Fastmail", "Make an app password in Settings › Privacy & Security", "https://caldav.fastmail.com/dav/"),
     ]
 
     public static func status(_ account: SourceAccount) -> String {
