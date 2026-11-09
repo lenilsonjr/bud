@@ -958,7 +958,7 @@ private final class TagEdits {
 
 extension BudStore {
     /// This install, as a trigger's holder names it: the same id the soil's leases use.
-    public static var deviceID: String {
+    nonisolated public static var deviceID: String {
         let defaults = UserDefaults.standard
         if let known = defaults.string(forKey: SourceStore.deviceKey) { return known }
         let made = UUID().uuidString

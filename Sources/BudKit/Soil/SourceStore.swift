@@ -306,7 +306,7 @@ public final class SourceStore: ObservableObject {
     public var deviceName = "This device"
     /// This install, as a lease names it.
     public let device: String
-    static let deviceKey = "sourceDevice"
+    nonisolated static let deviceKey = "sourceDevice"
     static let movedKey = "sourcesMovedToVault"
     /// How long a lease runs without renewal: a few reads, so a device that went away hands over soon.
     public static let leaseLength: TimeInterval = 600
