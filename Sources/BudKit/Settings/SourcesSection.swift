@@ -201,8 +201,8 @@ struct ConnectCalendarSheet: View {
                     HStack {
                         Text("Show these calendars below the soil").textRole(.label).foregroundStyle(Theme.text2)
                         Spacer()
-                        Button(picked.count == calendars.count ? "None" : "All") {
-                            picked = picked.count == calendars.count ? [] : Set(calendars.map(\.url))
+                        Button(chosen.count == calendars.count ? "None" : "All") {
+                            picked = chosen.count == calendars.count ? [] : Set(calendars.map(\.url))
                         }
                         .buttonStyle(.budGhost)
                     }
@@ -226,7 +226,7 @@ struct ConnectCalendarSheet: View {
             Button(action: next) { BudButtonLabel(title: busy ? "Checking…" : nextTitle) }
                 .buttonStyle(.budPrimary)
                 .keyboardShortcut(.defaultAction)
-                .disabled(busy || (account == nil && (user.isEmpty || password.isEmpty)) || (!calendars.isEmpty && picked.isEmpty))
+                .disabled(busy || (account == nil ? user.isEmpty || password.isEmpty : calendars.isEmpty) || (!calendars.isEmpty && chosen.isEmpty))
         }
     }
 
@@ -245,7 +245,8 @@ struct ConnectCalendarSheet: View {
             do {
                 let found = try await sources.calendars(of: account)
                 calendars = found
-                let reading = Set(sources.calendarPicks(of: account).map(\.url))
+                // The ones it reads that the server still lists; the first when none is left.
+                let reading = Set(sources.calendarPicks(of: account).map(\.url)).intersection(found.map(\.url))
                 picked = reading.isEmpty ? Set(found.prefix(1).map(\.url)) : reading
                 if found.isEmpty { problem = SourcesText.noCalendars }
             } catch {
