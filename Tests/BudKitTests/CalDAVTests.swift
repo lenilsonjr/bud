@@ -60,7 +60,7 @@ final class CalDAVTests: XCTestCase {
         XCTAssertEqual(http.asked[0].value(forHTTPHeaderField: "Authorization"), "Basic " + Data("sam:app-pass".utf8).base64EncodedString())
     }
 
-    func testARootWithoutDavIsAskedAtTheWellKnownPath() async throws {
+    func testARootWithoutDavIsAskedAtTheHostsWellKnownPath() async throws {
         let principal = """
         <d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/calendars</d:href><d:propstat><d:prop>
         <d:current-user-principal><d:href>/dav/principals/user/sam/</d:href></d:current-user-principal>
@@ -77,12 +77,30 @@ final class CalDAVTests: XCTestCase {
             <d:resourcetype><d:collection/><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>
         </d:multistatus>
         """
-        let http = ScriptedHTTP([("not here", 404), (principal, 207), (home, 207), (list, 207)])
-        let cal = CalDAV(server: server, user: "sam", password: "app-pass", http: http)
-        let calendars = try await cal.calendars()
-        XCTAssertEqual(calendars.map(\.name), ["Home"])
-        XCTAssertEqual(http.asked[1].url?.absoluteString, "https://cal.example.org/.well-known/caldav")
-        XCTAssertEqual(http.asked[2].url?.absoluteString, "https://cal.example.org/dav/principals/user/sam/")
+        // A 404 root, a 405 root, and a root that hands back a web page all lead to .well-known.
+        for (root, status) in [("not here", 404), ("no", 405), ("<html><body>Welcome</body></html>", 200)] {
+            let http = ScriptedHTTP([(root, status), (principal, 207), (home, 207), (list, 207)])
+            let cal = CalDAV(server: URL(string: "https://cal.example.org/calendar/")!, user: "sam", password: "app-pass", http: http)
+            let calendars = try await cal.calendars()
+            XCTAssertEqual(calendars.map(\.name), ["Home"], "\(status)")
+            XCTAssertEqual(http.asked.count, 4)
+            XCTAssertEqual(http.asked[0].url?.absoluteString, "https://cal.example.org/calendar/")
+            XCTAssertEqual(http.asked[1].url?.absoluteString, "https://cal.example.org/.well-known/caldav")
+            XCTAssertEqual(http.asked[1].httpMethod, "PROPFIND")
+            XCTAssertEqual(http.asked[2].url?.absoluteString, "https://cal.example.org/dav/principals/user/sam/")
+        }
+    }
+
+    func testARefusedPasswordAtTheRootIsNotAskedAgain() async {
+        let http = ScriptedHTTP([("", 401), ("", 401)])
+        let cal = CalDAV(server: server, user: "sam", password: "wrong", http: http)
+        do {
+            _ = try await cal.calendars()
+            XCTFail("expected a refusal")
+        } catch {
+            XCTAssertEqual(error as? SourceError, .unauthorized)
+        }
+        XCTAssertEqual(http.asked.count, 1)
     }
 
     func testTheWindowMarksCancelledEvents() async throws {
