@@ -122,8 +122,8 @@ struct ConnectMailSheet: View {
     private func next() {
         if let account {
             // The read behind the sign-in takes a while; the sheet does not wait for it.
-            busy = true
-            Task { await sources.signIn(account, token: token) }
+            let key = token
+            Task { await sources.signIn(account, token: key) }
             close()
             return
         }
@@ -132,10 +132,10 @@ struct ConnectMailSheet: View {
             return
         }
         if let picked {
-            // Connecting reads the account over the network; the sheet closes at once so a second
-            // press cannot add the account again.
-            busy = true
-            Task { await sources.connectMail(name: name, session: url, token: token, mailbox: picked) }
+            // Connecting reads the account over the network; the sheet closes at once and the
+            // account's row shows meanwhile, so a second press cannot add it again.
+            let (name, key) = (name, token)
+            Task { await sources.connectMail(name: name, session: url, token: key, mailbox: picked) }
             close()
             return
         }
@@ -220,9 +220,9 @@ struct ConnectCalendarSheet: View {
             return
         }
         if let picked {
-            // Connecting reads the calendar over the network; the sheet closes at once so a second
-            // press cannot add the account again.
-            busy = true
+            // Connecting reads the calendar over the network; the sheet closes at once and the
+            // account's row shows meanwhile, so a second press cannot add it again.
+            let (name, user, password) = (name, user, password)
             Task { await sources.connectCalendar(name: name, server: url, user: user, password: password, calendar: picked) }
             close()
             return
@@ -252,6 +252,8 @@ struct ConnectLinearSheet: View {
     @State private var token = ""
     @State private var busy = false
     @State private var problem: String?
+    /// The check of the key, cancelled with the sheet so a retry cannot add the account twice.
+    @State private var checking: Task<Void, Never>?
 
     var body: some View {
         DialogBody(title: "Connect Linear", text: SourcesText.linearBody) {
@@ -273,15 +275,19 @@ struct ConnectLinearSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(busy || token.isEmpty)
         }
+        .onDisappear { checking?.cancel() }
     }
 
     private func connect() {
         busy = true
         problem = nil
         let key = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        Task {
+        let name = name
+        checking = Task {
             do {
                 let workspace = try await sources.linearWorkspace(token: key)
+                // Cancelled while checking: the sheet is gone and must not add the account.
+                guard !Task.isCancelled else { return }
                 // Connecting reads the issues over the network; the sheet closes at once.
                 Task { await sources.connectLinear(name: name.isEmpty ? workspace : name, token: key) }
                 close()

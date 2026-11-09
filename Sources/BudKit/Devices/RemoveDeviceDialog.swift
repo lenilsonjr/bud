@@ -83,10 +83,12 @@ struct DialogList<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ScrollView {
+        // Sized to its rows up to the cap, not to the window, so three choices take three rows.
+        MaybeScroll {
             VStack(alignment: .leading, spacing: 10) { content() }
         }
         .frame(maxHeight: 320)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
