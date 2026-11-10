@@ -15,12 +15,13 @@ struct PanelView<Content: View>: View {
     @Environment(\.panelDragging) private var dragging
     @Environment(\.stillPicture) private var still
     @State private var menuOpen = false
+    @GestureState private var holding = false
 
     static var headerHeight: CGFloat { 32 }
 
     var body: some View {
         let collapsed = store.panels.isCollapsed(panel)
-        let line = dragging.drag?.drop?.line(on: panel, in: store.panels.layout)
+        let line = dragging.drag?.line(on: panel, in: store.panels.layout)
         VStack(alignment: .leading, spacing: 0) {
             header(collapsed: collapsed)
             if !collapsed {
@@ -35,13 +36,14 @@ struct PanelView<Content: View>: View {
         .overlay(alignment: .top) { if line == .above { PanelDropLine().offset(y: -4) } }
         .overlay(alignment: .bottom) { if line == .below { PanelDropLine().offset(y: 4) } }
         .background(probe)
+        .onChange(of: holding) { _, now in if !now { dragging.released() } }
         .accessibilityIdentifier("panel-\(panel.rawValue)")
     }
 
-    /// Tells Files where this panel is while one is in hand, so the drop line can find its gap.
+    /// Tells Files where this panel is as a drag begins, so the drop line can find its gap.
     private var probe: some View {
         GeometryReader { geo in
-            Color.clear.onChange(of: dragging.drag?.point) { _, now in
+            Color.clear.onChange(of: dragging.drag?.panel) { _, now in
                 guard now != nil else { return }
                 dragging.placed(panel, geo.frame(in: .named(FilesView.space)))
             }
@@ -98,6 +100,7 @@ struct PanelView<Content: View>: View {
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 6, coordinateSpace: .named(FilesView.space))
+                .updating($holding) { _, state, _ in state = true }
                 .onChanged { dragging.moved(panel, $0.location) }
                 .onEnded { dragging.ended(panel, $0.location) }
         )
@@ -159,7 +162,7 @@ struct PanelMenu: View {
     }
 
     private func row(_ item: PanelMenuItem) -> some View {
-        let enabled = item.isEnabled(for: panel, in: store.panels)
+        let enabled = item.isEnabled(for: panel, in: store.panels, onBudPage: store.page != nil)
         return Button {
             store.arrange { item.apply(to: &$0, for: panel) }
             onChoose()
@@ -186,13 +189,17 @@ struct PanelMenu: View {
 }
 
 /// What a panel needs from Files while one is in hand: the drag itself, and the way to say
-/// where it is, where the pointer went and where it let go. Files sets it; a still picture sets
-/// the drag alone, to show the line.
-struct PanelDragging {
+/// where it is, where the pointer went, where it let go, and that the grip opened, dropped or
+/// cancelled. Files sets it; a still picture sets the drag alone, to show the line. Two are
+/// equal when their drags are, so the panels redraw only when the drag changes.
+struct PanelDragging: Equatable {
     var drag: PanelDrag? = nil
     var placed: (PagePanel, CGRect) -> Void = { _, _ in }
     var moved: (PagePanel, CGPoint) -> Void = { _, _ in }
     var ended: (PagePanel, CGPoint) -> Void = { _, _ in }
+    var released: () -> Void = {}
+
+    static func == (a: PanelDragging, b: PanelDragging) -> Bool { a.drag == b.drag }
 }
 
 private struct PanelDraggingKey: EnvironmentKey {
@@ -282,11 +289,9 @@ struct PanelSidebar: View {
         .accessibilityIdentifier("sidebar-\(side.rawValue)")
     }
 
-    /// The panels a side shows here: the page's own go with a bud's page alone, so a lens, a
-    /// place and Everything show the file tree only.
+    /// The panels a side shows here: the page's own go with a bud's page alone.
     static func panels(on side: PanelSide, store: BudStore) -> [PagePanel] {
-        let panels = store.panels.layout.panels(on: side)
-        return FilesPage.showsBudPage(store) ? panels : panels.filter { $0 == .files }
+        store.panels.layout.shown(on: side, onBudPage: store.page != nil)
     }
 
     private func column(_ panels: [PagePanel]) -> some View {

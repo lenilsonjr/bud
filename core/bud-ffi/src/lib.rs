@@ -718,6 +718,15 @@ impl Vault {
         Ok(self.core().set_trigger(&id, trigger.as_deref())?)
     }
 
+    /// How the panels around a page are arranged, synced with the vault.
+    pub fn layout(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().layout()?))
+    }
+
+    pub fn set_layout(&self, key: String, layout: Option<String>) -> Result<()> {
+        Ok(self.core().set_layout(&key, layout.as_deref())?)
+    }
+
     /// How a planted bud stands with its source; none clears it.
     pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
         Ok(self.core().set_from_state(&path, state.as_deref())?)

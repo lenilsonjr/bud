@@ -62,6 +62,10 @@ struct FilesView: View {
                         }
                         inHand = nil
                         frames = [:]
+                    },
+                    released: {
+                        inHand = nil
+                        frames = [:]
                     }
                 ))
                 .overlay(alignment: .topLeading) {
@@ -177,7 +181,8 @@ struct SidebarToggle: View {
     let side: PanelSide
 
     var body: some View {
-        let shown = store.sidebar.isShown(side, in: store.surfaceSize)
+        let empty = PanelSidebar.panels(on: side, store: store).isEmpty
+        let shown = !empty && store.sidebar.isShown(side, in: store.surfaceSize)
         Button {
             withAnimation(.easeOut(duration: 0.2)) { store.sidebar.toggle(side, in: store.surfaceSize) }
         } label: {
@@ -187,8 +192,9 @@ struct SidebarToggle: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
-        .accessibilityLabel(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
+        .disabled(empty)
+        .help(empty ? "Nothing in the \(side.name)" : shown ? "Hide the \(side.name)" : "Show the \(side.name)")
+        .accessibilityLabel(empty ? "Nothing in the \(side.name)" : shown ? "Hide the \(side.name)" : "Show the \(side.name)")
         .accessibilityIdentifier("sidebar-\(side.rawValue)-toggle")
     }
 }
