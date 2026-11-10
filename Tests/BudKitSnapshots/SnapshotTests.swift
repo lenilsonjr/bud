@@ -840,6 +840,31 @@ final class SnapshotTests: XCTestCase {
 
     private let phone = CGSize(width: 393, height: 852)
 
+    /// The view switch with Board and Calendar lit in turn, each over its quiet page with the
+    /// same bud in the breadcrumb; on the phone the switch folds into one button.
+    func testRendersTheViewSwitchAndTheQuietPages() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        store.center = newsletter.id
+        for surface in [Surface.board, .calendar] {
+            store.surface = surface
+            for scheme in [ColorScheme.light, .dark] {
+                let data = try render(store: store, scheme: scheme)
+                let file = folder.appendingPathComponent("\(surface.rawValue.lowercased())-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+        store.surface = .board
+        let narrow = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
+        try render(narrow, scheme: .light).write(to: folder.appendingPathComponent("phone-board-light.png"))
+    }
+
     /// The phone layout: Files split with the navigator on top, the canvas, and the palette.
     func testRendersThePhone() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {

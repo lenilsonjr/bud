@@ -2,7 +2,7 @@
 import Combine
 import SwiftUI
 
-/// The whole app: the bar across the top, the canvas or the files below it.
+/// The whole app: the bar across the top, the view it switches to below it.
 public struct BudRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: BudStore
@@ -40,7 +40,7 @@ public struct BudRootView: View {
         }
         .background(Theme.window.ignoresSafeArea())
         .background {
-            // The window's keys, drawn nowhere: Go anywhere, the switch between the surfaces, and
+            // The window's keys, drawn nowhere: Go anywhere, the switch between the views, and
             // the shortcuts sheet. They lose their keys while the sheet records one, so the
             // recorder hears it.
             Group {
@@ -50,6 +50,10 @@ public struct BudRootView: View {
                     .keyboardShortcut(windowKey(.canvas))
                 Button("") { store.perform(.files) }
                     .keyboardShortcut(windowKey(.files))
+                Button("") { store.perform(.board) }
+                    .keyboardShortcut(windowKey(.board))
+                Button("") { store.perform(.calendar) }
+                    .keyboardShortcut(windowKey(.calendar))
                 Button("") { store.perform(.shortcuts) }
                     .keyboardShortcut(windowKey(.shortcuts))
             }
@@ -99,6 +103,8 @@ public struct BudRootView: View {
             OrbitCanvas(store: store)
         case .files:
             FilesView(store: store)
+        case .board, .calendar:
+            QuietPage(surface: store.surface)
         }
     }
 
