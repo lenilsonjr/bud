@@ -10,13 +10,6 @@ final class FlagEnumTests: XCTestCase {
 #if canImport(Combine)
 @MainActor
 final class FlagsTests: XCTestCase {
-    private func freshDefaults() throws -> UserDefaults {
-        let name = "bud.tests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defaults.removePersistentDomain(forName: name)
-        return defaults
-    }
-
     func testAFreshInstallHasTheDefaults() throws {
         let flags = Flags(defaults: try freshDefaults())
         XCTAssertEqual(flags.appearance, .system)
