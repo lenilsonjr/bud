@@ -227,8 +227,8 @@ final class PropertiesTests: XCTestCase {
         XCTAssertTrue(newsletter.pinned)
         XCTAssertFalse(newsletter.body.isEmpty)
         let all = t.walk(under: rootID)
-        XCTAssertEqual(all.filter { $0.due != nil }.count, 2, "Two due dates")
-        XCTAssertEqual(all.filter { $0.when != nil }.count, 1, "One scheduled day")
+        XCTAssertEqual(all.filter { $0.due != nil }.count, 4, "Four due dates")
+        XCTAssertEqual(all.filter { $0.when != nil }.count, 3, "Three scheduled days")
         XCTAssertEqual(all.filter(\.pinned).count, 1)
         XCTAssertTrue(all.allSatisfy { $0.created <= Date() })
     }

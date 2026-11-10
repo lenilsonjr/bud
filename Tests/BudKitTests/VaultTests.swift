@@ -103,7 +103,7 @@ final class VaultTests: XCTestCase {
         try await vault.trash(thread)
         let during = try await vault.snapshot()
         XCTAssertEqual(during.count, before.count)
-        XCTAssertEqual(during.filter { $0.place == .trash }.count, 11)
+        XCTAssertEqual(during.filter { $0.place == .trash }.count, 12)
         _ = try await vault.restore(thread)
         let after = try await vault.snapshot()
         XCTAssertEqual(Set(after), Set(before))
