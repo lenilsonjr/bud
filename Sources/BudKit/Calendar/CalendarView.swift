@@ -122,7 +122,7 @@ struct CalendarView: View {
         Group {
             if store.calendarState.layout == .timeline {
                 if let timeline = store.timeline {
-                    TimelineView(timeline: timeline) { store.toggleCollapsed($0) }
+                    CalendarTimelineView(timeline: timeline) { store.toggleCollapsed($0) }
                 } else {
                     quiet(store.calendarState.layout.comingLine)
                 }
