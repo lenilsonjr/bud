@@ -4,9 +4,9 @@ import SwiftUI
 /// The Calendar view: the bar across its top with the range's title, a step back and forward,
 /// Today, the range segments and the Calendar or Timeline switch; the Threads and Show column on
 /// the left; and the grid for the range on the right. The day, the week, the month, the year
-/// and a custom range are built; the quarter and the timeline say they are coming in the grid's
-/// place. Choosing Custom opens the range picker over the segments; its length beside the title
-/// opens it again.
+/// and a custom range are built, and the timeline of the month, the quarter and the year; the
+/// quarter's grid and the other timelines say they are coming in the grid's place. Choosing
+/// Custom opens the range picker over the segments; its length beside the title opens it again.
 struct CalendarView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
@@ -72,6 +72,12 @@ struct CalendarView: View {
                     .help("Change the range")
                     .accessibilityIdentifier("calendar-range-length")
             }
+            if let subtitle = store.calendarSubtitle {
+                Text(subtitle)
+                    .textStyle(TextStyle(typeface: .text, size: 12, weight: 400))
+                    .foregroundStyle(Theme.text3)
+                    .lineLimit(1)
+            }
             HStack(spacing: 2) {
                 arrow("chevron.left", label: "Previous \(range.stepName)") { store.shiftCalendar(by: -1) }
                 arrow("chevron.right", label: "Next \(range.stepName)") { store.shiftCalendar(by: 1) }
@@ -115,7 +121,11 @@ struct CalendarView: View {
     @ViewBuilder private var main: some View {
         Group {
             if store.calendarState.layout == .timeline {
-                quiet(store.calendarState.layout.comingLine)
+                if let timeline = store.timeline {
+                    TimelineView(timeline: timeline) { store.toggleCollapsed($0) }
+                } else {
+                    quiet(store.calendarState.layout.comingLine)
+                }
             } else if store.calendarState.range == .month {
                 MonthGridView(grid: store.monthGrid)
             } else if store.calendarState.range == .day {
