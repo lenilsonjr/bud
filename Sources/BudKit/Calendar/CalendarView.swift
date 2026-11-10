@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The Calendar view: the bar across its top with the range's title, a step back and forward,
 /// Today, the range segments and the Calendar or Timeline switch; the Threads and Show column on
-/// the left; and the grid for the range on the right. The month grid is built; the other ranges
-/// and the timeline say they are coming in the grid's place.
+/// the left; and the grid for the range on the right. The day, the week and the month are
+/// built; the other ranges and the timeline say they are coming in the grid's place.
 struct CalendarView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
@@ -101,6 +101,10 @@ struct CalendarView: View {
                 quiet(store.calendarState.layout.comingLine)
             } else if store.calendarState.range == .month {
                 MonthGridView(grid: grid)
+            } else if store.calendarState.range == .day {
+                DayView(plan: store.dayPlan)
+            } else if store.calendarState.range == .week {
+                WeekView(plan: store.weekPlan)
             } else {
                 quiet(store.calendarState.range.comingLine)
             }
