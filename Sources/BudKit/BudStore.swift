@@ -27,6 +27,7 @@ public final class BudStore: ObservableObject {
             links = LinkGraph(tree)
             backlinkCache = [:]
             dropGoneFacets()
+            calendarState.keep(threads: Set(tree.children(of: rootID).map(\.id)))
         }
     }
     /// Which buds link to which, read again whenever the tree changes.

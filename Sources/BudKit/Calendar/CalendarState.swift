@@ -142,6 +142,13 @@ public struct CalendarState: Equatable, Codable, Sendable {
         if collapsedThreads.contains(id) { collapsedThreads.remove(id) } else { collapsedThreads.insert(id) }
     }
 
+    /// Forgets the threads that are gone: a hidden or folded thread that is no longer under the
+    /// centre would otherwise be kept forever.
+    public mutating func keep(threads: Set<UUID>) {
+        hiddenThreads = hiddenThreads.intersection(threads)
+        collapsedThreads = collapsedThreads.intersection(threads)
+    }
+
     /// Whether a bud passes the switches: a routine needs Routines on, a done bud needs Done on,
     /// and at least one of its dates must be shown by its switch.
     public func shows(_ entry: CalendarEntry) -> Bool {
