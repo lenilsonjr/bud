@@ -44,6 +44,7 @@ extension CalendarEntry {
         return CalendarEntry(
             id: id, title: title, thread: thread, tone: tone,
             when: key == .when ? midnight : when, due: key == .due ? midnight : due,
+            whenAt: key == .when ? midnight : whenAt, dueAt: key == .due ? midnight : dueAt,
             isDone: isDone, isRoutine: isRoutine
         )
     }

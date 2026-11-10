@@ -972,6 +972,8 @@ final class SnapshotTests: XCTestCase {
         // The newsletter bar's due end lifted over the Friday of its last week: the bar drawn
         // stretched to it with the leaf line, the day lit, and the day said beside the pointer.
         // The drag is set as a still picture sets it, so nothing is written.
+        let day: TimeInterval = 86_400
+        let issue = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Send the first issue" })
         let due = store.tree.bud(issue.id)?.due
         // The planting toast from above is let go, so a toast after the picture could only be a move's.
         store.toasts.dismiss()
