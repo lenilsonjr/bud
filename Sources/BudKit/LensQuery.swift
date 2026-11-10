@@ -194,16 +194,26 @@ public struct LensQuery: Hashable, Sendable {
 extension LensQuery {
     /// The hits grouped by the top-level thread they sit under, threads in their order and the
     /// hits in reading order: how a saved lens's page lists them. A thread that is a hit itself
-    /// heads its own group.
+    /// heads its own group. One walk of the tree: in reading order each thread comes before
+    /// everything below it.
     public func hitsByThread(
         _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
     ) -> [(thread: Bud, hits: [Bud])] {
-        var groups: [UUID: [Bud]] = [:]
-        for bud in hits(tree, links: links, on: now, calendar: calendar) {
-            let thread = tree.parent(of: bud.id) == rootID ? bud.id : tree.ancestors(of: bud.id).first { tree.parent(of: $0) == rootID }
-            if let thread { groups[thread, default: []].append(bud) }
+        let hit = Set(hits(tree, links: links, on: now, calendar: calendar).map(\.id))
+        guard !hit.isEmpty else { return [] }
+        var out: [(thread: Bud, hits: [Bud])] = []
+        var thread: Bud?
+        var found: [Bud] = []
+        for bud in tree.walk(under: rootID) {
+            if bud.parent == rootID {
+                if let thread, !found.isEmpty { out.append((thread, found)) }
+                thread = bud
+                found = []
+            }
+            if hit.contains(bud.id) { found.append(bud) }
         }
-        return tree.children(of: rootID).compactMap { thread in groups[thread.id].map { (thread, $0) } }
+        if let thread, !found.isEmpty { out.append((thread, found)) }
+        return out
     }
 }
 

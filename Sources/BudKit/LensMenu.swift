@@ -50,8 +50,9 @@ struct LensMenu: View {
         }
     }
 
-    /// The saved lenses by name; a tap ticks a lens's rows in place of what was ticked, and the
-    /// one the canvas asks now is marked.
+    /// The saved lenses by name; a tap asks a lens's question in place of the rows ticked, and
+    /// the one the canvas asks now is marked. No counts: each would read the whole tree again
+    /// on every change, and the footer counts the one asked.
     private var saved: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Saved")
@@ -61,8 +62,7 @@ struct LensMenu: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
             ForEach(store.savedLenses) { lens in
-                let on = store.canvasLens == lens.query
-                let count = lens.query.hits(store.tree, links: store.links, on: store.now).count
+                let on = store.canvasFacets.contains(.saved(lens))
                 Button {
                     withAnimation(.easeOut(duration: 0.35)) { store.applyLens(lens.id) }
                 } label: {
@@ -75,10 +75,6 @@ struct LensMenu: View {
                             .fontWeight(on ? .semibold : .regular)
                             .foregroundStyle(Theme.text)
                         Spacer(minLength: 8)
-                        Text("\(count)")
-                            .textRole(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.text3)
                     }
                     .textRole(.body)
                     .padding(.horizontal, 8)
@@ -87,7 +83,7 @@ struct LensMenu: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(lens.name), \(count == 1 ? "1 bud" : "\(count) buds")")
+                .accessibilityLabel(lens.name)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
@@ -277,13 +273,29 @@ struct LensMenu: View {
 
     /// A lens is worth keeping while something is ticked, no saved lens asks the same, and the
     /// rows do not ask for two things nothing can be at once.
-    private var canSave: Bool {
-        guard let lens = store.canvasLens, !lens.never else { return false }
-        return !store.savedLenses.contains { $0.query == lens }
+    private var canSave: Bool { SavedLens.refusal(query: store.canvasLens, saved: store.savedLenses) == nil }
+
+    /// Why the lens cannot be kept under `name` now; nil when it can.
+    private func refusal(_ name: String) -> String? {
+        SavedLens.refusal(name: name, query: store.canvasLens, saved: store.savedLenses)
     }
 
     /// The name for the lens being kept, filled with the ticked rows' names; return keeps it.
+    /// Why it cannot be kept, when it cannot, shows under it and Save waits.
     private func nameField(_ name: String) -> some View {
+        let refused = refusal(name)
+        return VStack(alignment: .leading, spacing: 4) {
+            field(name, refused: refused)
+            if let refused {
+                Text(refused)
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+
+    private func field(_ name: String, refused: String?) -> some View {
         HStack(spacing: 6) {
             TextField("Name this lens", text: Binding(get: { naming ?? name }, set: { naming = $0 }))
                 .textFieldStyle(.plain)
@@ -292,7 +304,7 @@ struct LensMenu: View {
                 .accessibilityIdentifier("lens-save-name")
             Button("Save", action: save)
                 .buttonStyle(.budGhost)
-                .disabled(SavedLens.clean(name) == nil)
+                .disabled(refused != nil)
             Button {
                 naming = nil
             } label: {
@@ -313,8 +325,10 @@ struct LensMenu: View {
         .task { typingName = true }
     }
 
+    /// Asked again at the moment of saving: the rows or the saved lenses may have changed
+    /// since the field opened.
     private func save() {
-        guard let name = naming, store.saveLens(name) != nil else { return }
+        guard let name = naming, refusal(name) == nil, store.saveLens(name) != nil else { return }
         naming = nil
     }
 

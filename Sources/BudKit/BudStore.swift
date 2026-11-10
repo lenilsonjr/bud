@@ -468,6 +468,7 @@ public final class BudStore: ObservableObject {
         modal = nil
         lens = nil
         place = nil
+        savedLens = nil
         center = rootID
         commit { $0 = fresh }
         write { [self] vault in
@@ -1142,6 +1143,7 @@ public final class BudStore: ObservableObject {
     /// picked once it is gone.
     public func facetName(_ facet: LensFacet) -> String {
         if case .linked(let id, _) = facet, let bud = tree.bud(id) { return "Linked to \(bud.text)" }
+        if case .saved(let lens) = facet, let now = saved(lens.id) { return now.name }
         return facet.name
     }
 
@@ -1404,10 +1406,13 @@ extension BudStore {
     }
 
     /// Keeps the canvas lens, or `query`, under a name, and offers to take it back. Nothing is
-    /// kept for an empty name, for no question, or for one nothing can answer.
+    /// kept for an empty name, for no question, for one nothing can answer, or for one a saved
+    /// lens asks already: `SavedLens.refusal` says which.
     @discardableResult
     public func saveLens(_ name: String, query: LensQuery? = nil) -> SavedLens? {
-        guard let name = SavedLens.clean(name), let query = query ?? canvasLens, !query.isEmpty, !query.never else { return nil }
+        let query = query ?? canvasLens
+        guard SavedLens.refusal(name: name, query: query, saved: savedLenses) == nil,
+              let name = SavedLens.clean(name), let query else { return nil }
         let lens = SavedLens(name: name, query: query)
         keep(lens)
         toasts.show(Undoable(message: "Saved \(name)", systemImage: "line.3.horizontal.decrease.circle") { [weak self] in
@@ -1440,10 +1445,12 @@ extension BudStore {
         })
     }
 
-    /// Asks the canvas a saved lens's question: its rows are ticked in place of what was.
+    /// Asks the canvas a saved lens's question, exactly as it was saved, in place of the rows
+    /// ticked; asked again, it lets the canvas go. A bud it is linked with that has gone keeps
+    /// matching nothing rather than dropping out of the question.
     public func applyLens(_ id: UUID) {
         guard let lens = saved(id) else { return }
-        canvasFacets = LensFacet.facets(of: lens.query) { tree.bud($0)?.text ?? "" }
+        canvasFacets = canvasFacets == [.saved(lens)] ? [] : [.saved(lens)]
     }
 
     /// The Files view on a saved lens.
@@ -1455,10 +1462,16 @@ extension BudStore {
 
     /// Reads every saved lens from the vault, once the writes queued here have landed: after a
     /// sync brought another device's. A page on a lens that is gone closes.
+    /// A read that a change made here overtook is read again once that change has landed.
     public func reloadLenses() async {
-        await settle()
-        let started = lensEdits
-        guard let stored = try? await vault.shared(.lenses), started == lensEdits else { return }
+        var stored: [String: String]
+        repeat {
+            await settle()
+            let started = lensEdits
+            guard let read = try? await vault.shared(.lenses) else { return }
+            stored = read
+            if started == lensEdits { break }
+        } while true
         let loaded = SavedLens.read(stored)
         if loaded != savedLenses { savedLenses = loaded }
         if let open = savedLens, saved(open) == nil { savedLens = nil }
@@ -1468,7 +1481,7 @@ extension BudStore {
         lensEdits += 1
         savedLenses = SavedLens.sorted(savedLenses.filter { $0.id != lens.id } + [lens])
         guard let text = lens.text else { return }
-        write { vault in try await vault.setShared(.lenses, lens.id.uuidString, text) }
+        writeLens(lens.id.uuidString, text)
     }
 
     private func drop(_ id: UUID) {
@@ -1476,7 +1489,20 @@ extension BudStore {
         lensEdits += 1
         savedLenses.removeAll { $0.id == id }
         if savedLens == id { savedLens = nil }
-        write { vault in try await vault.setShared(.lenses, id.uuidString, nil) }
+        writeLens(id.uuidString, nil)
+    }
+
+    /// One saved lens to the vault. One the vault refuses sends the list back to what the vault
+    /// holds, once the writes queued behind it have landed.
+    private func writeLens(_ key: String, _ text: String?) {
+        write { [weak self] vault in
+            do {
+                try await vault.setShared(.lenses, key, text)
+            } catch {
+                Task { @MainActor in await self?.reloadLenses() }
+                throw error
+            }
+        }
     }
 }
 
