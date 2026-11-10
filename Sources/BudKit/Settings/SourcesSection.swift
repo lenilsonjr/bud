@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The SOURCES section of Settings: each connected account with what it reads, a lock where this
-/// device has no token, and Connect mail.
+/// device has no token, and the Connect buttons.
 struct SourcesSection: View {
     @ObservedObject var sources: SourceStore
     let present: (Modal) -> Void
@@ -24,6 +24,9 @@ struct SourcesSection: View {
                 }
                 Button { present(.connectLinear) } label: {
                     BudButtonLabel(title: "Connect Linear…", systemImage: SoilView.symbol(.linear))
+                }
+                Button { present(.connectGitHub) } label: {
+                    BudButtonLabel(title: "Connect GitHub…", systemImage: SoilView.symbol(.github))
                 }
             }
             .buttonStyle(.budSecondary)
@@ -348,6 +351,63 @@ struct ConnectLinearSheet: View {
         }
     }
 }
+
+/// Connect GitHub with a fine-grained personal access token; the soil shows the pull requests
+/// waiting for your review, the issues assigned to you and your open pull requests.
+struct ConnectGitHubSheet: View {
+    @ObservedObject var sources: SourceStore
+    let close: () -> Void
+
+    @State private var name = ""
+    @State private var token = ""
+    @State private var busy = false
+    @State private var problem: String?
+    /// The check of the token, cancelled with the sheet so a retry cannot add the account twice.
+    @State private var checking: Task<Void, Never>?
+
+    var body: some View {
+        DialogBody(title: "Connect GitHub", text: SourcesText.githubBody) {
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Name, as in Work", text: $name)
+                SecureField("Personal access token", text: $token)
+                    .accessibilityIdentifier("source-token")
+                if let problem {
+                    Text(problem).textRole(.caption).foregroundStyle(Theme.rose)
+                }
+            }
+            .textFieldStyle(.roundedBorder)
+        } actions: {
+            Button(action: close) { BudButtonLabel(title: "Cancel") }
+                .buttonStyle(.budSecondary)
+                .keyboardShortcut(.cancelAction)
+            Button(action: connect) { BudButtonLabel(title: busy ? "Checking…" : "Connect") }
+                .buttonStyle(.budPrimary)
+                .keyboardShortcut(.defaultAction)
+                .disabled(busy || token.isEmpty)
+        }
+        .onDisappear { checking?.cancel() }
+    }
+
+    private func connect() {
+        busy = true
+        problem = nil
+        let key = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = name
+        checking = Task {
+            do {
+                let user = try await sources.githubUser(token: key)
+                // Cancelled while checking: the sheet is gone and must not add the account.
+                guard !Task.isCancelled else { return }
+                // Connecting reads the searches over the network; the sheet closes at once.
+                Task { await sources.connectGitHub(name: name.isEmpty ? user : name, token: key) }
+                close()
+            } catch {
+                problem = SourcesText.problem(error)
+                busy = false
+            }
+        }
+    }
+}
 #endif
 
 /// The words of Settings › Sources, kept pure so a test reads them on any platform.
@@ -358,6 +418,7 @@ public enum SourcesText {
     public static let badAddress = "The address starts with https://."
     public static let calendarBody = "Bud reads the next 14 days of the calendars you pick over CalDAV. Use an app password, not your account password."
     public static let linearBody = "Bud shows the open issues assigned to you. Make a personal API key in Linear under Settings › Security & access."
+    public static let githubBody = "Bud shows pull requests waiting for your review, issues assigned to you and your open pull requests. Make a fine-grained personal access token on GitHub under Settings › Developer settings, with read access to issues and pull requests."
     public static let noCalendars = "No calendar with events was found there."
     /// The servers most people use, ready to pick.
     public static let servers: [(name: String, caption: String, url: String)] = [

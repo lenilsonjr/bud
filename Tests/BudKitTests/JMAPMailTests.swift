@@ -7,15 +7,25 @@ import FoundationNetworking
 /// A server that answers each request from a script, and keeps what it was asked.
 final class ScriptedHTTP: HTTP, @unchecked Sendable {
     private let lock = NSLock()
-    private var replies: [(Data, Int)]
+    private var replies: [HTTPReply]
     private(set) var asked: [URLRequest] = []
 
-    init(_ replies: [(String, Int)]) { self.replies = replies.map { (Data($0.0.utf8), $0.1) } }
+    init(_ replies: [(String, Int)]) { self.replies = replies.map { HTTPReply(body: Data($0.0.utf8), status: $0.1) } }
+
+    /// Replies with headers, for a source that asks by ETag.
+    init(headed replies: [(String, Int, [String: String])]) {
+        self.replies = replies.map { HTTPReply(body: Data($0.0.utf8), status: $0.1, headers: $0.2) }
+    }
 
     func send(_ request: URLRequest) async throws -> (Data, Int) {
+        let reply = try await exchange(request)
+        return (reply.body, reply.status)
+    }
+
+    func exchange(_ request: URLRequest) async throws -> HTTPReply {
         lock.withLock {
             asked.append(request)
-            return replies.isEmpty ? (Data(), 500) : replies.removeFirst()
+            return replies.isEmpty ? HTTPReply(body: Data(), status: 500) : replies.removeFirst()
         }
     }
 

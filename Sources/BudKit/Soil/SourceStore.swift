@@ -84,6 +84,10 @@ public final class SourceStore: ObservableObject {
     /// Each Linear account's newest update and when it was last read in full; read again after an
     /// hour anyway, since an issue taken off you no longer counts as an update to your issues.
     private var linearSeen: [String: (updated: Date?, at: Date)] = [:]
+    /// Each GitHub search's ETag and the items it last gave, by account and search, so a search
+    /// that answers nothing changed keeps them.
+    private var githubTags: [String: String] = [:]
+    private var githubItems: [String: [SourceItem]] = [:]
     private var items: [String: [SourceItem]] = [:]
     private var polling: Task<Void, Never>?
 
@@ -222,6 +226,33 @@ public final class SourceStore: ObservableObject {
         return config
     }
 
+    // MARK: connecting GitHub
+
+    /// Checks a fine-grained personal access token and hands back the login it signs in as.
+    public func githubUser(token: String) async throws -> String {
+        try await GitHubItems(token: token, http: http).user()
+    }
+
+    /// Adds a GitHub account that reads the pull requests waiting for your review, the issues
+    /// assigned to you and your open pull requests, keeps its token on this device, and reads it.
+    @discardableResult
+    public func connectGitHub(name: String, token: String) async -> SourceConfig {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let config = SourceConfig(kind: .github, name: trimmed.isEmpty ? SourceKind.github.name : trimmed)
+        configs.append(config)
+        save()
+        await share(config)
+        keep(token, for: config)
+        publish()
+        await read(config)
+        return config
+    }
+
+    private func forgetGitHub(of id: String) {
+        for key in githubTags.keys where key.hasPrefix("\(id)#") { githubTags[key] = nil }
+        for key in githubItems.keys where key.hasPrefix("\(id)#") { githubItems[key] = nil }
+    }
+
     /// Signs this device in to an account another device connected.
     public func signIn(_ id: String, token: String) async {
         guard let config = configs.first(where: { $0.id == id }) else { return }
@@ -238,6 +269,7 @@ public final class SourceStore: ObservableObject {
         seen[id] = nil
         forgetCalendars(of: id)
         linearSeen[id] = nil
+        forgetGitHub(of: id)
         problems[id] = nil
         removed.insert(id)
         waiting.remove(id)
@@ -331,7 +363,19 @@ public final class SourceStore: ObservableObject {
                 let updated = [newest, window.updated].compactMap { $0 }.max()
                 linearSeen[config.id] = (updated, now)
             case .github:
-                break
+                let github = GitHubItems(token: token, http: http)
+                var all: [SourceItem] = []
+                for query in GitHubItems.Query.allCases {
+                    let key = "\(config.id)#\(query.rawValue)"
+                    let read = try await github.search(query, tag: githubTags[key])
+                    if let found = read.items { githubItems[key] = found }
+                    githubTags[key] = read.tag
+                    all += githubItems[key] ?? []
+                }
+                // A pull request of yours whose review you were asked for shows once, where it
+                // presses most.
+                var ids = Set<String>()
+                items[config.id] = all.filter { ids.insert($0.id).inserted }
             }
             problems[config.id] = nil
             readAt[config.id] = clock()
@@ -340,6 +384,7 @@ public final class SourceStore: ObservableObject {
             seen[config.id] = nil
             forgetCalendars(of: config.id)
             linearSeen[config.id] = nil
+            forgetGitHub(of: config.id)
         } catch {
             problems[config.id] = "Couldn't reach \(config.name). Bud will try again."
         }
@@ -427,7 +472,25 @@ public final class SourceStore: ObservableObject {
                     for id in missingEverywhere { found[kind.key(id)] = .gone }
                 }
             case .github:
-                break
+                // A closed issue or merged pull request leaves the searches but is still there to read.
+                var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
+                var answered = 0
+                for config in readable where !left.isEmpty {
+                    guard let token = tokens.token(for: config.id) else { continue }
+                    let ids = left.map { SourceRowText.origin($0.from).id }
+                    guard let answer = try? await GitHubItems(token: token, http: http).issues(ids) else { continue }
+                    answered += 1
+                    for item in answer.found {
+                        found[kind.key(item.id)] = .seen(item)
+                        missingEverywhere.remove(item.id)
+                    }
+                    // One this token may not read is neither seen nor missing: left out.
+                    missingEverywhere.formIntersection(answer.missing)
+                    left = left.filter { found[$0.from] == nil }
+                }
+                if everyone, answered == readable.count {
+                    for id in missingEverywhere { found[kind.key(id)] = .gone }
+                }
             }
         }
         return found.filter { key, _ in planted.contains { $0.from == key } }

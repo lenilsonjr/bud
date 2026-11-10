@@ -23,6 +23,7 @@ enum Modal: Hashable, Identifiable {
     /// Change which calendars a connected account reads.
     case calendars(account: String)
     case connectLinear
+    case connectGitHub
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
@@ -36,6 +37,7 @@ enum Modal: Hashable, Identifiable {
     static let connectCalendarID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!
     static let connectLinearID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!
     static let calendarsID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!
+    static let connectGitHubID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!
 
     var id: UUID {
         switch self {
@@ -54,6 +56,7 @@ enum Modal: Hashable, Identifiable {
         case .connectCalendar: return Self.connectCalendarID
         case .calendars: return Self.calendarsID
         case .connectLinear: return Self.connectLinearID
+        case .connectGitHub: return Self.connectGitHubID
         }
     }
 
@@ -143,6 +146,8 @@ struct ModalHost: View {
                 ConnectCalendarSheet(sources: .shared, account: account, close: { store.modal = .settings })
             case .connectLinear:
                 ConnectLinearSheet(sources: .shared, close: { store.modal = .settings })
+            case .connectGitHub:
+                ConnectGitHubSheet(sources: .shared, close: { store.modal = .settings })
             }
         }
         .modalCard()

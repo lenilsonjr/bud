@@ -14,6 +14,8 @@ final class ModalTests: XCTestCase {
         XCTAssertNotEqual(Modal.add(parent: a).id, Modal.add(parent: b).id)
         XCTAssertNotEqual(Modal.add(parent: a).id, Modal.capture.id)
         XCTAssertEqual(Modal.add(parent: a).id, Modal.add(parent: a).id)
+        let sheets: [Modal] = [.connectMail(account: nil), .connectCalendar, .connectLinear, .calendars(account: "x"), .connectGitHub]
+        XCTAssertEqual(Set(sheets.map(\.id)).count, sheets.count, "each connect sheet is its own modal")
     }
 
     func testCardWidthIs480OrTheWindowMinus32WhenNarrower() {

@@ -451,6 +451,8 @@ public final class BudStore: ObservableObject {
             if let date = item.date { setDue(id, date) }
             if let detail = item.detail { setBody(id, detail) }
         }
+        // GitHub: the body says the repository and whether it is an issue or a pull request.
+        if account.kind == .github, let detail = item.detail { setBody(id, detail) }
         lastSeen[key] = SourceSnapshot(item, at: Date())
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in

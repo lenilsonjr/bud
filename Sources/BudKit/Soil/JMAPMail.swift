@@ -6,6 +6,34 @@ import FoundationNetworking
 /// Sends one request and hands back the body and status. A stand-in replaces it in tests.
 public protocol HTTP: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, Int)
+    /// The same, with the reply's headers, for a source that asks whether anything changed by ETag.
+    func exchange(_ request: URLRequest) async throws -> HTTPReply
+}
+
+extension HTTP {
+    /// A stand-in that scripts bodies alone answers without headers.
+    public func exchange(_ request: URLRequest) async throws -> HTTPReply {
+        let (body, status) = try await send(request)
+        return HTTPReply(body: body, status: status)
+    }
+}
+
+/// One reply: its body, status and headers.
+public struct HTTPReply: Sendable {
+    public var body: Data
+    public var status: Int
+    public var headers: [String: String]
+
+    public init(body: Data, status: Int, headers: [String: String] = [:]) {
+        self.body = body
+        self.status = status
+        self.headers = headers
+    }
+
+    /// A header by name, whichever case the server wrote it in.
+    public func header(_ name: String) -> String? {
+        headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
 }
 
 /// The real network. A redirect is followed by sending the same request again at the new
@@ -14,13 +42,24 @@ public struct NetworkHTTP: HTTP {
     public init() {}
 
     public func send(_ request: URLRequest) async throws -> (Data, Int) {
+        let reply = try await exchange(request)
+        return (reply.body, reply.status)
+    }
+
+    public func exchange(_ request: URLRequest) async throws -> HTTPReply {
         var request = request
         for _ in 0..<5 {
             let (data, response) = try await URLSession.shared.data(for: request, delegate: StayPut())
-            guard let http = response as? HTTPURLResponse else { return (data, 0) }
+            guard let http = response as? HTTPURLResponse else { return HTTPReply(body: data, status: 0) }
             guard (300..<400).contains(http.statusCode), let location = http.value(forHTTPHeaderField: "Location"),
                   let next = URL(string: location, relativeTo: request.url)
-            else { return (data, http.statusCode) }
+            else {
+                var headers: [String: String] = [:]
+                for (name, value) in http.allHeaderFields {
+                    if let name = name as? String, let value = value as? String { headers[name] = value }
+                }
+                return HTTPReply(body: data, status: http.statusCode, headers: headers)
+            }
             request.url = next.absoluteURL
         }
         throw SourceError.unreadable("redirect")
