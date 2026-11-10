@@ -392,13 +392,24 @@ public struct Tree: Codable, Equatable, Sendable {
 
     /// `tpl/Weekly review/2026-11-09T09:00Z`: the template and the minute it was stamped for, in UTC.
     public static func stampKey(_ template: String, at date: Date) -> String {
+        "tpl/\(template)/\(stampFormatter.string(from: date))"
+    }
+
+    /// The minute a stamp key names, read back the way `stampKey` wrote it; nil for any other key.
+    public static func stampOccurrence(of key: String) -> Date? {
+        guard key.hasPrefix("tpl/"), let stamp = key.split(separator: "/").last else { return nil }
+        return stampFormatter.date(from: String(stamp))
+    }
+
+    /// The one formatter both directions of a stamp key share: UTC, so two devices in different
+    /// zones name one occurrence alike.
+    private static let stampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        // UTC, so two devices in different zones name one occurrence alike.
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm'Z'"
-        return "tpl/\(template)/\(formatter.string(from: date))"
-    }
+        return formatter
+    }()
 
     /// The templates in the Warehouse, in their order.
     public func templates() -> [Bud] { children(of: warehouseID) }
