@@ -16,7 +16,7 @@ extension BudStore {
 
     /// The line under the title, when the range has one.
     public var calendarSubtitle: String? {
-        Timeline.subtitle(of: calendarState.range, containing: calendarFocus, calendar: calendar)
+        calendarState.range.subtitle(for: calendarFocus, calendar: calendar)
     }
 
     /// Folds a thread's rows up under its header in the timeline, or opens them again. Kept on
