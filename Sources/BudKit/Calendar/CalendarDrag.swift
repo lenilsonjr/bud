@@ -1,7 +1,7 @@
 import Foundation
 
 /// One of a bud's two days, by its front matter key: what a drag on the calendar moves.
-public enum DateField: String, CaseIterable, Codable, Sendable {
+public enum DateKey: String, CaseIterable, Codable, Sendable {
     /// The day the bud is scheduled for: a bar's leading edge, the arrow.
     case when
     /// The day it is due: a bar's trailing edge, the flag.
@@ -24,11 +24,11 @@ public enum DateField: String, CaseIterable, Codable, Sendable {
 /// grid, and the day under it, nil off the grid. A still picture sets one to show the move.
 public struct CalendarDrag: Equatable, Sendable {
     public var entry: UUID
-    public var field: DateField
+    public var field: DateKey
     public var point: CGPoint
     public var over: Date?
 
-    public init(entry: UUID, field: DateField, point: CGPoint, over: Date? = nil) {
+    public init(entry: UUID, field: DateKey, point: CGPoint, over: Date? = nil) {
         self.entry = entry
         self.field = field
         self.point = point
@@ -39,7 +39,7 @@ public struct CalendarDrag: Equatable, Sendable {
 extension CalendarEntry {
     /// The entry with one of its days moved onto `day`, at midnight as the grid holds its days;
     /// the other day as it was. What the grid draws while the end is in hand.
-    public func moved(_ field: DateField, toDay day: Date, calendar: Calendar) -> CalendarEntry {
+    public func moved(_ field: DateKey, toDay day: Date, calendar: Calendar) -> CalendarEntry {
         let midnight = calendar.startOfDay(for: day)
         return CalendarEntry(
             id: id, title: title, thread: thread, tone: tone,
@@ -49,7 +49,7 @@ extension CalendarEntry {
     }
 
     /// The day the field holds, if any.
-    public func day(_ field: DateField) -> Date? {
+    public func day(_ field: DateKey) -> Date? {
         field == .when ? when : due
     }
 }
