@@ -960,21 +960,30 @@ public final class BudStore: ObservableObject {
         public let serial: Int
     }
 
-    /// Whether a command's scope holds on what the window shows.
+    /// The bud whose page Files shows; nil on the canvas, a lens, a place or Everything.
+    private var page: UUID? {
+        guard surface == .files, lens == nil, place == nil, center != rootID, tree.bud(center) != nil else { return nil }
+        return center
+    }
+
+    /// Whether a command's scope holds on what the window shows. New under this needs a target
+    /// as well: the canvas always has one, Files only on a bud's page.
     public func allows(_ id: Command.ID) -> Bool {
+        if id == .newUnderThis { return surface == .canvas || page != nil }
         switch Command.of(id).scope {
         case .everywhere: return true
         case .canvas: return surface == .canvas
         case .files: return surface == .files
-        case .document: return surface == .files && lens == nil && place == nil && center != rootID && tree.bud(center) != nil
+        case .document: return page != nil
         }
     }
 
     /// The one way a command runs, from its key or the menu bar: nothing fires outside its scope.
     /// The store does its part (a modal, a surface, a tick) and notes the command, so the surface
     /// finishes what only it can: open the lit card, step through the matches, read instead of
-    /// edit. `bud` is the one the key was pressed over, when the view knows; the center otherwise.
-    /// Returns whether the command fired.
+    /// edit. `bud` is the one the key was pressed over, when the view knows: the lit card on the
+    /// canvas, where the center stands in when nothing is lit; the page in Files. Returns whether
+    /// the command fired.
     @discardableResult
     public func perform(_ id: Command.ID, on bud: UUID? = nil) -> Bool {
         guard allows(id) else { return false }
@@ -984,7 +993,7 @@ public final class BudStore: ObservableObject {
         case .undo: toasts.undo()
         case .canvas: surface = .canvas
         case .files: surface = .files
-        case .newUnderThis: modal = .adding(under: bud ?? center)
+        case .newUnderThis: modal = .adding(under: bud ?? page ?? center)
         case .soil: soilFolded.toggle()
         case .closeOrReopen: tick(bud ?? center)
         case .rowDown, .rowUp, .choose, .openInFiles, .close, .open, .back, .nextMatch, .previousMatch, .nest, .rise,

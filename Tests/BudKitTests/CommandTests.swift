@@ -51,6 +51,13 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(Command.Scope.allCases.flatMap(Command.all(in:)).count, Command.all.count)
     }
 
+    func testTheMenuBarListsEveryRowButUndo() {
+        let listed = Command.Scope.allCases.flatMap(Command.menu(in:)).map(\.id)
+        XCTAssertFalse(listed.contains(.undo))
+        XCTAssertEqual(listed.count, Command.all.count - 1)
+        XCTAssertEqual(Command.menu(in: .canvas), Command.all(in: .canvas))
+    }
+
     func testAKeyDrawsItselfTheWayTheBoardDoes() {
         XCTAssertEqual(Key("k", .command).label, "⌘K")
         XCTAssertEqual(Key("g", [.command, .shift]).label, "⇧⌘G")
@@ -113,6 +120,23 @@ final class CommandStoreTests: XCTestCase {
         store.modal = nil
         store.openAsFile(bud)
         XCTAssertTrue(store.perform(.newUnderThis))
+        XCTAssertEqual(store.modal, .add(parent: bud))
+    }
+
+    func testNewUnderThisIsRefusedInFilesWithoutABudsPage() {
+        let (store, bud) = store()
+        store.openInbox()
+        XCTAssertFalse(store.allows(.newUnderThis))
+        XCTAssertFalse(store.perform(.newUnderThis))
+        store.open(.today)
+        XCTAssertFalse(store.perform(.newUnderThis))
+        store.openAsFile(rootID)
+        XCTAssertFalse(store.perform(.newUnderThis))
+        XCTAssertNil(store.modal)
+        XCTAssertNil(store.lastCommand)
+        store.surface = .canvas
+        XCTAssertTrue(store.allows(.newUnderThis), "The canvas always has a target: the lit card or the center")
+        XCTAssertTrue(store.perform(.newUnderThis, on: bud))
         XCTAssertEqual(store.modal, .add(parent: bud))
     }
 

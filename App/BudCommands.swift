@@ -14,7 +14,7 @@ struct BudCommands: Commands {
         CommandMenu("Commands") {
             ForEach(Command.Scope.allCases, id: \.self) { scope in
                 Section(scope.rawValue) {
-                    ForEach(Command.all(in: scope)) { command in
+                    ForEach(Command.menu(in: scope)) { command in
                         item(command)
                     }
                 }
