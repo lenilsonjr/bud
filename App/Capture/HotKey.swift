@@ -68,7 +68,7 @@ extension KeyboardLayout {
     /// gives with nothing held, so the sheet shows a recorded key as this keyboard names it.
     static var mac: KeyboardLayout {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return .us }
-        return withExtendedLifetime(source) {
+        return withExtendedLifetime(source) { () -> KeyboardLayout in
             guard let pointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return .us }
             let data = unsafeBitCast(pointer, to: CFData.self)
             guard let bytes = CFDataGetBytePtr(data) else { return .us }
