@@ -76,19 +76,6 @@ struct DocumentView: View {
             }
             .onChange(of: editing) { _, _ in closedAt = nil; armed = false }
             .onDisappear { flush() }
-        } else if id == rootID {
-            // Everything is no file of its own: its title, and the threads are in the sidebar.
-            MaybeScroll {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(store.tree.title(of: rootID))
-                        .textRole(.title)
-                        .foregroundStyle(Theme.text)
-                    Text("Pick a thread in the sidebar.")
-                        .textRole(.body)
-                        .foregroundStyle(Theme.text3)
-                }
-                .pageColumn()
-            }
         }
     }
 

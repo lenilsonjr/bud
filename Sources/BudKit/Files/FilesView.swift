@@ -64,6 +64,8 @@ struct FilesPage: View {
                 case .warehouse: WarehousePage(store: store)
                 case .triggers: TriggersPage(store: store)
                 }
+            } else if store.center == rootID {
+                EverythingPage(store: store)
             } else {
                 // A page of its own for each bud, so a link followed in read mode opens the next
                 // page reading, not in the editor the last one left open.
@@ -73,6 +75,26 @@ struct FilesPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.canvas)
+    }
+}
+
+/// Everything's page: the root is no bud and has no body, so its title and a line pointing at
+/// the threads, which the tree beside it lists.
+struct EverythingPage: View {
+    @ObservedObject var store: BudStore
+
+    var body: some View {
+        MaybeScroll {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(store.tree.title(of: rootID))
+                    .textRole(.title)
+                    .foregroundStyle(Theme.text)
+                Text("Pick a thread to read it.")
+                    .textRole(.body)
+                    .foregroundStyle(Theme.text3)
+            }
+            .pageColumn()
+        }
     }
 }
 #endif
