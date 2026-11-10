@@ -54,6 +54,10 @@ public struct CalendarEntry: Hashable, Identifiable, Sendable {
     /// Midnight of the scheduled day and of the due day, in the calendar's zone.
     public let when: Date?
     public let due: Date?
+    /// The moments as the bud carries them, with their time of day: what the Day and Week
+    /// views place by the hour.
+    public let whenAt: Date?
+    public let dueAt: Date?
     public let isDone: Bool
     /// Stamped by a trigger: its `from` key starts with `tpl/`.
     public let isRoutine: Bool
@@ -72,15 +76,16 @@ public struct CalendarEntry: Hashable, Identifiable, Sendable {
             }
             guard let thread else { continue }
             let routine = bud.from?.hasPrefix("tpl/") ?? false
-            var when = bud.when.map { calendar.startOfDay(for: $0) }
-            let due = bud.due.map { calendar.startOfDay(for: $0) }
-            if routine, when == nil, due == nil, let stamped = bud.from.flatMap(Tree.stampOccurrence) {
-                when = calendar.startOfDay(for: stamped)
+            var whenAt = bud.when
+            if routine, whenAt == nil, bud.due == nil, let stamped = bud.from.flatMap(Tree.stampOccurrence) {
+                whenAt = stamped
             }
+            let when = whenAt.map { calendar.startOfDay(for: $0) }
+            let due = bud.due.map { calendar.startOfDay(for: $0) }
             guard when != nil || due != nil else { continue }
             out.append(CalendarEntry(
                 id: bud.id, title: bud.text, thread: thread.id, tone: thread.tone,
-                when: when, due: due, isDone: bud.isDone, isRoutine: routine
+                when: when, due: due, whenAt: whenAt, dueAt: bud.due, isDone: bud.isDone, isRoutine: routine
             ))
         }
         return out
