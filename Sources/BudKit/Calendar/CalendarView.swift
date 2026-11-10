@@ -10,13 +10,11 @@ struct CalendarView: View {
     @Environment(\.compact) private var compact
 
     var body: some View {
-        // Built once a render: the grid walks the whole tree.
-        let grid = store.monthGrid
         VStack(spacing: 0) {
             head
             HStack(spacing: 0) {
                 if !compact { ThreadsColumn(store: store) }
-                main(grid)
+                main
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -94,17 +92,20 @@ struct CalendarView: View {
         .accessibilityLabel(label)
     }
 
-    /// The grid for the range and layout chosen, or the line saying it is coming.
-    @ViewBuilder private func main(_ grid: MonthGrid) -> some View {
+    /// The grid for the range and layout chosen, or the line saying it is coming. Each range
+    /// builds only its own plan, once a render: a plan walks the whole tree. The day and the
+    /// week build theirs again each minute, so the now line moves; a still picture's clock does
+    /// not, so its line stays.
+    @ViewBuilder private var main: some View {
         Group {
             if store.calendarState.layout == .timeline {
                 quiet(store.calendarState.layout.comingLine)
             } else if store.calendarState.range == .month {
-                MonthGridView(grid: grid)
+                MonthGridView(grid: store.monthGrid)
             } else if store.calendarState.range == .day {
-                DayView(plan: store.dayPlan)
+                TimelineView(.periodic(from: .now, by: 60)) { _ in DayView(plan: store.dayPlan) }
             } else if store.calendarState.range == .week {
-                WeekView(plan: store.weekPlan)
+                TimelineView(.periodic(from: .now, by: 60)) { _ in WeekView(plan: store.weekPlan) }
             } else {
                 quiet(store.calendarState.range.comingLine)
             }

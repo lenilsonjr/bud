@@ -7,8 +7,9 @@ import SwiftUI
 struct WeekView: View {
     let plan: CalendarDays
 
-    /// The board's measures: the hour labels' column and the day heads' height.
-    static let gutter: CGFloat = 56
+    /// The board's measures: the hour labels' column, the day's so the "All day" eyebrow fits
+    /// before Monday's bars, and the day heads' height.
+    static let gutter: CGFloat = DayView.gutter
     static let headHeight: CGFloat = 52
 
     var body: some View {
