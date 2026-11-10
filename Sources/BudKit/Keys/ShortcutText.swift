@@ -5,7 +5,32 @@ public enum ShortcutText {
     public static let title = "Keyboard shortcuts"
 
     /// The line under the title.
-    public static let note = "Every key the app answers to."
+    public static let note = "Click a key to record a new one."
+
+    /// The keycap of a row while it records, and the line under it.
+    public static let recording = "Press keys…"
+    public static let recordingHint = "Esc cancels."
+    /// The line under a row that fires everywhere once a bare key was pressed for it.
+    public static let bareKeyRefused = "Hold ⌘, ⌥ or ⌃ with it: alone it would type."
+
+    /// The line under the row that wants a key another holds, and the one under the holder.
+    public static func taken(by holder: Command, key: Key) -> String {
+        "\(holder.name) already answers to \(key.label)."
+    }
+
+    public static func wanted(by wanter: Command) -> String {
+        "\(wanter.name) wants this key."
+    }
+
+    /// The row's way back to its default, and the sheet's for every row at once.
+    public static let reset = "Reset"
+    public static let resetAll = "Reset all"
+
+    /// The footer's count of recorded keys; nothing while every row has its default.
+    public static func changed(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return "\(count) \(count == 1 ? "key" : "keys") changed from the defaults"
+    }
 
     /// The group of the keys the Mac answers to from the desktop, and the line under its title.
     public static let systemWideTitle = "From any app"

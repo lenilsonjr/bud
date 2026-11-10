@@ -210,10 +210,10 @@ struct DocumentView: View {
 
     /// The keys the editor answers to: the link picker's rows, Choose, Link as typed, Close, and
     /// Read, which Close shares Esc with; the picker takes it while it is open.
-    private static let editorKeys: Set<KeyEquivalent> = [
+    private static var editorKeys: Set<KeyEquivalent> { [
         Keys.equivalent(.rowUp), Keys.equivalent(.rowDown), Keys.equivalent(.choose), Keys.equivalent(.linkAsTyped),
         Keys.equivalent(.close), Keys.equivalent(.read),
-    ]
+    ] }
 
     /// ↑↓ move the pick, ↩ links, ⇥ links with the typed text as its label, Esc closes.
     private func pickerKey(_ key: KeyEquivalent) -> Bool {
