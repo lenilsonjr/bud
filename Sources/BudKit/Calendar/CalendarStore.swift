@@ -24,9 +24,10 @@ extension BudStore {
     public func toggle(_ show: CalendarShow) { calendarState.toggle(show) }
 
     /// Moves the calendar back or forward by its range: a day, a week, a month, a quarter or a
-    /// year at a time.
+    /// year at a time; a custom range moves by its own length, and the day with it.
     public func shiftCalendar(by steps: Int) {
-        calendarDate = calendarState.range.shift(calendarFocus, by: steps, calendar: calendar)
+        if calendarState.range == .custom { shiftCustomRange(by: steps) }
+        calendarDate = calendarState.range.shift(calendarFocus, by: steps, custom: customRange, calendar: calendar)
     }
 
     /// Back to today.
