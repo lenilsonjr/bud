@@ -59,15 +59,66 @@ final class BoardDropTests: XCTestCase {
         XCTAssertTrue(BoardDrop().isEmpty)
     }
 
-    func testUndoPutsTheFrontMatterBack() {
+    func testUndoPutsTheFrontMatterBackAndKeepsWhatChangedSince() {
         var tree = Tree()
         let planted = tree.add("Pick the paper", todo: true, under: rootID)
         tree.addTag(planted.id, "doing")
+        tree.addTag(planted.id, "lawyer")
         let before = tree.bud(planted.id)!
-        tree.apply(BoardDrop(removed: ["doing"], state: .done, cancelled: true), to: planted.id)
-        XCTAssertNotEqual(tree.bud(planted.id), before)
-        tree.restoreFront(of: planted.id, to: before)
-        XCTAssertEqual(tree.bud(planted.id), before)
+        let drop = BoardDrop(removed: ["doing"], added: "waiting", state: .done, cancelled: true)
+        tree.apply(drop, to: planted.id)
+        XCTAssertEqual(tree.bud(planted.id)?.tags, ["lawyer", "waiting"])
+        tree.undo(drop, on: planted.id, before: before)
+        XCTAssertEqual(tree.bud(planted.id), before, "doing is back in its old place")
+
+        tree.apply(drop, to: planted.id)
+        tree.addTag(planted.id, "printer")
+        tree.undo(drop, on: planted.id, before: before)
+        XCTAssertEqual(tree.bud(planted.id)?.tags, ["doing", "lawyer", "printer"], "the tag added since stays")
+        XCTAssertEqual(tree.bud(planted.id)?.state, .open)
+        XCTAssertNil(tree.bud(planted.id)?.fromState)
+    }
+
+    func testAPlantedBudsCancelledMarkIsItsSourcesToSet() {
+        let planted = bud(from: "mail:M1", fromState: "moved 2026-11-05T21:00:00Z")
+        XCTAssertEqual(
+            BoardDrop.refusal(of: planted, on: .cancelled, columns: columns),
+            "Pick the paper follows its source: cancelled is its source's to set"
+        )
+        XCTAssertNotNil(BoardDrop.refusal(of: bud(from: "mail:M1", fromState: "cancelled"), on: .open, columns: columns))
+        XCTAssertNil(BoardDrop.refusal(of: planted, on: .done, columns: columns), "closing is the person's")
+        XCTAssertNil(BoardDrop.refusal(of: bud(), on: .cancelled, columns: columns), "a bud made here can be cancelled")
+    }
+
+    func testABodyTagKeepsTheCardInItsColumnSoTheDropIsRefused() {
+        let card = bud(tags: ["researching"], body: "Still #waiting on the lawyer")
+        XCTAssertEqual(BoardDrop.column(of: card, columns: columns), .tag("researching"))
+        XCTAssertEqual(
+            BoardDrop.refusal(of: card, on: .tag("doing"), columns: columns),
+            "Pick the paper stays in #waiting: its text says #waiting"
+        )
+        XCTAssertNil(BoardDrop.refusal(of: card, on: .tag("waiting"), columns: columns), "the body's column takes it")
+        XCTAssertNil(BoardDrop.refusal(of: card, on: .done, columns: columns), "Done beats any tag")
+        XCTAssertNotNil(BoardDrop.refusal(of: card, on: .open, columns: columns))
+    }
+
+    func testTheColumnRuleAgreesWithTheBoard() {
+        var tree = Tree.seed(now: Date(timeIntervalSince1970: 1_794_000_000))
+        let newsletter = tree.children(of: rootID).first { $0.text == "Launch the newsletter" }!
+        let kids = tree.children(of: newsletter.id)
+        tree.addTag(kids[0].id, "researching")
+        tree.setBody(kids[0].id, "and #doing")
+        tree.addTag(kids[1].id, "doing")
+        tree.toggle(kids[2].id)
+        tree.addTag(kids[2].id, "doing")
+        let gone = tree.add("Printer quote", todo: true, under: kids[2].id)
+        tree.buds[tree.buds.firstIndex { $0.id == gone.id }!].fromState = "cancelled"
+        let board = Board(tree: tree, center: newsletter.id)
+        for bud in tree.walk(under: newsletter.id) {
+            let column = board.columns.first { $0.cards.contains { $0.id == bud.id } }?.kind
+                ?? (board.cancelled.cards.contains { $0.id == bud.id } ? .cancelled : nil)
+            XCTAssertEqual(BoardDrop.column(of: bud, columns: board.columnTags), column, bud.text)
+        }
     }
 
     func testTheHintAndTheToastReadTheColumn() {
@@ -79,6 +130,8 @@ final class BoardDropTests: XCTestCase {
         XCTAssertEqual(BoardDrop.message(on: .cancelled, title: "Pick the paper"), "Cancelled Pick the paper")
         XCTAssertEqual(BoardDrop.message(on: .open, title: "Pick the paper"), "Moved Pick the paper to Open")
         XCTAssertEqual(BoardDrop.message(on: .tag("waiting"), title: "Pick the paper"), "Tagged Pick the paper #waiting")
+        XCTAssertEqual(BoardDrop.failure(on: .done, title: "Pick the paper"), "Couldn't move Pick the paper to Done")
+        XCTAssertEqual(BoardDrop.failure(on: .tag("doing"), title: "Pick the paper"), "Couldn't move Pick the paper to #doing")
     }
 
     func testTheBoardKnowsItsColumnTagsAndFindsACardAnywhere() {
