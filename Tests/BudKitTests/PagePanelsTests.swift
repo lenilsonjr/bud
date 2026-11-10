@@ -14,7 +14,8 @@ final class PagePanelsTests: XCTestCase {
 
     func testOnlySourceStartsCollapsedAndTheChevronFoldsEachPanel() {
         var state = PanelState()
-        XCTAssertEqual(state.collapsed, [.source])
+        XCTAssertEqual(state.folds, .sidebar)
+        XCTAssertEqual(state.folds.collapsed, [.source])
         XCTAssertTrue(state.isCollapsed(.source))
         XCTAssertFalse(state.isCollapsed(.inside))
         state.toggle(.inside)
@@ -25,22 +26,39 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertFalse(state.isCollapsed(.inside))
     }
 
-    func testOnAPhoneEveryPanelStartsFoldedAndATapOpensIt() {
-        var phone = PhonePanelState()
-        XCTAssertEqual(phone.collapsed, Set(PagePanel.allCases))
-        XCTAssertTrue(phone.isCollapsed(.inside))
-        phone.toggle(.inside)
-        XCTAssertFalse(phone.isCollapsed(.inside))
-        XCTAssertTrue(phone.isCollapsed(.properties), "One tap opens one panel")
-        phone.toggle(.inside)
-        XCTAssertTrue(phone.isCollapsed(.inside))
+    func testOnAPhoneEveryPanelStartsFoldedAndFoldsApartFromTheSidebars() {
+        var state = PanelState()
+        XCTAssertEqual(state.phoneFolds, .phone)
+        XCTAssertEqual(state.phoneFolds.collapsed, Set(PagePanel.allCases))
+        XCTAssertTrue(state.isCollapsed(.inside, compact: true))
+        XCTAssertFalse(state.isCollapsed(.inside))
+        state.toggle(.inside, compact: true)
+        XCTAssertFalse(state.isCollapsed(.inside, compact: true))
+        XCTAssertTrue(state.isCollapsed(.properties, compact: true), "One tap opens one panel")
+        XCTAssertEqual(state.folds, .sidebar, "The sidebars' folds stay as they were")
+        state.toggle(.inside)
+        XCTAssertTrue(state.isCollapsed(.inside))
+        XCTAssertFalse(state.isCollapsed(.inside, compact: true), "And the phone's as they were")
+    }
+
+    func testThePlusOnInsideUnfoldsItWhereItIsDrawn() {
+        var state = PanelState()
+        state.show(.inside, compact: true)
+        XCTAssertFalse(state.isCollapsed(.inside, compact: true))
+        XCTAssertEqual(state.folds, .sidebar, "The sidebars' Inside was open and stays so")
+        state.show(.inside, compact: true)
+        XCTAssertFalse(state.isCollapsed(.inside, compact: true), "Open stays open")
+        state.toggle(.inside)
+        state.show(.inside)
+        XCTAssertFalse(state.isCollapsed(.inside))
+        XCTAssertEqual(state.phoneFolds.collapsed, Set(PagePanel.allCases).subtracting([.inside]))
     }
 
     func testAPhoneStacksTheLeftSidebarThenTheRightWithoutFiles() {
-        XCTAssertEqual(PhonePanelState.stack(of: .standard), [.properties, .inside, .whereItLives, .linkedFrom, .source])
+        XCTAssertEqual(PanelLayout.standard.phoneStack, [.properties, .inside, .whereItLives, .linkedFrom, .source])
         let arranged = PanelLayout(left: [.inside, .files], right: [.source, .properties])
-        XCTAssertEqual(PhonePanelState.stack(of: arranged), [.inside, .source, .properties], "The layout's order, Files left out")
-        XCTAssertEqual(PhonePanelState.stack(of: PanelLayout(left: [.files], right: [])), [])
+        XCTAssertEqual(arranged.phoneStack, [.inside, .source, .properties], "The layout's order, Files left out")
+        XCTAssertEqual(PanelLayout(left: [.files], right: []).phoneStack, [], "Hidden panels are on neither side")
     }
 
     func testThePanelTitlesReadAsTheDesignWritesThem() {
@@ -191,7 +209,7 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertNotEqual(state.layout, .standard)
         PanelMenuItem.reset.apply(to: &state, for: .files)
         XCTAssertEqual(state.layout, .standard)
-        XCTAssertEqual(state.collapsed, [.source, .inside], "Folding is this device's and stays")
+        XCTAssertEqual(state.folds.collapsed, [.source, .inside], "Folding is this device's and stays")
     }
 
     func testARowsMetaIsWhatItHoldsThenItsDay() throws {
@@ -270,24 +288,20 @@ final class PagePanelsStoreTests: XCTestCase {
     func testThePanelsStartInTheDefaultLayoutAndTheBarHidesASidebar() async {
         let (store, _) = await loaded()
         XCTAssertEqual(store.panels.layout, .standard)
-        XCTAssertEqual(store.panels.collapsed, [.source])
+        XCTAssertEqual(store.panels.folds.collapsed, [.source])
         let window = CGSize(width: 1400, height: 900)
         store.sidebar.toggle(.right, in: window)
         XCTAssertFalse(store.sidebar.isShown(.right, in: window))
         XCTAssertTrue(store.sidebar.isShown(.left, in: window))
     }
 
-    func testThePhoneFoldsItsPanelsApartFromTheWideLayout() async {
+    func testThePlusOnInsideUnfoldsThePhonesStackAndLeavesTheSidebarsAlone() async {
         let (store, _) = await loaded()
-        XCTAssertEqual(store.phonePanels.collapsed, Set(PagePanel.allCases))
-        XCTAssertTrue(store.isPanelCollapsed(.inside, compact: true))
-        XCTAssertFalse(store.isPanelCollapsed(.inside, compact: false))
-        store.togglePanel(.inside, compact: true)
-        XCTAssertFalse(store.isPanelCollapsed(.inside, compact: true))
-        XCTAssertFalse(store.isPanelCollapsed(.inside, compact: false), "The sidebar's fold stays as it was")
-        store.togglePanel(.inside, compact: false)
-        XCTAssertTrue(store.panels.isCollapsed(.inside))
-        XCTAssertFalse(store.phonePanels.isCollapsed(.inside), "And the phone's as it was")
+        XCTAssertEqual(store.panels.phoneFolds, .phone)
+        store.panels.show(.inside, compact: true)
+        XCTAssertFalse(store.panels.isCollapsed(.inside, compact: true))
+        XCTAssertEqual(store.panels.folds, .sidebar, "The sidebars' folds stay as they were")
+        XCTAssertEqual(store.panels.layout, .standard, "And nothing goes to the vault")
     }
 
     func testLinkedFromIsReadOncePerChangeOfTheTree() async throws {

@@ -20,6 +20,7 @@ struct FilesPanel: View {
 struct PropertiesPanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
 
     var body: some View {
         if let bud = store.tree.bud(id) {
@@ -41,7 +42,7 @@ struct PropertiesPanel: View {
                     }
                     PropertyRow(name: "Tags", top: true) { TagRow(bud: bud, store: store) }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, PanelInset.text(compact: compact))
             }
         }
     }
@@ -156,13 +157,13 @@ struct InsidePanel: View {
                     }
                     if adding { addLine(bud) }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, PanelInset.rows(compact: compact))
             }
         }
     }
 
     private func open() {
-        if store.isPanelCollapsed(.inside, compact: compact) { store.togglePanel(.inside, compact: compact) }
+        store.panels.show(.inside, compact: compact)
         adding = true
     }
 
@@ -206,6 +207,7 @@ struct InsidePanel: View {
 struct WhereItLivesPanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
 
     var body: some View {
         if store.tree.bud(id) != nil {
@@ -236,7 +238,7 @@ struct WhereItLivesPanel: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("open-parent")
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, PanelInset.text(compact: compact))
                 .padding(.bottom, 2)
             }
         }
@@ -268,6 +270,7 @@ struct WhereItLivesPanel: View {
 struct LinkedFromPanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
 
     var body: some View {
         if store.tree.bud(id) != nil {
@@ -292,7 +295,7 @@ struct LinkedFromPanel: View {
                             .padding(.horizontal, 6)
                     }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, PanelInset.rows(compact: compact))
             }
         }
     }
@@ -303,6 +306,7 @@ struct LinkedFromPanel: View {
 struct SourcePanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
     @State private var text: String?
 
     var body: some View {
@@ -320,7 +324,7 @@ struct SourcePanel: View {
                             .task(id: bud) { text = await store.fileText(of: id) }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, PanelInset.text(compact: compact))
             }
         }
     }
