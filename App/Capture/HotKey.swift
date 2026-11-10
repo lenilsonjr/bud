@@ -65,7 +65,8 @@ final class HotKeyCenter {
 
 extension KeyboardLayout {
     /// The input source selected on the Mac, asked through Carbon for the character each key
-    /// gives with nothing held, so the sheet shows a recorded key as this keyboard names it.
+    /// the keyboard has gives with nothing held, so the sheet shows a recorded key as this
+    /// keyboard names it; the keypad and the keys of the JIS keyboard sit past the first fifty.
     static var mac: KeyboardLayout {
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return .us }
         return withExtendedLifetime(source) { () -> KeyboardLayout in
@@ -74,7 +75,7 @@ extension KeyboardLayout {
             guard let bytes = CFDataGetBytePtr(data) else { return .us }
             let keyboard = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
             var table: [UInt16: Character] = [:]
-            for code in UInt16(0)...50 {
+            for code in UInt16(0)...127 {
                 var deadKeys: UInt32 = 0
                 var characters = [UniChar](repeating: 0, count: 4)
                 var length: UniCharCount = 0
