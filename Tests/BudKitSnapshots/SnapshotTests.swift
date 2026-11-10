@@ -907,8 +907,8 @@ final class SnapshotTests: XCTestCase {
     /// The Calendar view on its month, 1440 by 900 as the board's frame: the seed on the device
     /// store's fixed clock, two buds given a span, and a Monday-first calendar, so the bars and
     /// items land where the board draws them and the picture is the same on every run. One
-    /// thread off, so the column shows an unticked row; and the week segment, so its quiet line
-    /// is seen.
+    /// thread off, so the column shows an unticked row; and the quarter segment, so its quiet
+    /// line is seen.
     func testRendersTheMonthCalendar() throws {
         let folder = try pictureFolder()
         var calendar = Calendar(identifier: .gregorian)
@@ -943,9 +943,84 @@ final class SnapshotTests: XCTestCase {
         if let roadmap = store.calendarThreads.first(where: { $0.title == "Q4 roadmap" }) { store.toggleThread(roadmap.id) }
         let hidden = BudRootView(store: store).frame(width: frame.width, height: frame.height)
         try render(hidden, scheme: .light).write(to: folder.appendingPathComponent("calendar-month-thread-off-light.png"))
+        store.calendarState = CalendarState(range: .quarter)
+        let quarter = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+        try render(quarter, scheme: .light).write(to: folder.appendingPathComponent("calendar-quarter-coming-light.png"))
+    }
+
+    /// The Calendar view on its day and on its week, 1440 by 900 as the board's frames: the seed
+    /// on the fixed clock, Tuesday 3 November at ten, with two spans over the day, a bud due
+    /// that day with no time, and buds given hours, two of them overlapping, so the all-day row,
+    /// the blocks and the now line all land where the board draws them.
+    func testRendersTheDayAndWeekCalendars() throws {
+        let folder = try pictureFolder()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.firstWeekday = 2
+        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        defer { store.calendarState = CalendarState() }
+        func at(_ day: Int, _ hour: Int = 0, _ minute: Int = 0) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 11, day: day, hour: hour, minute: minute))!
+        }
+        func bud(_ text: String) throws -> Bud { try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == text }) }
+        // The spans: the onboarding review from Monday past the week, the first issue to Friday.
+        let onboarding = try bud("Review the onboarding flow")
+        store.setWhen(onboarding.id, at(2))
+        store.setDue(onboarding.id, at(23))
+        let newsletter = try bud("Launch the newsletter")
+        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
+        store.setWhen(issue.id, at(3))
+        store.setDue(issue.id, at(6))
+        // Due today, with no time: in the all-day row with its flag.
+        store.setDue(try bud("Verify the address").id, at(3))
+        // The hours: the seed's walk at ten, a review beside it, the name in the afternoon, a
+        // lesson in the evening, and the rest of the week's.
+        let name = try bud("Pick a name")
+        store.setWhen(name.id, at(3, 14, 0))
+        store.setDue(name.id, at(3, 14, 30))
+        let roadmap = try bud("Q4 roadmap")
+        let budget = try XCTUnwrap(store.add("Budget review", todo: true, under: roadmap.id))
+        store.setWhen(budget.id, at(3, 10, 30))
+        store.setDue(budget.id, at(3, 11, 30))
+        let lesson = try bud("Ten minutes a day")
+        store.setWhen(lesson.id, at(3, 18, 0))
+        store.setDue(lesson.id, at(3, 19, 0))
+        let language = try bud("Learn a language")
+        let next = try XCTUnwrap(store.add("Lesson 15", todo: true, under: language.id))
+        store.setWhen(next.id, at(5, 18, 0))
+        store.setDue(next.id, at(5, 19, 0))
+        let health = try bud("Health reset")
+        let run = try XCTUnwrap(store.add("Long run", todo: true, under: health.id))
+        store.setWhen(run.id, at(8, 8, 0))
+        store.setDue(run.id, at(8, 9, 30))
+        let sync = try XCTUnwrap(store.add("Roadmap sync", todo: true, under: roadmap.id))
+        store.setWhen(sync.id, at(4, 14, 0))
+        store.setDue(sync.id, at(4, 15, 0))
+        let samples = try XCTUnwrap(store.add("Paper samples arrive", todo: true, under: newsletter.id))
+        store.setDue(samples.id, at(7, 12, 30))
+        store.surface = .calendar
+        let frame = CGSize(width: 1440, height: 900)
+
+        store.calendarState = CalendarState(range: .day)
+        let day = store.dayPlan
+        XCTAssertEqual(day.bars.map(\.label), ["Review the onboarding flow · day 2 of 22, due 23 Nov", "Send the first issue · day 1 of 4, due 6 Nov", "Verify the address"])
+        XCTAssertEqual(day.blocks.map(\.time), ["10:00", "10:30–11:30", "14:00–14:30", "18:00–19:00"])
+        XCTAssertEqual(day.now?.minutes, 10 * 60)
+        let dayFile = folder.appendingPathComponent("calendar-day-light.png")
+        try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .light).write(to: dayFile)
+        try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .dark).write(to: folder.appendingPathComponent("calendar-day-dark.png"))
+
         store.calendarState = CalendarState(range: .week)
-        let week = BudRootView(store: store).frame(width: frame.width, height: frame.height)
-        try render(week, scheme: .light).write(to: folder.appendingPathComponent("calendar-week-coming-light.png"))
+        let week = store.weekPlan
+        XCTAssertEqual(week.bars.map(\.label), ["Review the onboarding flow → 23 Nov", "Send the first issue · due 6 Nov", "Verify the address"])
+        XCTAssertEqual(week.blocks.count, 8)
+        XCTAssertEqual(week.now?.column, 1)
+        let weekFile = folder.appendingPathComponent("calendar-week-light.png")
+        let data = try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .light)
+        try data.write(to: weekFile)
+        XCTAssertGreaterThan(data.count, 10_000, "\(weekFile.lastPathComponent) looks empty")
+        try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .dark).write(to: folder.appendingPathComponent("calendar-week-dark.png"))
     }
 
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
