@@ -123,7 +123,7 @@ struct TicketSheetBody: View {
             }
             HStack(spacing: 8) {
                 #if os(macOS)
-                Keycap("Esc")
+                Keycap(Keys.key(for: .close))
                 #endif
                 Spacer()
                 Button(action: onDone) { BudButtonLabel(title: "Done") }

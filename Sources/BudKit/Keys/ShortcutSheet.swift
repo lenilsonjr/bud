@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The keyboard shortcuts sheet (H2): every command grouped by scope, each with the key it
 /// answers to now, read from the table so a changed key shows at once. The system-wide keys sit
-/// in their own group at the top. Esc closes it, and so does its own key.
+/// last in their own group, marked Mac. Esc closes it, and so does its own key.
 struct ShortcutSheet: View {
     let close: () -> Void
     @Environment(\.compact) private var compact

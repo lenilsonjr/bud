@@ -109,7 +109,7 @@ public struct Command: Hashable, Identifiable, Sendable {
     ]
 
     /// The rows the Mac answers to from the desktop, with another app in front: the app registers
-    /// their keys system-wide. The sheet lists them in their own group.
+    /// their keys system-wide. The sheet lists them last, in their own group.
     public static let systemWide: [ID] = [.capture]
 
     private static let byID: [ID: Command] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
