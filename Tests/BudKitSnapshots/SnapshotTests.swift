@@ -13,9 +13,9 @@ final class SnapshotTests: XCTestCase {
     /// The one moment every picture is taken at, so two runs draw the same days and counts.
     private let clock: @Sendable () -> Date = { Tree.stillNow }
 
-    /// The seed world on the fixed clock.
+    /// The seed world on the fixed clock, which the store reads from its device store.
     private func stillStore(devices: DeviceStore? = nil) -> BudStore {
-        BudStore(fileURL: nil, devices: devices, clock: clock)
+        BudStore(fileURL: nil, devices: devices ?? DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock))
     }
 
     func testRendersTheCanvasInBothAppearances() throws {

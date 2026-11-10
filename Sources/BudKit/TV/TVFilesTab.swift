@@ -222,7 +222,7 @@ struct TVBudRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if let label = TVFilesText.label(row.tag) {
+                if let label = TVFilesText.label(row.tag, now: store.now) {
                     Text(label)
                         .textStyle(Self.tag)
                         .lineLimit(1)
