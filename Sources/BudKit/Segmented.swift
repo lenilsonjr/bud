@@ -21,13 +21,7 @@ struct Segmented<Option: Hashable>: View {
                         .foregroundStyle(on ? Theme.text : Theme.text2)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                .fill(on ? Theme.raised : .clear)
-                                .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 1, y: 1)
-                                .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(on ? Theme.lineStrong : .clear, lineWidth: 1))
-                        )
-                        .contentShape(Rectangle())
+                        .raisedSegment(on: on)
                 }
                 .buttonStyle(.plain)
             }
@@ -36,5 +30,23 @@ struct Segmented<Option: Hashable>: View {
         .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: Radius.segmented, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.segmented, style: .continuous).stroke(Theme.line, lineWidth: 1))
     }
+}
+
+/// The lit segment's chrome: raised, a strong line and a hair of shadow; off, none of it. The
+/// switch's segments and the folded switch in a narrow bar share it, so one reads as the other.
+struct RaisedSegment: ViewModifier {
+    var on = true
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+        content
+            .background(shape.fill(on ? Theme.raised : .clear).shadow(color: on ? Theme.shadow : .clear, radius: 1, y: 1))
+            .overlay(shape.stroke(on ? Theme.lineStrong : .clear, lineWidth: 1))
+            .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    func raisedSegment(on: Bool = true) -> some View { modifier(RaisedSegment(on: on)) }
 }
 #endif

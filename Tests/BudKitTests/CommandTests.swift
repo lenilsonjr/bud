@@ -250,12 +250,11 @@ final class CommandStoreTests: XCTestCase {
     func testSwitchingThroughEveryViewKeepsTheCenter() {
         let (store, bud) = store()
         store.center = bud
-        let switches: [(Command.ID, Surface)] = [(.files, .files), (.board, .board), (.calendar, .calendar), (.canvas, .canvas)]
-        XCTAssertEqual(switches.map { $0.1 }, Array(Surface.allCases.dropFirst()) + [.canvas], "The test walks every view and comes back")
-        for (command, surface) in switches {
-            XCTAssertTrue(store.perform(command))
-            XCTAssertEqual(store.surface, surface)
-            XCTAssertEqual(store.center, bud, "\(surface) keeps the center")
+        // Every view in turn, then back to the canvas.
+        for view in Array(Surface.allCases.dropFirst()) + [.canvas] {
+            XCTAssertTrue(store.perform(view.command))
+            XCTAssertEqual(store.surface, view)
+            XCTAssertEqual(store.center, bud, "\(view) keeps the center")
         }
     }
 

@@ -8,7 +8,7 @@ struct QuietPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("VIEW")
+            Text("View")
                 .textRole(.eyebrow)
                 .foregroundStyle(Theme.leaf)
             Text(surface.rawValue)

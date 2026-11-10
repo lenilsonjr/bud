@@ -46,14 +46,10 @@ public struct BudRootView: View {
             Group {
                 Button("") { store.perform(.goAnywhere) }
                     .keyboardShortcut(windowKey(.goAnywhere))
-                Button("") { store.perform(.canvas) }
-                    .keyboardShortcut(windowKey(.canvas))
-                Button("") { store.perform(.files) }
-                    .keyboardShortcut(windowKey(.files))
-                Button("") { store.perform(.board) }
-                    .keyboardShortcut(windowKey(.board))
-                Button("") { store.perform(.calendar) }
-                    .keyboardShortcut(windowKey(.calendar))
+                ForEach(Surface.allCases, id: \.self) { view in
+                    Button("") { store.perform(view.command) }
+                        .keyboardShortcut(windowKey(view.command))
+                }
                 Button("") { store.perform(.shortcuts) }
                     .keyboardShortcut(windowKey(.shortcuts))
             }
