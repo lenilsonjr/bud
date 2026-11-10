@@ -24,6 +24,16 @@ struct CalendarTimelineView: View {
     static let pointSize: CGFloat = 10
     /// A bar narrower than this keeps its title for the pointer alone.
     static let labelledBar: CGFloat = 48
+    /// A point past this share of the chart writes its name to its left.
+    static let flipPast: CGFloat = 0.75
+    /// About how wide a scale label is: a day's "30", a week's "28 Dec", a month's "May".
+    static func labelRoom(_ unit: Timeline.Unit) -> CGFloat {
+        switch unit {
+        case .day: return 28
+        case .week: return 54
+        case .month: return 36
+        }
+    }
 
     private var labelColumn: CGFloat { compact ? Self.compactLabelWidth : Self.labelWidth }
 
@@ -50,20 +60,23 @@ struct CalendarTimelineView: View {
                 .frame(width: labelColumn, height: Self.scaleHeight, alignment: .leading)
                 .overlay(alignment: .trailing) { Theme.line.frame(width: 1) }
             GeometryReader { geo in
+                let step = labelStep(in: geo.size.width)
                 ZStack(alignment: .topLeading) {
-                    ForEach(timeline.columns, id: \.day) { column in
+                    ForEach(Array(timeline.columns.enumerated()), id: \.element.day) { index, column in
                         let x = self.x(column.day, in: geo.size.width)
                         Theme.line
                             .frame(width: 1, height: Self.scaleHeight)
                             .offset(x: x)
-                        Text(column.label)
-                            .textStyle(TextStyle(typeface: .text, size: 11, weight: column.isToday ? 700 : 500))
-                            .foregroundStyle(column.isToday ? Theme.leaf : Theme.text2)
-                            .lineLimit(1)
-                            .fixedSize()
-                            .frame(height: Self.scaleHeight)
-                            .offset(x: x + 5)
-                            .accessibilityLabel(column.isToday ? "\(column.label), today" : column.label)
+                        if index % step == 0 || column.isToday {
+                            Text(column.label)
+                                .textStyle(TextStyle(typeface: .text, size: 11, weight: column.isToday ? 700 : 500))
+                                .foregroundStyle(column.isToday ? Theme.leaf : Theme.text2)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .frame(height: Self.scaleHeight)
+                                .offset(x: x + 5)
+                                .accessibilityLabel(column.isToday ? "\(column.label), today" : column.label)
+                        }
                     }
                 }
             }
@@ -188,21 +201,31 @@ struct CalendarTimelineView: View {
         .accessibilityLabel("\(row.title), \(row.days == 1 ? "one day" : "\(row.days) days")")
     }
 
-    /// A point in the middle of the bud's day, its name beside it.
+    /// A point centred on the bud's day, its name beside it: to the right, or to the left in the
+    /// range's last part, where the name would run off the edge.
     private func point(_ row: Timeline.Row, in width: CGFloat) -> some View {
-        HStack(spacing: 2) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color(row.tone.tone))
-                .frame(width: Self.pointSize, height: Self.pointSize)
-            Text(row.title)
-                .textStyle(TextStyle(typeface: .text, size: 11, weight: 400))
-                .foregroundStyle(row.isDone ? Theme.text3 : Theme.text2)
-                .strikethrough(row.isDone, color: Theme.text3)
-                .lineLimit(1)
-                .fixedSize()
+        let centre = x(row.from, in: width) + dayWidth(in: width) / 2
+        let flipped = centre > width * Self.flipPast
+        let square = RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Color(row.tone.tone))
+            .frame(width: Self.pointSize, height: Self.pointSize)
+        let name = Text(row.title)
+            .textStyle(TextStyle(typeface: .text, size: 11, weight: 400))
+            .foregroundStyle(row.isDone ? Theme.text3 : Theme.text2)
+            .strikethrough(row.isDone, color: Theme.text3)
+            .lineLimit(1)
+            .fixedSize()
+        return HStack(spacing: 2) {
+            if flipped { name }
+            square
+            if !flipped { name }
         }
         .frame(height: Self.rowHeight)
-        .offset(x: x(row.from, in: width) + dayWidth(in: width) / 2)
+        // Right: the square's left edge sits half a point left of the centre. Left: a frame
+        // from the chart's start to the square's right edge, the pair against its end.
+        .frame(width: flipped ? centre + Self.pointSize / 2 : nil, alignment: .trailing)
+        .offset(x: flipped ? 0 : centre - Self.pointSize / 2)
+        .help(row.title)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(row.title), \(row.isDue ? "due" : "scheduled")")
     }
@@ -239,6 +262,14 @@ struct CalendarTimelineView: View {
             .clipped()
         }
         .accessibilityHidden(true)
+    }
+
+    /// Label every nth column, so neighbours never overlap: every one where a column is wider
+    /// than its label, every other or every third on a phone or a narrow window.
+    private func labelStep(in width: CGFloat) -> Int {
+        let column = dayWidth(in: width) * CGFloat(timeline.unit.days)
+        guard column > 0 else { return 1 }
+        return max(1, Int((Self.labelRoom(timeline.unit) / column).rounded(.up)))
     }
 
     /// Where a day starts across the chart.
