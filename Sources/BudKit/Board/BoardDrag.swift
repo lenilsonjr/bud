@@ -26,27 +26,7 @@ extension EnvironmentValues {
     }
 }
 
-/// A column as a drop target for a card dragged by its id: says while one hovers, and hands over
-/// the id when it lands. The picture renderer cannot draw a drop destination, so it is left off
-/// in a still picture.
-struct BoardDropTarget: ViewModifier {
-    @Environment(\.stillPicture) private var still
-    let onTarget: (Bool) -> Void
-    let onDrop: (UUID) -> Bool
-
-    func body(content: Content) -> some View {
-        if still {
-            content
-        } else {
-            content.dropDestination(for: String.self) { items, _ in
-                guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-                return onDrop(id)
-            } isTargeted: { onTarget($0) }
-        }
-    }
-}
-
-/// A card that can be dragged by its id, to a column or to a place in the sidebar.
+/// A card that can be dragged by its id, to a column (a `budDrop`) or to a place in the sidebar.
 struct BoardDraggable: ViewModifier {
     @Environment(\.stillPicture) private var still
     let id: UUID
@@ -61,11 +41,6 @@ struct BoardDraggable: ViewModifier {
 }
 
 extension View {
-    /// Accepts a dragged card: `onTarget` while one hovers, `onDrop` with its id when it lands.
-    func boardDrop(onTarget: @escaping (Bool) -> Void, onDrop: @escaping (UUID) -> Bool) -> some View {
-        modifier(BoardDropTarget(onTarget: onTarget, onDrop: onDrop))
-    }
-
     /// Lets the card be dragged by its id.
     func boardDraggable(_ id: UUID) -> some View {
         modifier(BoardDraggable(id: id))

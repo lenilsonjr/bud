@@ -81,6 +81,8 @@ struct MaybeScroll<Content: View>: View {
 /// destination, so it is left off in a still picture.
 struct BudDrop: ViewModifier {
     @Environment(\.stillPicture) private var still
+    /// Says while a bud hovers over the target, when it wants to know.
+    var onTarget: ((Bool) -> Void)? = nil
     let onDrop: (UUID) -> Bool
 
     func body(content: Content) -> some View {
@@ -90,15 +92,15 @@ struct BudDrop: ViewModifier {
             content.dropDestination(for: String.self) { items, _ in
                 guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
                 return onDrop(id)
-            }
+            } isTargeted: { onTarget?($0) }
         }
     }
 }
 
 extension View {
-    /// Accepts a dragged bud and hands over its id.
-    func budDrop(_ onDrop: @escaping (UUID) -> Bool) -> some View {
-        modifier(BudDrop(onDrop: onDrop))
+    /// Accepts a dragged bud and hands over its id; `onTarget` says while one hovers.
+    func budDrop(onTarget: ((Bool) -> Void)? = nil, _ onDrop: @escaping (UUID) -> Bool) -> some View {
+        modifier(BudDrop(onTarget: onTarget, onDrop: onDrop))
     }
 }
 #endif
