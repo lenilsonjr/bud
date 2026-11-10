@@ -30,7 +30,7 @@ public struct CapturePanelView: View {
                     .foregroundStyle(Theme.text)
                     .focused($typing)
                     .onSubmit(capture)
-                Keycap("esc")
+                Keycap(Keys.key(for: .close))
             }
             .padding(.horizontal, 12)
             .frame(height: 44)

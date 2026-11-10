@@ -128,7 +128,7 @@ struct TicketSheetBody: View {
                 Spacer()
                 Button(action: onDone) { BudButtonLabel(title: "Done") }
                     .buttonStyle(.budPrimary)
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(Keys.shortcut(.close))
             }
         }
         .textRole(.body)

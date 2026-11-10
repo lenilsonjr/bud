@@ -64,7 +64,7 @@ struct AddSheet: View {
                 Spacer()
                 Button { close() } label: { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(Keys.shortcut(.close))
                 Button(action: plant) { BudButtonLabel(title: capturing ? "Capture" : "Add") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)

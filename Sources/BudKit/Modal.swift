@@ -85,7 +85,8 @@ enum ModalMetrics {
     static let appearScale: CGFloat = 0.96
     static let appearDuration: Double = 0.18
 
-    /// 480 pt, or the window width minus 32 when the window is narrower than that.
+    /// The card's own width, 480 pt unless the modal asks for more, or the window width minus
+    /// 32 when the window is narrower than that.
     static func cardWidth(window: CGFloat, card: CGFloat = width) -> CGFloat {
         min(card, window - 2 * margin)
     }

@@ -239,7 +239,7 @@ struct JoinSheetBody: View {
                             .buttonStyle(.plain)
                             .font(Theme.font(TextStyle(typeface: .text, size: 17, weight: 400)))
                             .foregroundStyle(Theme.leaf)
-                            .keyboardShortcut(.cancelAction)
+                            .keyboardShortcut(Keys.shortcut(.close))
                         Spacer()
                     }
                 }
@@ -368,11 +368,11 @@ struct JoinSheetBody: View {
                     .buttonStyle(.budGhost)
                 Spacer()
                 #if os(macOS)
-                Keycap("Esc")
+                Keycap(Keys.key(for: .close))
                 #endif
                 Button(action: onClose) { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(Keys.shortcut(.close))
                 Button(action: onJoin) { BudButtonLabel(title: "Join", systemImage: "arrow.right.to.line") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)
@@ -421,11 +421,11 @@ struct JoinSheetBody: View {
                     .buttonStyle(.budGhost)
                 Spacer()
                 #if os(macOS)
-                Keycap("Esc")
+                Keycap(Keys.key(for: .close))
                 #endif
                 Button(action: onClose) { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(.cancelAction)
+                    .keyboardShortcut(Keys.shortcut(.close))
                 Button(action: onEdit) { BudButtonLabel(title: "Edit the text") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)
@@ -472,12 +472,12 @@ struct JoinSheetBody: View {
             } else {
                 HStack(spacing: 8) {
                     #if os(macOS)
-                    Keycap("Esc")
+                    Keycap(Keys.key(for: .close))
                     #endif
                     Spacer()
                     Button(action: onClose) { BudButtonLabel(title: "Done") }
                         .buttonStyle(.budPrimary)
-                        .keyboardShortcut(.cancelAction)
+                        .keyboardShortcut(Keys.shortcut(.close))
                 }
             }
         }
