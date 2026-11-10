@@ -58,36 +58,32 @@ public struct CalendarEntry: Hashable, Identifiable, Sendable {
     /// Stamped by a trigger: its `from` key starts with `tpl/`.
     public let isRoutine: Bool
 
-    /// Every bud under Everything with a day to show, in reading order. A routine without a
-    /// date shows on the day its trigger stamped it for, read from its key.
+    /// Every bud under Everything with a day to show, in reading order, from one walk of the
+    /// tree: a bud reads after its thread, so the thread in hand is the one it sits under. A
+    /// routine without a date shows on the day its trigger stamped it for, read from its key.
     public static func all(in tree: Tree, calendar: Calendar = .current) -> [CalendarEntry] {
-        let threads = CalendarThread.list(in: tree)
-        let tones = Dictionary(threads.map { ($0.id, $0.tone) }, uniquingKeysWith: { first, _ in first })
         var out: [CalendarEntry] = []
-        for thread in threads {
-            for bud in [tree.bud(thread.id)].compactMap({ $0 }) + tree.walk(under: thread.id) {
-                let routine = bud.from?.hasPrefix("tpl/") ?? false
-                var when = bud.when.map { calendar.startOfDay(for: $0) }
-                let due = bud.due.map { calendar.startOfDay(for: $0) }
-                if routine, when == nil, due == nil, let stamped = bud.from.flatMap(Self.occurrence) { when = calendar.startOfDay(for: stamped) }
-                guard when != nil || due != nil else { continue }
-                out.append(CalendarEntry(
-                    id: bud.id, title: bud.text, thread: thread.id, tone: tones[thread.id] ?? .leaf,
-                    when: when, due: due, isDone: bud.isDone, isRoutine: routine
-                ))
+        var thread: CalendarThread?
+        var index = -1
+        for bud in tree.walk(under: rootID) {
+            if bud.parent == rootID {
+                index += 1
+                thread = CalendarThread(id: bud.id, title: bud.text, tone: .at(index))
             }
+            guard let thread else { continue }
+            let routine = bud.from?.hasPrefix("tpl/") ?? false
+            var when = bud.when.map { calendar.startOfDay(for: $0) }
+            let due = bud.due.map { calendar.startOfDay(for: $0) }
+            if routine, when == nil, due == nil, let stamped = bud.from.flatMap(Tree.stampOccurrence) {
+                when = calendar.startOfDay(for: stamped)
+            }
+            guard when != nil || due != nil else { continue }
+            out.append(CalendarEntry(
+                id: bud.id, title: bud.text, thread: thread.id, tone: thread.tone,
+                when: when, due: due, isDone: bud.isDone, isRoutine: routine
+            ))
         }
         return out
-    }
-
-    /// The occurrence in a stamp key: `tpl/Weekly review/2026-11-09T09:00Z` gives that minute.
-    static func occurrence(of key: String) -> Date? {
-        guard let stamp = key.split(separator: "/").last else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm'Z'"
-        return formatter.date(from: String(stamp))
     }
 }
 
@@ -114,6 +110,7 @@ public struct MonthGrid: Equatable, Sendable {
 
         public var id: String { "\(entry)-\(row)" }
         public var columns: Int { to - from + 1 }
+        public func covers(_ column: Int) -> Bool { column >= from && column <= to }
     }
 
     /// A bud on one day.
@@ -146,7 +143,8 @@ public struct MonthGrid: Equatable, Sendable {
         var taken: [[[ClosedRange<Int>]]] = Array(repeating: [], count: CalendarMonth.rows)
         var lanes = Array(repeating: 0, count: CalendarMonth.rows)
 
-        // Longer bars first, then by start, so the long ones keep the top lanes across rows.
+        // Longer bars first, then by start, so the long ones keep the top lanes across rows. A
+        // span runs from the earlier of the two days to the later, whichever is which.
         let shown = entries.filter(state.shows)
         let spans: [(entry: CalendarEntry, start: Date, end: Date)] = shown.compactMap { entry in
             let dates = state.dates(of: entry)
@@ -168,10 +166,12 @@ public struct MonthGrid: Equatable, Sendable {
                 if lane == taken[row].count { taken[row].append([]) }
                 taken[row][lane].append(from...to)
                 lanes[row] = max(lanes[row], lane + 1)
-                let dueHere = span.entry.due.map { $0 >= month.weeks[row][from].date && $0 <= month.weeks[row][to].date } ?? false
+                let piece = month.weeks[row][from].date...month.weeks[row][to].date
+                let whenHere = span.entry.when.map(piece.contains) ?? false
+                let dueHere = span.entry.due.map(piece.contains) ?? false
                 bars.append(Bar(
                     entry: span.entry.id, title: span.entry.title, tone: span.entry.tone, row: row, from: from, to: to, lane: lane,
-                    starts: row == head.row && span.start == span.entry.when && span.start >= month.gridStart,
+                    starts: whenHere,
                     dueLabel: dueHere ? "due \(DayText.short(span.entry.due!, calendar: calendar))" : nil,
                     isDone: span.entry.isDone
                 ))
@@ -197,5 +197,15 @@ public struct MonthGrid: Equatable, Sendable {
 
     public func bars(inRow row: Int) -> [Bar] {
         bars.filter { $0.row == row }
+    }
+
+    /// The bars of a row the cells have room for: the first `fits` lanes.
+    public func bars(inRow row: Int, fitting fits: Int) -> [Bar] {
+        bars.filter { $0.row == row && $0.lane < fits }
+    }
+
+    /// How many bars cross a cell below the lanes it has room for: the "+2 more" in that cell.
+    public func overflow(row: Int, column: Int, fitting fits: Int) -> Int {
+        bars.filter { $0.row == row && $0.lane >= fits && $0.covers(column) }.count
     }
 }

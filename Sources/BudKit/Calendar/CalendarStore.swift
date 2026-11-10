@@ -10,22 +10,23 @@ extension BudStore {
     /// The day the calendar looks at: the one it was moved to, or today.
     public var calendarFocus: Date { calendarDate ?? now }
 
-    /// The month on show with its buds placed, after the threads and switches.
+    /// The month on show with its buds placed, after the threads and switches. Built from one
+    /// walk of the tree; a view reads it once a render.
     public var monthGrid: MonthGrid {
-        let month = CalendarMonth(containing: calendarFocus, now: now, calendar: dateCalendar)
-        return MonthGrid(month: month, entries: CalendarEntry.all(in: tree, calendar: dateCalendar), state: calendar)
+        let month = CalendarMonth(containing: calendarFocus, now: now, calendar: calendar)
+        return MonthGrid(month: month, entries: CalendarEntry.all(in: tree, calendar: calendar), state: calendarState)
     }
 
     /// Shows or hides a thread's buds at once.
-    public func toggleThread(_ id: UUID) { calendar.toggle(thread: id) }
+    public func toggleThread(_ id: UUID) { calendarState.toggle(thread: id) }
 
     /// Turns a Show switch over at once.
-    public func toggle(_ show: CalendarShow) { calendar.toggle(show) }
+    public func toggle(_ show: CalendarShow) { calendarState.toggle(show) }
 
-    /// Moves the calendar a month back or forward.
-    public func shiftCalendar(months: Int) {
-        let month = CalendarMonth(containing: calendarFocus, now: now, calendar: dateCalendar)
-        calendarDate = month.shifted(by: months, now: now).start
+    /// Moves the calendar back or forward by its range: a day, a week, a month, a quarter or a
+    /// year at a time.
+    public func shiftCalendar(by steps: Int) {
+        calendarDate = calendarState.range.shift(calendarFocus, by: steps, calendar: calendar)
     }
 
     /// Back to today.

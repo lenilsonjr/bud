@@ -15,25 +15,38 @@ public enum CalendarRange: String, CaseIterable, Codable, Sendable {
         self == .custom ? "The custom range is coming." : "The \(rawValue.lowercased()) view is coming."
     }
 
+    /// What one step of the chevrons moves: "month" in "Previous month". A custom range steps by
+    /// its own length; until it has one, by a month.
+    public var stepName: String {
+        self == .custom ? "range" : rawValue.lowercased()
+    }
+
+    /// The date `steps` of this range away: a day, a week, a month, three months or a year each.
+    public func shift(_ date: Date, by steps: Int, calendar: Calendar = .current) -> Date {
+        let (component, count): (Calendar.Component, Int) = {
+            switch self {
+            case .day: return (.day, steps)
+            case .week: return (.weekOfYear, steps)
+            case .month, .custom: return (.month, steps)
+            case .quarter: return (.month, 3 * steps)
+            case .year: return (.year, steps)
+            }
+        }()
+        return calendar.date(byAdding: component, value: count, to: date) ?? date
+    }
+
     /// The title over the grid for the date it shows: "November 2026", "Q4 2026", "2026".
     public func title(for date: Date, calendar: Calendar = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = calendar.locale ?? .current
         switch self {
         case .day:
-            formatter.setLocalizedDateFormatFromTemplate("EEEE d MMMM yyyy")
-            return formatter.string(from: date)
+            return DayText.formatter(template: "EEEE d MMMM yyyy", calendar: calendar).string(from: date)
         case .week:
             let start = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-            formatter.setLocalizedDateFormatFromTemplate("d MMM")
-            let year = calendar.component(.year, from: end)
-            return "\(formatter.string(from: start)) – \(formatter.string(from: end)) \(year)"
+            let short = DayText.formatter(template: "d MMM", calendar: calendar)
+            return "\(short.string(from: start)) – \(short.string(from: end)) \(calendar.component(.year, from: end))"
         case .month, .custom:
-            formatter.setLocalizedDateFormatFromTemplate("MMMM yyyy")
-            return formatter.string(from: date)
+            return DayText.formatter(template: "MMMM yyyy", calendar: calendar).string(from: date)
         case .quarter:
             let quarter = (calendar.component(.month, from: date) - 1) / 3 + 1
             return "Q\(quarter) \(calendar.component(.year, from: date))"
@@ -66,14 +79,17 @@ public enum CalendarShow: String, CaseIterable, Codable, Sendable {
 /// What this device chose for the calendar: the range, the layout, the threads hidden and the Show
 /// switches. It is this device's alone, so the toggles do not travel with the vault.
 public struct CalendarState: Equatable, Codable, Sendable {
+    /// The switches on at first: everything but Done, as the board draws its toggles.
+    public static let defaultShown: Set<CalendarShow> = [.when, .due, .routines]
+
     public var range: CalendarRange = .month
     public var layout: CalendarLayout = .calendar
     /// Threads whose row is unticked; every thread shows until it is hidden.
     public var hiddenThreads: Set<UUID> = []
-    /// The switches that are on. Done starts off, as the board draws it.
-    public var shown: Set<CalendarShow> = [.when, .due, .routines]
+    /// The switches that are on.
+    public var shown: Set<CalendarShow> = CalendarState.defaultShown
 
-    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = [.when, .due, .routines]) {
+    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown) {
         self.range = range
         self.layout = layout
         self.hiddenThreads = hiddenThreads
@@ -86,7 +102,7 @@ public struct CalendarState: Equatable, Codable, Sendable {
         range = try c.decodeIfPresent(CalendarRange.self, forKey: .range) ?? .month
         layout = try c.decodeIfPresent(CalendarLayout.self, forKey: .layout) ?? .calendar
         hiddenThreads = try c.decodeIfPresent(Set<UUID>.self, forKey: .hiddenThreads) ?? []
-        shown = try c.decodeIfPresent(Set<CalendarShow>.self, forKey: .shown) ?? [.when, .due, .routines]
+        shown = try c.decodeIfPresent(Set<CalendarShow>.self, forKey: .shown) ?? Self.defaultShown
     }
 
     public func shows(_ show: CalendarShow) -> Bool { shown.contains(show) }
