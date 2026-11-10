@@ -48,7 +48,7 @@ struct FilesView: View {
     }
 }
 
-/// The page for where you are: a lens, a place, a folder's outline or a leaf's document.
+/// The page for where you are: a lens, a place, or the bud's page, the same one for every bud.
 struct FilesPage: View {
     @ObservedObject var store: BudStore
 
@@ -64,8 +64,6 @@ struct FilesPage: View {
                 case .warehouse: WarehousePage(store: store)
                 case .triggers: TriggersPage(store: store)
                 }
-            } else if store.center == rootID || (store.tree.hasChildren(store.center) && store.documentOf != store.center) {
-                OutlinePage(store: store)
             } else {
                 // A page of its own for each bud, so a link followed in read mode opens the next
                 // page reading, not in the editor the last one left open.

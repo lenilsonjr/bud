@@ -401,15 +401,15 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
     }
 
-    func testAThreadShownAsItsDocumentShowsItsOutlineAgainOnceTheCenterMoves() async throws {
+    func testAThreadsChildrenStayInTheSidebarTreeWhileItsPageIsOpen() async throws {
         let (store, _) = await loaded()
-        let threads = store.tree.children(of: rootID).filter { store.tree.hasChildren($0.id) }
-        let a = try XCTUnwrap(threads.first), b = try XCTUnwrap(threads.dropFirst().first)
-        store.center = a.id
-        store.documentOf = a.id
-        store.center = b.id
-        store.center = a.id
-        XCTAssertNil(store.documentOf)
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first { store.tree.hasChildren($0.id) })
+        store.openAsFile(thread.id)
+        XCTAssertEqual(store.center, thread.id)
+        let rows = store.tree.outline(expanded: [thread.id]).map(\.id)
+        for child in store.tree.children(of: thread.id) {
+            XCTAssertTrue(rows.contains(child.id), "\(child.text) is reachable through the sidebar")
+        }
     }
 
     // MARK: the Library
