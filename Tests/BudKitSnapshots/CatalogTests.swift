@@ -30,8 +30,9 @@ final class CatalogTests: XCTestCase {
         static let stageMedium = Window(name: "stage-600x800", size: CGSize(width: 600, height: 800), compact: true, followsWindow: true)
         static let stageWide = Window(name: "stage-1024x768", size: CGSize(width: 1024, height: 768), compact: false, followsWindow: true)
 
-        /// Every window but the Mac, for the two screens that must hold up in all of them.
-        static let devices: [Window] = [phone, padPortrait, padLandscape, stageNarrow, stageMedium, stageWide]
+        /// The iPad both ways and the three Stage Manager windows, for the two screens that must
+        /// hold up in all of them.
+        static let pads: [Window] = [padPortrait, padLandscape, stageNarrow, stageMedium, stageWide]
     }
 
     /// One picture to take: the window and the appearance.
@@ -41,7 +42,7 @@ final class CatalogTests: XCTestCase {
 
         var name: String { "\(window.name)-\(scheme == .dark ? "dark" : "light")" }
 
-        static func both(_ windows: Window...) -> [Shot] {
+        static func both(_ windows: [Window]) -> [Shot] {
             windows.flatMap { [Shot(window: $0, scheme: .light), Shot(window: $0, scheme: .dark)] }
         }
 
@@ -59,10 +60,10 @@ final class CatalogTests: XCTestCase {
         let prepare: @MainActor (BudStore) throws -> Void
     }
 
-    /// Every pixel must match its reference to the eye; one part in ten thousand may stray, which
-    /// covers antialiasing noise between runs but not a view that moved by a pixel.
-    private let strategy = Snapshotting<NSImage, NSImage>.image(precision: 0.9999, perceptualPrecision: 0.98)
-    private let clock: @Sendable () -> Date = { Tree.stillNow }
+    /// Every pixel must match its reference to the eye: the perceptual tolerance covers
+    /// antialiasing noise between runs, and no pixel may stray beyond it, so a control that
+    /// moved by a pixel fails however small it is.
+    private let strategy = Snapshotting<NSImage, NSImage>.image(precision: 1, perceptualPrecision: 0.98)
 
     /// The reference pictures: the library's folder beside this file, one file per screen.
     private static let references = URL(fileURLWithPath: #filePath, isDirectory: false)
@@ -74,19 +75,19 @@ final class CatalogTests: XCTestCase {
 
     private var catalog: [Screen] {
         [
-            Screen(surface: "canvas", state: "hub", shots: Shot.both(.mac, .phone) + Shot.light(Array(Window.devices.dropFirst()))) { _ in },
-            Screen(surface: "canvas", state: "thread", shots: Shot.both(.mac) + Shot.light([.phone])) { store in
+            Screen(surface: "canvas", state: "hub", shots: Shot.both([.mac, .phone]) + Shot.light(Window.pads)) { _ in },
+            Screen(surface: "canvas", state: "thread", shots: Shot.both([.mac]) + Shot.light([.phone])) { store in
                 let thread = try Self.newsletter(in: store)
                 let deep = try XCTUnwrap(store.tree.children(of: thread.id).first)
                 // One done to-do, so the picture shows the struck title and the filled check.
                 if let leaf = store.tree.children(of: deep.id).first(where: { $0.isTodo }) { store.toggle(leaf.id) }
                 store.center = thread.id
             },
-            Screen(surface: "canvas", state: "lens", shots: Shot.both(.mac) + Shot.light([.phone])) { store in
+            Screen(surface: "canvas", state: "lens", shots: Shot.both([.mac]) + Shot.light([.phone])) { store in
                 for bud in store.tree.walk(under: rootID).filter({ $0.state == .open }).prefix(3) { store.addTag(bud.id, "home") }
                 store.canvasFacets = [.openTodos, .tag("home")]
             },
-            Screen(surface: "files", state: "page", shots: Shot.both(.mac, .phone) + Shot.light(Array(Window.devices.dropFirst()))) { store in
+            Screen(surface: "files", state: "page", shots: Shot.both([.mac, .phone]) + Shot.light(Window.pads)) { store in
                 let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
                 store.setBody(name.id, "## What matters\n\nShort, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers\n- Check the domain is free")
                 store.addTag(name.id, "brand")
@@ -102,7 +103,7 @@ final class CatalogTests: XCTestCase {
                 store.openAsFile(try Self.newsletter(in: store).id)
                 store.sidebar.toggle(.left, in: Window.phone.size)
             },
-            Screen(surface: "files", state: "today", shots: Shot.both(.mac)) { store in
+            Screen(surface: "files", state: "today", shots: Shot.both([.mac])) { store in
                 store.open(.today)
             },
             Screen(surface: "files", state: "inbox", shots: Shot.light([.mac, .phone])) { store in
@@ -144,19 +145,19 @@ final class CatalogTests: XCTestCase {
                 store.toasts.dismiss()
                 store.openArchive()
             },
-            Screen(surface: "modal", state: "capture", shots: Shot.both(.mac) + Shot.light([.phone])) { store in
+            Screen(surface: "modal", state: "capture", shots: Shot.both([.mac]) + Shot.light([.phone])) { store in
                 store.modal = .capture
             },
             Screen(surface: "modal", state: "add", shots: Shot.light([.mac, .phone])) { store in
                 store.modal = .add(parent: try Self.newsletter(in: store).id)
             },
-            Screen(surface: "modal", state: "settings", shots: Shot.both(.mac, .phone)) { store in
+            Screen(surface: "modal", state: "settings", shots: Shot.both([.mac, .phone])) { store in
                 store.modal = .settings
             },
-            Screen(surface: "modal", state: "palette", shots: Shot.both(.mac)) { store in
+            Screen(surface: "modal", state: "palette", shots: Shot.both([.mac])) { store in
                 store.searching = true
             },
-            Screen(surface: "modal", state: "close-branch", shots: Shot.both(.mac) + Shot.light([.phone])) { store in
+            Screen(surface: "modal", state: "close-branch", shots: Shot.both([.mac]) + Shot.light([.phone])) { store in
                 store.modal = .closeBranch(id: try Self.newsletter(in: store).id)
             },
             Screen(surface: "modal", state: "delete-forever", shots: Shot.light([.mac])) { store in
@@ -169,25 +170,29 @@ final class CatalogTests: XCTestCase {
             Screen(surface: "modal", state: "fresh-start", shots: Shot.light([.mac])) { store in
                 store.modal = .freshStart
             },
-            Screen(surface: "modal", state: "shortcuts", shots: Shot.both(.mac)) { store in
+            Screen(surface: "modal", state: "shortcuts", shots: Shot.both([.mac])) { store in
                 store.modal = .shortcuts
             },
         ]
     }
 
+    /// Every shot on its own: one that cannot be set up or rendered fails naming the screen and
+    /// the rest still run, so one run reports every broken screen.
     func testEveryScreenMatchesItsReference() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let out = URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("catalog", isDirectory: true)
-        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-
+        let out = try pictureFolder("catalog")
         for screen in catalog {
             for shot in screen.shots {
-                let store = stillStore(followsWindow: shot.window.followsWindow)
-                try screen.prepare(store)
-                let image = try render(store: store, in: shot.window, scheme: shot.scheme)
-                try check(image, surface: screen.surface, name: "\(screen.state)-\(shot.name)", into: out)
+                let name = "\(screen.surface).\(screen.state)-\(shot.name)"
+                do {
+                    let store = stillStore()
+                    store.sidebar = SidebarVisibility(followsWindow: shot.window.followsWindow)
+                    try screen.prepare(store)
+                    let image = try render(store: store, in: shot.window, scheme: shot.scheme)
+                    try check(image, surface: screen.surface, name: "\(screen.state)-\(shot.name)", into: out)
+                } catch {
+                    XCTFail("\(name) could not be taken: \(error)")
+                    continue
+                }
             }
         }
     }
@@ -195,18 +200,15 @@ final class CatalogTests: XCTestCase {
     /// The phone palette is a sheet, which a still picture cannot show over the window: its
     /// content on its own, at the phone's width.
     func testThePhonePaletteMatchesItsReference() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let out = URL(fileURLWithPath: dir, isDirectory: true).appendingPathComponent("catalog", isDirectory: true)
-        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        let store = stillStore(followsWindow: true)
+        let out = try pictureFolder("catalog")
+        let store = stillStore()
+        store.sidebar = SidebarVisibility(followsWindow: true)
         for scheme in [ColorScheme.light, .dark] {
             let sheet = CommandPalette(store: store, inSheet: true) { store.searching = false }
                 .frame(width: Window.phone.size.width, height: Window.phone.size.height / 2)
                 .background(Theme.raised)
                 .environment(\.compact, true)
-            let image = try render(sheet, scheme: scheme)
+            let image = try stillImage(sheet, scheme: scheme, scale: 1)
             try check(image, surface: "modal", name: "palette-phone-\(scheme == .dark ? "dark" : "light")", into: out)
         }
     }
@@ -214,50 +216,48 @@ final class CatalogTests: XCTestCase {
     // MARK: Comparing
 
     /// One picture against its reference. A mismatch, or a reference that had to be recorded,
-    /// fails the test naming the screen, and leaves what a person needs to look at in `out`.
+    /// fails the test naming the screen, and leaves what a person needs to look at in `out`:
+    /// the picture as taken, and on a mismatch the reference and the difference between them.
     private func check(_ image: NSImage, surface: String, name: String, into out: URL) throws {
         let reference = Self.references.appendingPathComponent("\(surface).\(name).png")
-        let existed = FileManager.default.fileExists(atPath: reference.path)
+        // Read before the library runs: in its record modes it overwrites the reference.
+        let old = NSImage(contentsOf: reference)
         guard let failure = verifySnapshot(
             of: image, as: strategy, named: name, snapshotDirectory: Self.references.path, testName: surface)
         else { return }
-        if existed {
-            let old = try XCTUnwrap(NSImage(contentsOf: reference))
-            try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png"))
+        try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png"))
+        if let old {
             try png(old).write(to: out.appendingPathComponent("\(surface).\(name).reference.png"))
             try png(difference(old, image)).write(to: out.appendingPathComponent("\(surface).\(name).diff.png"))
             XCTFail("\(surface).\(name) does not match its reference; see catalog/\(surface).\(name).diff.png. \(failure)")
         } else {
-            try FileManager.default.copyItem(at: reference, to: out.appendingPathComponent("\(surface).\(name).png"))
             XCTFail("\(surface).\(name) had no reference; recorded one. \(failure)")
         }
     }
 
-    /// Where the two pictures differ: black where they agree, the difference in colour elsewhere.
-    private func difference(_ old: NSImage, _ new: NSImage) -> NSImage {
-        let size = CGSize(width: max(old.size.width, new.size.width), height: max(old.size.height, new.size.height))
-        let image = NSImage(size: size)
-        image.lockFocus()
-        old.draw(in: CGRect(origin: .zero, size: old.size))
-        new.draw(in: CGRect(origin: .zero, size: new.size), from: .zero, operation: .difference, fraction: 1)
-        image.unlockFocus()
+    /// Where the two pictures differ, pixel for pixel at the reference's own size: black where
+    /// they agree, the difference in colour elsewhere.
+    private func difference(_ old: NSImage, _ new: NSImage) throws -> NSImage {
+        let oldPixels = try XCTUnwrap(old.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let newPixels = try XCTUnwrap(new.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let width = max(oldPixels.width, newPixels.width), height = max(oldPixels.height, newPixels.height)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        rep.size = CGSize(width: width, height: height)
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: rep))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.cgContext.draw(oldPixels, in: CGRect(x: 0, y: 0, width: oldPixels.width, height: oldPixels.height))
+        context.cgContext.setBlendMode(.difference)
+        context.cgContext.draw(newPixels, in: CGRect(x: 0, y: 0, width: newPixels.width, height: newPixels.height))
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
         return image
     }
 
-    private func png(_ image: NSImage) throws -> Data {
-        let cgImage = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        let rep = NSBitmapImageRep(cgImage: cgImage)
-        rep.size = image.size
-        return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
-    }
-
     // MARK: Rendering
-
-    private func stillStore(followsWindow: Bool) -> BudStore {
-        let store = BudStore(fileURL: nil, devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock))
-        store.sidebar = SidebarVisibility(followsWindow: followsWindow)
-        return store
-    }
 
     private static func newsletter(in store: BudStore) throws -> Bud {
         try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
@@ -267,21 +267,7 @@ final class CatalogTests: XCTestCase {
         let view = BudRootView(store: store)
             .frame(width: window.size.width, height: window.size.height)
             .environment(\.compact, window.compact)
-        return try render(view, scheme: scheme)
-    }
-
-    /// One frame at one pixel per point, with no animation in flight.
-    private func render(_ content: some View, scheme: ColorScheme) throws -> NSImage {
-        let view = content
-            .environment(\.colorScheme, scheme)
-            .environment(\.stillPicture, true)
-            .transaction { $0.animation = nil }
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 1
-        let appearance = try XCTUnwrap(NSAppearance(named: scheme == .dark ? .darkAqua : .aqua))
-        var image: NSImage?
-        appearance.performAsCurrentDrawingAppearance { image = renderer.nsImage }
-        return try XCTUnwrap(image, "ImageRenderer produced no image")
+        return try stillImage(view, scheme: scheme, scale: 1)
     }
 }
 #endif
