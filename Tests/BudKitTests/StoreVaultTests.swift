@@ -803,7 +803,7 @@ final class StoreVaultTests: XCTestCase {
         store.renameTag("garden", to: "yard")
         await store.settle()
         XCTAssertEqual(store.saved(lens.id)?.query.tags, ["yard"])
-        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in saved lenses")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in 1 saved lens")
         let stored = try await vault.shared(.lenses)
         XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Garden","query":{"tags":["yard"]}}"#)
     }
@@ -832,6 +832,119 @@ final class StoreVaultTests: XCTestCase {
         store.canvasFacets = [.done]
         store.applyLens(lens.id)
         XCTAssertEqual(store.canvasFacets, [.saved(lens)], "Unticked, it takes the place of the rows")
+    }
+
+    func testATagRenameLeavesOneLensPerQuestionAndUndoBringsTheOtherBack() async throws {
+        let (store, vault) = await loaded()
+        let pantry = try XCTUnwrap(store.saveLens("Pantry", query: LensQuery(tags: ["house"])))
+        let kitchen = try XCTUnwrap(store.saveLens("Kitchen", query: LensQuery(tags: ["home"])))
+        store.renameTag("home", to: "house")
+        XCTAssertEqual(store.toasts.current?.action.message,
+                       "Renamed #home to #house in 1 saved lens, and merged Pantry into Kitchen")
+        await store.settle()
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Kitchen"])
+        XCTAssertEqual(store.saved(kitchen.id)?.query.tags, ["house"])
+        var stored = try await vault.shared(.lenses)
+        XCTAssertEqual(Set(stored.keys), [kitchen.id.uuidString])
+        await undo(store) { store.savedLenses.count == 2 }
+        XCTAssertEqual(store.savedLenses, [kitchen, pantry])
+        stored = try await vault.shared(.lenses)
+        XCTAssertEqual(Set(stored.keys), [kitchen.id.uuidString, pantry.id.uuidString])
+    }
+
+    func testALensWriteTheVaultRefusesIsUndoneBeforeSettleReturns() async throws {
+        let (store, vault) = await loaded()
+        await vault.refuseShared(true)
+        XCTAssertNotNil(store.saveLens("Pinned", query: .pinnedBuds))
+        XCTAssertEqual(store.savedLenses.count, 1, "Shown at once")
+        await store.settle()
+        XCTAssertEqual(store.savedLenses, [], "Back to what the vault holds")
+    }
+
+    func testTheTagRenameToastNamesBudsLensesOrBoth() async throws {
+        let (store, _) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(thread.id, "home")
+        await store.settle()
+        store.renameTag("home", to: "house")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #home to #house in 1 bud")
+        await store.settle()
+        _ = try XCTUnwrap(store.saveLens("House", query: LensQuery(tags: ["house"])))
+        store.renameTag("house", to: "flat")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #house to #flat in 1 bud and 1 saved lens")
+        await store.settle()
+        let garden = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        store.deleteLens(garden.id)
+        store.renameTag("garden", to: "yard")
+        XCTAssertEqual(store.toasts.current?.action.message, "Deleted Garden", "A deleted lens alone shows nothing")
+        _ = try XCTUnwrap(store.saveLens("Shed", query: LensQuery(tags: ["shed"])))
+        store.renameTag("shed", to: "barn")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #shed to #barn in 1 saved lens")
+    }
+
+    func testATagRenameOfLensesAloneNeitherReloadsTheTreeNorWritesOnUndo() async throws {
+        let (store, vault) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        await store.settle()
+        for _ in 0..<50 { await Task.yield() }
+        let before = await vault.snapshotsTaken
+        store.renameTag("garden", to: "yard")
+        await store.settle()
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["yard"])
+        await undo(store) { store.saved(lens.id)?.query.tags == ["garden"] }
+        XCTAssertEqual(store.saved(lens.id), lens)
+        let after = await vault.snapshotsTaken
+        XCTAssertEqual(after, before, "No reload of the tree")
+    }
+
+    func testUndoingTheDeleteOfATickedLensTicksItAgain() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Today", query: .today))
+        store.applyLens(lens.id)
+        store.canvasFacets.append(.pinned)
+        store.deleteLens(lens.id)
+        XCTAssertEqual(store.canvasFacets, [.pinned])
+        await store.settle()
+        await undo(store) { store.saved(lens.id) != nil }
+        XCTAssertEqual(store.canvasFacets, [.pinned, .saved(lens)])
+        XCTAssertEqual(store.canvasLens, LensQuery.pinnedBuds.and(.today))
+
+        let other = try XCTUnwrap(store.saveLens("Done", query: LensQuery(state: .done)))
+        store.deleteLens(other.id)
+        await store.settle()
+        await undo(store) { store.saved(other.id) != nil }
+        XCTAssertFalse(store.canvasFacets.contains(.saved(other)), "Not ticked when it went")
+    }
+
+    func testABoardReadOvertakenByAChangeHereEndsWithTheChange() async throws {
+        let (store, _) = await loaded()
+        let columns = BoardColumns(tags: ["doing"])
+        async let reading: Void = store.reloadBoards()
+        store.setBoardColumns(columns, of: rootID)
+        await reading
+        XCTAssertEqual(store.boards[rootID], columns)
+    }
+
+    func testALayoutReadOvertakenByAChangeHereEndsWithTheChange() async throws {
+        let (store, _) = await loaded()
+        async let reading: Void = store.reloadLayout()
+        store.arrange { $0.layout.hide(.source) }
+        let arranged = store.panels.layout
+        await reading
+        XCTAssertEqual(store.panels.layout, arranged)
+    }
+
+    func testTheSavedLensPageGroupsAreWorkedOutWhenTheTreeOrLensChanges() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("To-dos", query: .todos))
+        XCTAssertEqual(store.savedLensThreads, [])
+        store.open(saved: lens.id)
+        XCTAssertEqual(store.savedLensThreads, LensQuery.todos.hitsByThread(store.tree, links: store.links, on: store.now))
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        _ = store.add("Call the printer", todo: true, under: thread.id)
+        XCTAssertTrue(store.savedLensThreads.flatMap(\.hits).contains { $0.text == "Call the printer" })
+        store.lens = .today
+        XCTAssertEqual(store.savedLensThreads, [])
     }
 
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {

@@ -37,9 +37,11 @@ struct LensMenu: View {
         .padding(8)
         .frame(width: 300, alignment: .leading)
         // The name offered follows the rows until the person types one of their own.
-        .onChange(of: store.canvasFacets) { _, now in
+        // By the rows' names, not the rows: a ticked saved lens renamed elsewhere is the same
+        // row under a new name.
+        .onChange(of: store.canvasFacets.map(store.facetName)) { _, now in
             guard let name = naming else { return }
-            (naming, suggested) = SavedLens.followRows(name: name, suggested: suggested, rows: now.map(store.facetName))
+            (naming, suggested) = SavedLens.followRows(name: name, suggested: suggested, rows: now)
         }
         .accessibilityIdentifier("lens-menu")
     }

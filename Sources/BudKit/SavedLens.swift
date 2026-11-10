@@ -96,7 +96,9 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
             let unknown = LensQuery.Unknown()
             let decoder = JSONDecoder()
             decoder.userInfo[LensQuery.Unknown.key] = unknown
-            guard let query = try? decoder.decode(LensQuery.self, from: Data(raw.utf8)) else {
+            // An empty question would light everything: no build saves one, so it is read as
+            // one this build cannot read.
+            guard let query = try? decoder.decode(LensQuery.self, from: Data(raw.utf8)), !query.isEmpty else {
                 return SavedLens(id: id, name: name, query: nothing, foreign: raw)
             }
             return SavedLens(id: id, name: name, query: query, foreign: unknown.found ? raw : nil)
@@ -137,6 +139,57 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     public static func followRows(name: String, suggested: String, rows: [String]) -> (name: String, suggested: String) {
         let next = suggestedName(rows)
         return (name == suggested ? next : name, next)
+    }
+
+    /// The saved lenses after a tag rename: each that asks for the tag asks for the new name,
+    /// and where two now ask one question the one first by name stays and the other goes.
+    public static func afterTagRename(_ lenses: [SavedLens], from: String, to: String) -> TagRename {
+        var out = TagRename()
+        var now: [SavedLens] = []
+        for lens in lenses {
+            if let renamed = lens.renamingTag(from, to: to) {
+                out.asked += 1
+                out.renamed.append((lens, renamed))
+                now.append(renamed)
+            } else {
+                now.append(lens)
+            }
+        }
+        var kept: [SavedLens] = []
+        for lens in sorted(now) {
+            if let same = kept.first(where: { $0.asksSame(as: lens) }) {
+                let before = lenses.first { $0.id == lens.id } ?? lens
+                out.merged.append((before, same))
+                out.renamed.removeAll { $0.after.id == lens.id }
+            } else {
+                kept.append(lens)
+            }
+        }
+        return out
+    }
+
+    /// What a tag rename does to the saved lenses: each renamed lens before and after, and each
+    /// that goes, as it was before, with the lens it now asks the same as.
+    public struct TagRename {
+        public var renamed: [(before: SavedLens, after: SavedLens)] = []
+        public var merged: [(gone: SavedLens, into: SavedLens)] = []
+        /// How many lenses asked for the tag.
+        public var asked = 0
+    }
+
+    /// The tag rename's toast: what it reached among the buds and the saved lenses, and the
+    /// lenses that went because another now asks the same.
+    public static func tagRenameMessage(from: String, to: String, buds: Int, lenses: Int, merged: [(gone: SavedLens, into: SavedLens)]) -> String {
+        func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
+        var reached: [String] = []
+        if buds > 0 { reached.append(count(buds, "bud", "buds")) }
+        if lenses > 0 { reached.append(count(lenses, "saved lens", "saved lenses")) }
+        var message = "Renamed #\(from) to #\(to)"
+        if !reached.isEmpty { message += " in " + reached.joined(separator: " and ") }
+        if !merged.isEmpty {
+            message += ", and merged " + merged.map { "\($0.gone.name) into \($0.into.name)" }.joined(separator: " and ")
+        }
+        return message
     }
 
     /// The name a lens shows when the vault holds none it can read.

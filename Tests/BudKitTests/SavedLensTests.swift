@@ -214,16 +214,79 @@ final class SavedLensTests: XCTestCase {
         XCTAssertNil(SavedLens.refusal(query: .today, saved: [kept]), "The button shows before a name")
     }
 
+    /// A synced entry asking nothing would light everything; it matches nothing instead.
+    func testAnEmptyQuestionMatchesNothing() throws {
+        let id = UUID()
+        let lens = try XCTUnwrap(SavedLens.read([id.uuidString: #"{"name":"Everything","query":{}}"#]).first)
+        XCTAssertEqual(lens.name, "Everything")
+        XCTAssertTrue(lens.query.never)
+        XCTAssertEqual(lens.foreign, "{}")
+        var tree = Tree()
+        _ = tree.add("A bud", todo: false, under: rootID)
+        XCTAssertEqual(lens.query.hits(tree), [])
+    }
+
+    /// The name on offer follows a ticked saved lens renamed elsewhere: its row is the same row,
+    /// under a new name.
+    func testTheOfferedNameFollowsATickedLensRenamedElsewhere() throws {
+        let lens = SavedLens(name: "Kitchen", query: LensQuery(tags: ["home"]))
+        let ticked: [LensFacet] = [.saved(lens), .pinned]
+        let offered = SavedLens.suggestedName(ticked.map(\.name))
+        var renamed = lens
+        renamed.name = "Cooking"
+        let now = try XCTUnwrap(LensFacet.synced(ticked, with: [renamed]))
+        XCTAssertEqual(now, ticked, "The same rows")
+        let next = SavedLens.followRows(name: offered, suggested: offered, rows: now.map(\.name))
+        XCTAssertEqual(next.name, "Cooking, Pinned")
+        let typed = SavedLens.followRows(name: "Mine", suggested: offered, rows: now.map(\.name))
+        XCTAssertEqual(typed.name, "Mine")
+    }
+
+    /// A tag rename that makes two lenses ask one question keeps the one first by name.
+    func testATagRenameThatMakesTwoLensesAskOneQuestionKeepsTheFirstByName() {
+        let house = SavedLens(name: "Pantry", query: LensQuery(tags: ["house"]))
+        let home = SavedLens(name: "Kitchen", query: LensQuery(tags: ["home"]))
+        let other = SavedLens(name: "Errands", query: .todos)
+        let plan = SavedLens.afterTagRename([house, home, other], from: "home", to: "house")
+        XCTAssertEqual(plan.asked, 1)
+        XCTAssertEqual(plan.renamed.map(\.after.query), [LensQuery(tags: ["house"])])
+        XCTAssertEqual(plan.renamed.map(\.after.id), [home.id], "Kitchen comes first and stays")
+        XCTAssertEqual(plan.merged.map(\.gone), [house])
+        XCTAssertEqual(plan.merged.map(\.into.name), ["Kitchen"])
+
+        let later = SavedLens(name: "Zest", query: LensQuery(tags: ["home"]))
+        let second = SavedLens.afterTagRename([house, later], from: "home", to: "house")
+        XCTAssertEqual(second.renamed.count, 0, "Zest goes rather than being renamed")
+        XCTAssertEqual(second.merged.map(\.gone), [later], "Gone as it was before the rename")
+        XCTAssertEqual(second.merged.map(\.into), [house])
+    }
+
+    func testTheTagRenameToastNamesWhatChanged() {
+        let a = SavedLens(name: "Kitchen", query: LensQuery(tags: ["home"]))
+        let b = SavedLens(name: "Pantry", query: LensQuery(tags: ["home"]))
+        XCTAssertEqual(SavedLens.tagRenameMessage(from: "home", to: "house", buds: 3, lenses: 0, merged: []),
+                       "Renamed #home to #house in 3 buds")
+        XCTAssertEqual(SavedLens.tagRenameMessage(from: "home", to: "house", buds: 0, lenses: 1, merged: []),
+                       "Renamed #home to #house in 1 saved lens")
+        XCTAssertEqual(SavedLens.tagRenameMessage(from: "home", to: "house", buds: 1, lenses: 2, merged: [(b, a)]),
+                       "Renamed #home to #house in 1 bud and 2 saved lenses, and merged Pantry into Kitchen")
+    }
+
     func testAPageGroupsTheHitsByThread() {
         var tree = Tree()
         let launch = tree.add("Launch the newsletter", todo: false, under: rootID)
         let quiet = tree.add("Quiet thread", todo: false, under: rootID)
         let inner = tree.add("Pick a name", todo: false, under: launch.id)
         let deep = tree.add("Ask the printer", todo: true, under: inner.id)
+        let near = tree.add("Draft the welcome", todo: true, under: launch.id)
         _ = tree.add("A note", todo: false, under: quiet.id)
         let open = tree.add("Open the doors", todo: true, under: rootID)
+        let inside = tree.add("Fix the lock", todo: true, under: open.id)
+        _ = tree.add("Captured", todo: true, under: inboxID)
         let groups = LensQuery.todos.hitsByThread(tree)
         XCTAssertEqual(groups.map(\.thread.id), [launch.id, open.id])
-        XCTAssertEqual(groups.map { $0.hits.map(\.id) }, [[deep.id], [open.id]])
+        XCTAssertEqual(groups.map { $0.hits.map(\.id) }, [[deep.id, near.id], [open.id, inside.id]])
+        XCTAssertEqual(groups.flatMap(\.hits), LensQuery.todos.hits(tree), "Every hit, in reading order")
+        XCTAssertEqual(LensQuery(pinned: true).hitsByThread(tree), [])
     }
 }

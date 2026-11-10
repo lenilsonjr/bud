@@ -181,54 +181,47 @@ public struct LensQuery: Hashable, Sendable {
     public func hits(
         _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
     ) -> [Bud] {
+        tree.walk(under: rootID).filter(matcher(tree, links: links, on: now, calendar: calendar))
+    }
+
+    /// The question ready to ask of one bud after another: the day's start, the buds holding an
+    /// open to-do, the grown ones and the links are worked out once.
+    private func matcher(_ tree: Tree, links: LinkGraph?, on now: Date, calendar: Calendar) -> (Bud) -> Bool {
         let holders = holdsOpen ? tree.holdersOfOpen() : []
         let start = calendar.startOfDay(for: now)
         let around = around(in: tree, links: links)
         let growers = grown ? tree.grown(since: Self.grownSince(now, calendar: calendar)) : []
-        return tree.walk(under: rootID).filter {
-            matches($0, holders: holders, growers: growers, around: around, start: start)
-        }
+        return { matches($0, holders: holders, growers: growers, around: around, start: start) }
     }
 }
 
 extension LensQuery {
     /// The hits grouped by the top-level thread they sit under, threads in their order and the
     /// hits in reading order: how a saved lens's page lists them. A thread that is a hit itself
-    /// heads its own group. Hits come in reading order, so each thread's group starts where its
-    /// first hit is; each hit climbs to its thread once, through parents read in one pass.
+    /// heads its own group. One walk: in reading order each thread comes before everything below
+    /// it, so a hit belongs to the last thread met.
     public func hitsByThread(
         _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
-    ) -> [(thread: Bud, hits: [Bud])] {
-        let hits = hits(tree, links: links, on: now, calendar: calendar)
-        guard !hits.isEmpty else { return [] }
-        let byID = Dictionary(tree.buds.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        var top: [UUID: UUID] = [:]
-        func thread(of id: UUID) -> UUID? {
-            var path: [UUID] = []
-            var cursor = id
-            var found: UUID?
-            while found == nil, let bud = byID[cursor] {
-                if let known = top[cursor] { found = known; break }
-                path.append(cursor)
-                if bud.parent == rootID { found = cursor } else { cursor = bud.parent }
-                if path.count > byID.count { break }
+    ) -> [LensThread] {
+        let matches = matcher(tree, links: links, on: now, calendar: calendar)
+        var out: [LensThread] = []
+        var current: LensThread?
+        for bud in tree.walk(under: rootID) {
+            if bud.parent == rootID {
+                if let current, !current.hits.isEmpty { out.append(current) }
+                current = LensThread(thread: bud, hits: [])
             }
-            for step in path { top[step] = found }
-            return found
+            if matches(bud) { current?.hits.append(bud) }
         }
-        var out: [(thread: Bud, hits: [Bud])] = []
-        var at: [UUID: Int] = [:]
-        for bud in hits {
-            guard let id = thread(of: bud.id), let head = byID[id] else { continue }
-            if let i = at[id] {
-                out[i].hits.append(bud)
-            } else {
-                at[id] = out.count
-                out.append((head, [bud]))
-            }
-        }
+        if let current, !current.hits.isEmpty { out.append(current) }
         return out
     }
+}
+
+/// One thread on a lens page and the hits under it, the thread itself among them when it is one.
+public struct LensThread: Equatable, Sendable {
+    public let thread: Bud
+    public var hits: [Bud]
 }
 
 extension Tree {

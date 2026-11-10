@@ -28,6 +28,7 @@ public final class BudStore: ObservableObject {
             backlinkCache = [:]
             dropGoneFacets()
             calendarState.keep(threads: Set(tree.children(of: rootID).map(\.id)))
+            regroup()
         }
     }
     /// Which buds link to which, read again whenever the tree changes.
@@ -75,11 +76,20 @@ public final class BudStore: ObservableObject {
                 lens = nil
                 place = nil
             }
+            if savedLens != oldValue { regroup() }
         }
     }
+    /// What the open saved lens finds, by thread, worked out once per change of tree, lens or
+    /// day, not on every publish.
+    @Published public private(set) var savedLensThreads: [LensThread] = []
     /// The lenses the person named and kept, sorted by name, as the vault holds them.
     @Published public private(set) var savedLenses: [SavedLens] = [] {
-        didSet { if savedLenses != oldValue { syncSavedFacets() } }
+        didSet {
+            if savedLenses != oldValue {
+                syncSavedFacets()
+                regroup()
+            }
+        }
     }
     /// The rows ticked in the canvas lens menu, in the order they were ticked; they set
     /// `canvasLens` to the question they ask together.
@@ -298,6 +308,9 @@ public final class BudStore: ObservableObject {
     /// Counts saved lenses kept or let go here, so a read of the vault taken before one is
     /// never applied after it.
     private var lensEdits = 0
+    /// The same for the boards' columns and for the panels' layout.
+    private var boardEdits = 0
+    private var layoutEdits = 0
     /// Saved lenses deleted here whose Undo may still bring them back, the latest last and only
     /// a few, kept up to date with tag renames made since.
     private var deletedLenses: [SavedLens] = []
@@ -413,17 +426,47 @@ public final class BudStore: ObservableObject {
     }
 
     /// Runs a write to a map beside the buds after the writes before it. The tree is not
-    /// touched, so nothing reloads; `failed` runs once the queue has moved on, when the vault
-    /// refuses it.
-    private func writeBeside(_ operation: @escaping @MainActor (Vault) async throws -> Void, failed: @escaping @MainActor () async -> Void) {
+    /// touched, so nothing reloads; `failed` runs in the queue, when the vault refuses it, so
+    /// what it queues lands before `settle` returns.
+    private func writeBeside(_ operation: @escaping @MainActor (Vault) async throws -> Void, failed: @escaping @MainActor () -> Void) {
         let previous = pending
         pending = Task { @MainActor [self] in
             await previous?.value
             do {
                 try await operation(vault)
             } catch {
-                // Not awaited here: what it does waits for this write to be done.
-                Task { @MainActor in await failed() }
+                failed()
+            }
+        }
+    }
+
+    /// Reads a map beside the buds once the writes queued here have landed and hands it to
+    /// `apply`. A read that a change made here overtook, `edits` having moved while it was
+    /// read, is read again once that change has landed.
+    private func reread(_ map: SharedMap, edits: KeyPath<BudStore, Int>, apply: ([String: String]) -> Void) async {
+        while true {
+            await settle()
+            let started = self[keyPath: edits]
+            guard let stored = try? await vault.shared(map) else { return }
+            if started == self[keyPath: edits] {
+                apply(stored)
+                return
+            }
+        }
+    }
+
+    /// The same read, queued behind the writes: after a write the vault refused, so the store
+    /// is back in step before `settle` returns.
+    private func queueReread(_ map: SharedMap, edits: KeyPath<BudStore, Int>, apply: @escaping @MainActor ([String: String]) -> Void) {
+        let previous = pending
+        pending = Task { @MainActor [self] in
+            await previous?.value
+            let started = self[keyPath: edits]
+            guard let stored = try? await vault.shared(map) else { return }
+            if started == self[keyPath: edits] {
+                apply(stored)
+            } else {
+                queueReread(map, edits: edits, apply: apply)
             }
         }
     }
@@ -822,30 +865,34 @@ public final class BudStore: ObservableObject {
         var changed: [UUID] = []
         commit { changed = $0.renameTag(from, to: to) }
         // Saved lenses sync, so one may ask for a tag no bud here carries.
-        let reachesLenses = lensesAsk(for: from, renamedTo: to)
-        guard !changed.isEmpty || reachesLenses else { return }
+        let plan = SavedLens.afterTagRename(savedLenses, from: from, to: to)
+        let reachesDeleted = deletedLenses.contains { $0.renamingTag(from, to: to) != nil }
+        guard !changed.isEmpty || plan.asked > 0 || reachesDeleted else { return }
         let ticked = canvasFacets
         renameFacets(from, to: to)
         let renamed = canvasFacets
         let edits = TagEdits()
         let lenses = LensTagRename()
         let reachesBuds = !changed.isEmpty
-        write { [self] vault in
-            if reachesBuds {
+        if reachesBuds {
+            write { [self] vault in
                 let records = try await vault.renameTag(from, to: to)
                 edits.byID = Dictionary(records.map { (book.id(for: $0.path), $0) }) { a, _ in a }
+                // The lenses follow only once the buds have: a rename the vault refuses leaves
+                // them as they were.
+                renameTagInLenses(from, to: to, into: lenses)
             }
-            // The lenses follow only once the buds have: a rename the vault refuses leaves
-            // them as they were.
-            renameTagInLenses(from, to: to, into: lenses)
+        } else {
+            // Only lenses: nothing in the tree changes, so nothing reloads.
+            writeBeside({ [self] _ in renameTagInLenses(from, to: to, into: lenses) }, failed: {})
         }
-        let count = changed.count
-        let message = count == 0 ? "Renamed #\(from) to #\(to) in saved lenses"
-            : count == 1 ? "Renamed #\(from) to #\(to) in 1 bud" : "Renamed #\(from) to #\(to) in \(count) buds"
+        // Deleted lenses alone are nothing to show.
+        guard reachesBuds || plan.asked > 0 else { return }
+        let message = SavedLens.tagRenameMessage(from: from, to: to, buds: changed.count, lenses: plan.asked, merged: plan.merged)
         toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.undoRenameTag(edits)
+                if reachesBuds { self.undoRenameTag(edits) }
                 // Each lens it reached goes back, unless it has been changed since.
                 await self.settle()
                 self.undoRenameTagInLenses(lenses)
@@ -854,7 +901,6 @@ public final class BudStore: ObservableObject {
             }
         })
     }
-
     /// A ticked tag the rename reached takes its new name, so its chip keeps matching; one that
     /// lands on a tag ticked already merges into it.
     private func renameFacets(_ from: String, to: String) {
@@ -1175,6 +1221,7 @@ public final class BudStore: ObservableObject {
     /// Asks the lens again without a change: the day it reads Today and Overdue against moved.
     public func refreshLens() {
         relight()
+        regroup()
     }
 
     /// The lens reads the tree alone, so a new center leaves it as it is.
@@ -1201,12 +1248,14 @@ public final class BudStore: ObservableObject {
     }
 }
 
-/// The saved lenses a tag rename reached, saved and deleted, each before and after, filled in
-/// once the vault has renamed the tag, for the undo.
+/// The saved lenses a tag rename reached, saved and deleted, each before and after, and those
+/// that went for asking what another now asks, filled in once the vault has renamed the tag,
+/// for the undo.
 @MainActor
 private final class LensTagRename {
     var saved: [(before: SavedLens, after: SavedLens)] = []
     var deleted: [(before: SavedLens, after: SavedLens)] = []
+    var merged: [(gone: SavedLens, into: SavedLens)] = []
 }
 
 /// What a tag rename or remove wrote, by bud, filled in once the vault has done it, for the undo.
@@ -1367,16 +1416,18 @@ extension BudStore {
         let before = panels.layout
         change(&panels)
         guard panels.layout != before, let text = Self.triggerText(panels.layout) else { return }
+        layoutEdits += 1
         write { vault in try await vault.setShared(.layout, Self.layoutKey, text) }
     }
 
     /// Reads the layout from the vault, once the writes queued here have landed: after a sync
     /// brought another device's arrangement.
     public func reloadLayout() async {
-        await settle()
-        guard let stored = try? await vault.shared(.layout), let text = stored[Self.layoutKey],
-              let layout = try? Self.triggerDecoder.decode(PanelLayout.self, from: Data(text.utf8)) else { return }
-        if layout != panels.layout { panels.layout = layout }
+        await reread(.layout, edits: \.layoutEdits) { stored in
+            guard let text = stored[Self.layoutKey],
+                  let layout = try? Self.triggerDecoder.decode(PanelLayout.self, from: Data(text.utf8)) else { return }
+            if layout != panels.layout { panels.layout = layout }
+        }
     }
 }
 
@@ -1397,6 +1448,7 @@ extension BudStore {
     public func setBoardColumns(_ columns: BoardColumns?, of id: UUID) {
         guard boards[id] != columns else { return }
         boards[id] = columns
+        boardEdits += 1
         let text = columns.flatMap(Self.triggerText)
         write { vault in try await vault.setShared(.board, id.uuidString, text) }
     }
@@ -1404,15 +1456,15 @@ extension BudStore {
     /// Reads every board's columns from the vault, once the writes queued here have landed:
     /// after a sync brought another device's.
     public func reloadBoards() async {
-        await settle()
-        guard let stored = try? await vault.shared(.board) else { return }
-        var loaded: [UUID: BoardColumns] = [:]
-        for (key, text) in stored {
-            guard let id = UUID(uuidString: key),
-                  let columns = try? Self.triggerDecoder.decode(BoardColumns.self, from: Data(text.utf8)) else { continue }
-            loaded[id] = columns
+        await reread(.board, edits: \.boardEdits) { stored in
+            var loaded: [UUID: BoardColumns] = [:]
+            for (key, text) in stored {
+                guard let id = UUID(uuidString: key),
+                      let columns = try? Self.triggerDecoder.decode(BoardColumns.self, from: Data(text.utf8)) else { continue }
+                loaded[id] = columns
+            }
+            if loaded != boards { boards = loaded }
         }
-        if loaded != boards { boards = loaded }
     }
 
     /// What is known of a bud's picture; `.unknown` until `loadPicture` has asked the vault.
@@ -1492,6 +1544,7 @@ extension BudStore {
     /// Lets a saved lens go and offers to keep it again, under the same id.
     public func deleteLens(_ id: UUID) {
         guard let lens = saved(id) else { return }
+        let ticked = canvasFacets.contains(.saved(lens))
         drop(id)
         deletedLenses = Array((deletedLenses.filter { $0.id != id } + [lens]).suffix(Self.deletedLensesKept))
         toasts.show(Undoable(message: "Deleted \(lens.name)") { [weak self] in
@@ -1503,6 +1556,8 @@ extension BudStore {
                 guard self.saved(id) == nil,
                       !self.savedLenses.contains(where: { $0.asksSame(as: lens) }) else { return }
                 self.keep(lens)
+                // Ticked when it went, it is ticked again.
+                if ticked, !self.canvasFacets.contains(.saved(lens)) { self.canvasFacets.append(.saved(lens)) }
             }
         })
     }
@@ -1530,30 +1585,32 @@ extension BudStore {
     /// sync brought another device's. A page on a lens that is gone closes.
     /// A read that a change made here overtook is read again once that change has landed.
     public func reloadLenses() async {
-        var stored: [String: String]
-        repeat {
-            await settle()
-            let started = lensEdits
-            guard let read = try? await vault.shared(.lenses) else { return }
-            stored = read
-            if started == lensEdits { break }
-        } while true
+        await reread(.lenses, edits: \.lensEdits, apply: applyLenses)
+    }
+
+    private func applyLenses(_ stored: [String: String]) {
         let loaded = SavedLens.read(stored)
         if loaded != savedLenses { savedLenses = loaded }
         if let open = savedLens, saved(open) == nil { savedLens = nil }
     }
 
-    /// Whether a tag rename would reach any saved lens, or one a delete's Undo may bring back.
-    private func lensesAsk(for from: String, renamedTo to: String) -> Bool {
-        (savedLenses + deletedLenses).contains { $0.renamingTag(from, to: to) != nil }
+    /// What the open saved lens finds, again.
+    private func regroup() {
+        let found = savedLens.flatMap(saved)?.query.hitsByThread(tree, links: links, on: now) ?? []
+        if found != savedLensThreads { savedLensThreads = found }
     }
 
     /// A tag rename reaches the saved lenses that ask for the tag, here and in the vault, and
-    /// the deleted ones an Undo may bring back; a lens a newer build wrote stays as it is. What
-    /// each was before and after goes into `rename`, for the undo.
+    /// the deleted ones an Undo may bring back; a lens a newer build wrote stays as it is, and
+    /// of two that now ask one question the one first by name stays. What each was before and
+    /// after, and what went, goes into `rename`, for the undo.
     private func renameTagInLenses(_ from: String, to: String, into rename: LensTagRename) {
-        rename.saved = savedLenses.compactMap { lens in lens.renamingTag(from, to: to).map { (lens, $0) } }
-        for pair in rename.saved { keep(pair.after) }
+        let plan = SavedLens.afterTagRename(savedLenses, from: from, to: to)
+        rename.saved = plan.renamed
+        rename.merged = plan.merged
+        // One lens per question: the one that now asks what another does goes.
+        for pair in plan.merged { drop(pair.gone.id) }
+        for pair in plan.renamed { keep(pair.after) }
         deletedLenses = deletedLenses.map { lens in
             guard let renamed = lens.renamingTag(from, to: to) else { return lens }
             rename.deleted.append((lens, renamed))
@@ -1564,6 +1621,9 @@ extension BudStore {
     /// Takes a tag rename back from the lenses it reached, each one unless it changed since.
     private func undoRenameTagInLenses(_ rename: LensTagRename) {
         for (before, after) in rename.saved where saved(after.id) == after { keep(before) }
+        for (gone, _) in rename.merged where saved(gone.id) == nil && !savedLenses.contains(where: { $0.asksSame(as: gone) }) {
+            keep(gone)
+        }
         deletedLenses = deletedLenses.map { lens in
             rename.deleted.first { $0.after == lens }?.before ?? lens
         }
@@ -1595,10 +1655,10 @@ extension BudStore {
     }
 
     /// One saved lens to the vault. One the vault refuses sends the list back to what the vault
-    /// holds, once the writes queued behind it have landed.
+    /// holds, in the queue, so it is back before `settle` returns.
     private func writeLens(_ key: String, _ text: String?) {
         writeBeside({ vault in try await vault.setShared(.lenses, key, text) }) { [weak self] in
-            await self?.reloadLenses()
+            self?.queueReread(.lenses, edits: \.lensEdits) { self?.applyLenses($0) }
         }
     }
 }
