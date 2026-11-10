@@ -21,6 +21,21 @@ public enum DayText {
         }
     }
 
+    /// A formatter with the format written out, for a title whose shape must be the same on
+    /// every platform: a localized template places its commas by the platform's tables.
+    static func formatter(format: String, calendar: Calendar) -> DateFormatter {
+        let locale = calendar.locale ?? .current
+        let key = "=\(format)|\(calendar.identifier)|\(calendar.timeZone.identifier)|\(locale.identifier)"
+        return formatters.formatter(for: key) {
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
+            formatter.locale = locale
+            formatter.dateFormat = format
+            return formatter
+        }
+    }
+
     private static let formatters = FormatterCache()
 
     private final class FormatterCache: @unchecked Sendable {
