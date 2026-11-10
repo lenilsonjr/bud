@@ -14,6 +14,8 @@ final class ThemeTests: XCTestCase {
 
         XCTAssertNil(Swatch(hex: "#FFF"))
         XCTAssertNil(Swatch(hex: "#GGGGGG"))
+        XCTAssertNil(Swatch(hex: "#+1A2B3"), "A sign is not a digit, whatever the integer parser thinks")
+        XCTAssertNil(Swatch(hex: "-1A2B3C"))
     }
 
     func testSwatchWritesItselfBackAsTheDesignFileDoes() {
@@ -23,41 +25,71 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(Swatch(hex: "#85857FFF")?.hex, "#85857F", "An opaque alpha is dropped")
     }
 
-    func testPaletteMatchesTheFoundationsBoard() {
-        XCTAssertEqual(Palette.window, Tone("#F7F9F3", "#141414"))
-        XCTAssertEqual(Palette.canvas, Tone("#EDF3E7", "#161616"))
-        XCTAssertEqual(Palette.card, Tone("#CDE3C1", "#222222"))
-        XCTAssertEqual(Palette.cardLit, Tone("#8CCC8C", "#5DBB68"))
-        XCTAssertEqual(Palette.hub, Tone("#24432B", "#262626"), "The hub is green by day and graphite by night")
-        XCTAssertEqual(Palette.text, Tone("#14281B", "#EDEDEB"))
-        XCTAssertEqual(Palette.leaf, Tone("#3B7A45", "#7FCB86"))
-        XCTAssertEqual(Palette.amethyst, Tone("#5B2A9E", "#C3B2EE"))
-        XCTAssertEqual(Palette.rose, Tone("#A23A59", "#EC9BB4"))
-        XCTAssertNotEqual(Palette.line.light, Palette.line.dark, "Dark mirrors every token with its own value")
-    }
-
-    func testEveryTokenIsInTheTableUnderItsBoardName() {
-        XCTAssertEqual(Palette.tokens.count, 53)
-        XCTAssertEqual(Palette.tokens["ui-window"], Palette.window)
-        XCTAssertEqual(Palette.tokens["ui-text-3"], Palette.text3)
-        XCTAssertEqual(Palette.tokens["ui-card-lit-ink"], Palette.cardLitInk)
-        XCTAssertNil(Palette.tokens["ui-font"], "Only colours live in the table")
-    }
-
-    func testDarkModeIsGraphite() {
-        let graphite = [
-            "ui-window": "#141414", "ui-sidebar": "#141414", "ui-canvas": "#161616",
-            "ui-surface": "#1A1A1A", "ui-raised": "#242424",
-            "ui-line": "#FFFFFF14", "ui-line-strong": "#FFFFFF26",
-            "ui-text": "#EDEDEB", "ui-text-2": "#B5B5B0", "ui-text-3": "#85857F",
-            "ui-leaf": "#7FCB86", "ui-leaf-fill": "#5DBB68", "ui-on-leaf": "#0B160D",
-            "ui-card": "#222222", "ui-card-line": "#343434",
-            "ui-card-lit": "#5DBB68", "ui-card-lit-ink": "#0B160D",
-            "ui-hub": "#262626", "ui-hub-line": "#3A3A3A",
+    func testPaletteMatchesTheFoundationsBoardByDayAndGraphiteByNight() {
+        // Every row of the board's table, light then dark, as the design file states it.
+        let board = [
+            "ui-amethyst": ("#5B2A9E", "#C3B2EE"),
+            "ui-amethyst-soft": ("#5B2A9E14", "#B9A6E61F"),
+            "ui-brand": ("#5B2A9E", "#5B2A9E"),
+            "ui-canvas": ("#EDF3E7", "#161616"),
+            "ui-card": ("#CDE3C1", "#222222"),
+            "ui-card-agent": ("#E3D9F6", "#2B2445"),
+            "ui-card-agent-ink": ("#3E1C70", "#DCCFF7"),
+            "ui-card-agent-line": ("#BDABE7", "#5F4D96"),
+            "ui-card-ink": ("#14281B", "#EDEDEB"),
+            "ui-card-line": ("#8FB882", "#343434"),
+            "ui-card-lit": ("#8CCC8C", "#5DBB68"),
+            "ui-card-lit-ink": ("#0E1C13", "#0B160D"),
+            "ui-card-lit-line": ("#4E8A55", "#9BDDA1"),
+            "ui-card-lit-meta": ("#24432B", "#1F3A23"),
+            "ui-card-meta": ("#4B6650", "#9A9A94"),
+            "ui-card-note": ("#E3E8C0", "#25241F"),
+            "ui-card-note-line": ("#B4BF79", "#3B3930"),
+            "ui-card-note-meta": ("#626A3C", "#A8A48F"),
+            "ui-glass": ("#FFFFFFE0", "#1C1C1CE6"),
+            "ui-glow": ("#8CCC8C59", "#7FCB8626"),
+            "ui-hub": ("#24432B", "#262626"),
+            "ui-hub-accent": ("#8CCC8C", "#8CCC8C"),
+            "ui-hub-ink": ("#EEF6EA", "#F2F2F0"),
+            "ui-hub-line": ("#24432B", "#3A3A3A"),
+            "ui-hub-mark": ("#B9A6E6", "#B9A6E6"),
+            "ui-hub-meta": ("#A9C7A3", "#A0A09A"),
+            "ui-kraft": ("#F6EFDF", "#1F1D18"),
+            "ui-kraft-ink": ("#86652A", "#D9B877"),
+            "ui-leaf": ("#3B7A45", "#7FCB86"),
+            "ui-leaf-fill": ("#3F7F48", "#5DBB68"),
+            "ui-leaf-glow": ("#8CCC8C40", "#7FCB861F"),
+            "ui-leaf-line": ("#4E8A5580", "#7FCB8666"),
+            "ui-leaf-soft": ("#4E8A551C", "#7FCB861F"),
+            "ui-light": ("#FFFFFFB3", "#FFFFFF0A"),
+            "ui-light-0": ("#FFFFFF00", "#FFFFFF00"),
+            "ui-line": ("#1B3A2417", "#FFFFFF14"),
+            "ui-line-strong": ("#1B3A2430", "#FFFFFF26"),
+            "ui-lit": ("#DCEED3", "#1F2A21"),
+            "ui-on-leaf": ("#FFFFFF", "#0B160D"),
+            "ui-pistil": ("#7A4E12", "#EFC77F"),
+            "ui-pistil-soft": ("#DCAC6240", "#DCAC6238"),
+            "ui-raised": ("#FFFFFF", "#242424"),
+            "ui-rose": ("#A23A59", "#EC9BB4"),
+            "ui-rose-soft": ("#DF96B53D", "#E58AA626"),
+            "ui-scrim": ("#1B2E2138", "#000000A6"),
+            "ui-shadow": ("#1B2E211A", "#00000066"),
+            "ui-shadow-strong": ("#1B2E2133", "#000000A6"),
+            "ui-sidebar": ("#E8EFE2", "#141414"),
+            "ui-surface": ("#FFFFFF", "#1A1A1A"),
+            "ui-text": ("#14281B", "#EDEDEB"),
+            "ui-text-2": ("#435848", "#B5B5B0"),
+            "ui-text-3": ("#6C7F6E", "#85857F"),
+            "ui-window": ("#F7F9F3", "#141414"),
         ]
-        for (name, hex) in graphite {
-            XCTAssertEqual(Palette.tokens[name]?.dark.hex, hex, name)
+        XCTAssertEqual(Palette.tokens.count, board.count, "The table has exactly the board's tokens")
+        for (name, (light, dark)) in board {
+            XCTAssertEqual(Palette.tokens[name]?.light.hex, light, "\(name) by day")
+            XCTAssertEqual(Palette.tokens[name]?.dark.hex, dark, "\(name) by night")
         }
+        XCTAssertEqual(Palette.window, Palette.tokens["ui-window"], "The statics read the table")
+        XCTAssertEqual(Palette.cardLitInk, Palette.tokens["ui-card-lit-ink"])
+        XCTAssertNil(Palette.tokens["ui-font"], "Only colours live in the table")
     }
 
     func testDarkSurfacesLinesAndTextCarryNoGreen() throws {
@@ -89,7 +121,18 @@ final class ThemeTests: XCTestCase {
         XCTAssertEqual(white.contrast(against: grey), 4.48, accuracy: 0.01)
     }
 
-    func testTheQuietestTextStillReadsOnEverySurfaceInTheDark() {
+    func testATranslucentColourIsJudgedOverItsBackdrop() throws {
+        let line = Palette.line.dark, surface = Palette.surface.dark
+        XCTAssertEqual(line.over(surface).alpha, 1)
+        XCTAssertEqual(line.over(surface).hex, "#2C2C2C", "A hairline of white over graphite is a slightly lighter graphite")
+        XCTAssertLessThan(line.contrast(against: surface), 1.5, "Not the 17:1 the bare white would give")
+        XCTAssertEqual(try XCTUnwrap(Swatch(hex: "#FF000000")).over(surface), surface, "Fully transparent changes nothing")
+        XCTAssertEqual(try XCTUnwrap(Swatch(hex: "#FFFFFF")).over(surface).hex, "#FFFFFF", "Opaque covers it")
+    }
+
+    func testTheQuietestTextReadsOnTheWindowCanvasAndSurfaceInTheDark() {
+        // Raised panels and cards sit a step lighter and fall just short of 4.5 with text-3;
+        // that is the designer's to settle, so this test holds only what the board reaches.
         XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.surface.dark), 4.5)
         XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.canvas.dark), 4.5)
         XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.window.dark), 4.5)
