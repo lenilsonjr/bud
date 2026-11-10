@@ -8,6 +8,9 @@ struct CommandPalette: View {
     /// In a phone sheet: the sheet draws the card, and the list takes what height it has.
     var inSheet = false
     let onClose: () -> Void
+    /// What follows a row chosen, when that is more than closing: the desktop panel brings the
+    /// app forward. Esc only ever closes.
+    var onGo: (() -> Void)? = nil
     @State private var query = ""
     @State private var picked = 0
     @FocusState private var typing: Bool
@@ -190,13 +193,13 @@ struct CommandPalette: View {
 
     private func go(_ rows: [Row], inFiles: Bool) {
         guard rows.indices.contains(picked) else { return }
+        let pick: BudStore.Pick
         switch rows[picked] {
-        case .bud(let hit):
-            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: hit.id, inFiles: inFiles) }
-        case .destination(let d):
-            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: d, inFiles: inFiles) }
+        case .bud(let hit): pick = .bud(hit.id)
+        case .destination(let d): pick = .destination(d)
         }
-        onClose()
+        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(pick, inFiles: inFiles) }
+        (onGo ?? onClose)()
     }
 }
 #endif

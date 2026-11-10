@@ -17,6 +17,10 @@ struct BudApp: App {
         WindowGroup {
             #if os(tvOS)
             BudTVView(store: store)
+            #elseif os(macOS)
+            // The desktop palette searches the window's store and goes through it.
+            BudRootView(store: store)
+                .onAppear { delegate.attach(store) }
             #else
             BudRootView(store: store)
             #endif
