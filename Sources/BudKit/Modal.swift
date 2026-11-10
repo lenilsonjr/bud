@@ -24,6 +24,8 @@ enum Modal: Hashable, Identifiable {
     case calendars(account: String)
     case connectLinear
     case connectGitHub
+    /// The keyboard shortcuts sheet: every command and its key, from the help button or its key.
+    case shortcuts
 
     static let settingsID = UUID(uuidString: "00000000-0000-0000-0000-00000000000F")!
     static let emptyTrashID = UUID(uuidString: "00000000-0000-0000-0000-00000000000E")!
@@ -38,6 +40,7 @@ enum Modal: Hashable, Identifiable {
     static let connectLinearID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!
     static let calendarsID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!
     static let connectGitHubID = UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!
+    static let shortcutsID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
 
     var id: UUID {
         switch self {
@@ -57,7 +60,13 @@ enum Modal: Hashable, Identifiable {
         case .calendars: return Self.calendarsID
         case .connectLinear: return Self.connectLinearID
         case .connectGitHub: return Self.connectGitHubID
+        case .shortcuts: return Self.shortcutsID
         }
+    }
+
+    /// How wide the card is: the shortcuts sheet lays its groups in two columns.
+    var width: CGFloat {
+        self == .shortcuts ? ModalMetrics.wide : ModalMetrics.width
     }
 
     /// An add on the canvas plants where it was asked, the hub included: only the capture button
@@ -71,13 +80,14 @@ enum Modal: Hashable, Identifiable {
 enum ModalMetrics {
     static let padding: CGFloat = 24
     static let width: CGFloat = 480
+    static let wide: CGFloat = 720
     static let margin: CGFloat = 16
     static let appearScale: CGFloat = 0.96
     static let appearDuration: Double = 0.18
 
     /// 480 pt, or the window width minus 32 when the window is narrower than that.
-    static func cardWidth(window: CGFloat) -> CGFloat {
-        min(width, window - 2 * margin)
+    static func cardWidth(window: CGFloat, card: CGFloat = width) -> CGFloat {
+        min(card, window - 2 * margin)
     }
 }
 
@@ -96,7 +106,7 @@ struct ModalHost: View {
                 scrim
                 GeometryReader { window in
                     card(for: modal)
-                        .frame(width: ModalMetrics.cardWidth(window: window.size.width))
+                        .frame(width: ModalMetrics.cardWidth(window: window.size.width, card: modal.width))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: compact ? .bottom : .center)
                         .padding(.bottom, compact ? ModalMetrics.margin : 0)
                 }
@@ -148,6 +158,7 @@ struct ModalHost: View {
                 ConnectTokenSheet(sources: .shared, kind: .linear, close: { store.modal = .settings })
             case .connectGitHub:
                 ConnectTokenSheet(sources: .shared, kind: .github, close: { store.modal = .settings })
+            case .shortcuts: ShortcutSheet(close: { store.modal = nil })
             }
         }
         .modalCard()

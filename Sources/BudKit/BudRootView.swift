@@ -30,6 +30,7 @@ public struct BudRootView: View {
         }
         .overlay { if store.searching && !compact { palette } }
         .sheet(isPresented: Binding(get: { store.searching && compact }, set: { store.searching = $0 })) { paletteSheet }
+        .overlay(alignment: .bottomTrailing) { helpButton }
         .overlay { ModalHost(store: store) }
         // Above the modal too, so a toast from a dialog shows while Settings still covers the window.
         .overlay(alignment: .bottom) {
@@ -39,7 +40,8 @@ public struct BudRootView: View {
         }
         .background(Theme.window.ignoresSafeArea())
         .background {
-            // The window's keys, drawn nowhere: Go anywhere, and the switch between the surfaces.
+            // The window's keys, drawn nowhere: Go anywhere, the switch between the surfaces, and
+            // the shortcuts sheet.
             Group {
                 Button("") { store.perform(.goAnywhere) }
                     .keyboardShortcut(Keys.shortcut(.goAnywhere))
@@ -47,6 +49,8 @@ public struct BudRootView: View {
                     .keyboardShortcut(Keys.shortcut(.canvas))
                 Button("") { store.perform(.files) }
                     .keyboardShortcut(Keys.shortcut(.files))
+                Button("") { store.perform(.shortcuts) }
+                    .keyboardShortcut(Keys.shortcut(.shortcuts))
             }
             .opacity(0)
         }
@@ -69,6 +73,15 @@ public struct BudRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.refreshLens() }
         }
+    }
+
+    /// The help button at the bottom right of the window, on the Mac only: the sheet under it
+    /// still opens on its key anywhere a keyboard is.
+    @ViewBuilder private var helpButton: some View {
+        #if os(macOS)
+        HelpButton { store.perform(.shortcuts) }
+            .padding(16)
+        #endif
     }
 
     @ViewBuilder private var surface: some View {

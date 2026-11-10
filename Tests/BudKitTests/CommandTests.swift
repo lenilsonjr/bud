@@ -10,6 +10,7 @@ final class CommandTests: XCTestCase {
             .undo: ("Undo", .everywhere, Key("z", .command)),
             .canvas: ("Canvas", .everywhere, Key("1", .command)),
             .files: ("Files", .everywhere, Key("2", .command)),
+            .shortcuts: ("Keyboard shortcuts", .everywhere, Key("/", .command)),
             .newUnderThis: ("New under this", .everywhere, Key("n")),
             .rowDown: ("Next row", .everywhere, Key(.downArrow)),
             .rowUp: ("Previous row", .everywhere, Key(.upArrow)),
@@ -77,6 +78,14 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(Key(.return, .command).label, "⌘↩")
         XCTAssertEqual(Key(.tab, [.shift, .control]).label, "⌃⇧⇥")
         XCTAssertEqual(Key(.upArrow).label + Key(.downArrow).label, "↑↓")
+        XCTAssertEqual(Key("/", .command).label, "⌘/")
+    }
+
+    func testTheSystemWideKeysAreRowsOfTheTable() {
+        XCTAssertEqual(Command.systemWide, [.capture])
+        for id in Command.systemWide {
+            XCTAssertTrue(Command.of(id).key.hasModifiers, "\(id) needs a modifier to be heard from the desktop")
+        }
     }
 
     func testOnlyAModifiedKeyCanStandInTheMenuBar() {
@@ -228,6 +237,19 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.surface, .canvas)
         store.perform(.capture)
         XCTAssertEqual(store.modal, .capture)
+    }
+
+    func testKeyboardShortcutsOpensTheSheetAndAgainClosesIt() {
+        let (store, _) = store()
+        XCTAssertTrue(store.allows(.shortcuts))
+        XCTAssertTrue(store.perform(.shortcuts))
+        XCTAssertEqual(store.modal, .shortcuts)
+        XCTAssertTrue(store.perform(.shortcuts))
+        XCTAssertNil(store.modal)
+        store.surface = .files
+        store.modal = .settings
+        XCTAssertTrue(store.perform(.shortcuts), "The sheet opens over another modal and from Files")
+        XCTAssertEqual(store.modal, .shortcuts)
     }
 
     func testCloseOrReopenTicksThePage() throws {

@@ -1001,6 +1001,7 @@ public final class BudStore: ObservableObject {
         case .capture: modal = .capture
         case .canvas: surface = .canvas
         case .files: surface = .files
+        case .shortcuts: modal = modal == .shortcuts ? nil : .shortcuts
         case .newUnderThis: modal = .adding(under: bud ?? page ?? center)
         case .open: guard bud != nil else { return false }
         case .soil: soilFolded.toggle()
