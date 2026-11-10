@@ -11,10 +11,16 @@ extension XCTestCase {
     /// The one moment every picture is taken at, so two runs draw the same days and counts.
     var stillClock: @Sendable () -> Date { { Tree.stillNow } }
 
+    /// A device store on the fixed clock with no peers, the one every still picture reads.
+    @MainActor
+    func stillDevices() -> DeviceStore {
+        DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
+    }
+
     /// The seed world on the fixed clock, which the store reads from its device store.
     @MainActor
     func stillStore(devices: DeviceStore? = nil) -> BudStore {
-        BudStore(fileURL: nil, devices: devices ?? DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock))
+        BudStore(fileURL: nil, devices: devices ?? stillDevices())
     }
 
     /// The folder the pictures go to, created. Skips the test when `BUD_SNAPSHOT_DIR` is not

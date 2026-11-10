@@ -236,11 +236,7 @@ final class SnapshotTests: XCTestCase {
     /// them, Read under the last bubble it saw, the agent typing, and the composer with This
     /// page. Then the chip taken off and a message sent, answered by the quiet line.
     func testRendersTheAgentPanel() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = BudStore(fileURL: nil)
         let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
         store.setBody(name.id, "## What matters\n\nShort, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers\n- Check the domain is free")
@@ -735,11 +731,7 @@ final class SnapshotTests: XCTestCase {
     /// beside the bar's buttons, it folds into one button over the board. The Mac window at its
     /// minimum width is pictured too, so the fold there is seen rather than assumed.
     func testRendersTheViewSwitchFolded() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.center = newsletter.id
@@ -757,11 +749,7 @@ final class SnapshotTests: XCTestCase {
     /// carries a picture, put on the store before the drawing; one a when, two a due, one a tag
     /// beyond its column's.
     func testRendersTheBoard() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let now = Tree.stillNow
         let day: TimeInterval = 86_400
         var tree = Tree.seed(now: now)
@@ -787,8 +775,7 @@ final class SnapshotTests: XCTestCase {
         let cancelled = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
         tree.buds[cancelled].fromState = "cancelled"
         let vault = MemoryVault(tree: tree)
-        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
-        let store = BudStore(vault: vault, tree: tree, devices: devices)
+        let store = BudStore(vault: vault, tree: tree, devices: stillDevices())
         await store.settle()
         // The renderer draws at once and never runs a card's load, so the picture is kept on
         // the store first, decoded as a load would keep it.
