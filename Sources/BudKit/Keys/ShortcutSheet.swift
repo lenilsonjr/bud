@@ -12,7 +12,8 @@ import AppKit
 /// the next key lands through the layout, which refuses a bare key where it would type and
 /// holds a key another row has as a conflict on both rows (H4). A changed row carries a dot
 /// and Reset; the footer counts the changes and offers Reset all. The keys the Mac answers to
-/// from the desktop are registered once at launch, so their caps are inert for now.
+/// from the desktop record by the key's place on the keyboard, on the Mac alone, and show as
+/// taken when the system keeps the key for itself or another app.
 struct ShortcutSheet: View {
     let close: () -> Void
     @Environment(\.compact) private var compact
@@ -124,7 +125,7 @@ struct ShortcutSheet: View {
     private func listen(_ recording: Bool) {
         if recording, monitor == nil {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                Keys.layout.record(Key(event))
+                Keys.layout.record(Key(event), at: event.keyCode)
                 return nil
             }
         } else if !recording, let monitor {
@@ -162,6 +163,7 @@ struct ShortcutSheet: View {
         let recording = layout.recording == command.id
         let wants = layout.conflicts[command.id]
         let holds = layout.wanted(command.id)
+        let refused = layout.isTakenBySystem(command.id)
         #if os(macOS)
         let offersReset = hovered == command.id
         #else
@@ -186,14 +188,14 @@ struct ShortcutSheet: View {
                 }
                 if layout.canRecord(command.id) {
                     Button { layout.startRecording(command.id) } label: {
-                        cap(command, recording: recording, wants: wants, holds: holds != nil)
+                        cap(command, recording: recording, wants: wants, taken: holds != nil || refused)
                     }
                     .buttonStyle(.plain)
                 } else {
-                    cap(command, recording: false, wants: nil, holds: false)
+                    cap(command, recording: false, wants: nil, taken: false)
                 }
             }
-            if let line = hint(for: command, recording: recording, wants: wants, holds: holds) {
+            if let line = hint(for: command, recording: recording, wants: wants, holds: holds, refused: refused) {
                 Text(line)
                     .textRole(.caption)
                     .foregroundStyle(recording ? Theme.text3 : Theme.rose)
@@ -211,20 +213,21 @@ struct ShortcutSheet: View {
     }
 
     /// The row's keycap: the key it answers to, the recorder's word while it records, or the
-    /// key it wants that another row holds.
-    @ViewBuilder private func cap(_ command: Command, recording: Bool, wants: KeyLayout.Conflict?, holds: Bool) -> some View {
+    /// key it wants that another row holds. A key another row wants, or the system keeps, reads
+    /// as taken.
+    @ViewBuilder private func cap(_ command: Command, recording: Bool, wants: KeyLayout.Conflict?, taken: Bool) -> some View {
         if recording {
             Keycap(ShortcutText.recording, look: .sheet, tone: .live)
         } else if let wants {
             Keycap(wants.key, look: .sheet, tone: .taken)
         } else {
-            Keycap(layout.key(for: command.id), look: .sheet, tone: holds ? .taken : .plain)
+            Keycap(layout.key(for: command.id), look: .sheet, tone: taken ? .taken : .plain)
         }
     }
 
-    /// The line under a row: how to stop while it records, why its key did not land, or which
-    /// row wants the key it holds.
-    private func hint(for command: Command, recording: Bool, wants: KeyLayout.Conflict?, holds: KeyLayout.Conflict?) -> String? {
+    /// The line under a row: how to stop while it records, why its key did not land, which
+    /// row wants the key it holds, or that the system would not give the app the key.
+    private func hint(for command: Command, recording: Bool, wants: KeyLayout.Conflict?, holds: KeyLayout.Conflict?, refused: Bool) -> String? {
         if recording {
             switch layout.refusal {
             case .bare: return ShortcutText.bareKeyRefused
@@ -234,6 +237,7 @@ struct ShortcutSheet: View {
         }
         if let wants { return ShortcutText.taken(by: Command.of(wants.holder), key: wants.key) }
         if let holds { return ShortcutText.wanted(by: Command.of(holds.id)) }
+        if refused { return ShortcutText.takenBySystem }
         return nil
     }
 }
