@@ -25,6 +25,7 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
 swift run BudMac          # the macOS runner, no Xcode project needed
 swift test                # model + layout tests (run on Linux too)
 cargo test --workspace    # the Rust core's tests
+scripts/compare-screens.sh develop   # which screens moved since develop (macOS); no ref: since the last release
 ```
 
 For the real apps, build the Rust core, then generate the Xcode project (needs rustup and
