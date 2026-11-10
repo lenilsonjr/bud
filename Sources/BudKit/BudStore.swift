@@ -298,6 +298,9 @@ public final class BudStore: ObservableObject {
     /// Counts saved lenses kept or let go here, so a read of the vault taken before one is
     /// never applied after it.
     private var lensEdits = 0
+    /// Saved lenses deleted here whose Undo may still bring them back, by id, kept up to date
+    /// with tag renames made since.
+    private var deletedLenses: [UUID: SavedLens] = [:]
     private var watch: VaultWatch?
     /// Where the vault keeps each bud. Writes look a path up when they run, after the writes
     /// before them, so a bud planted a moment ago is found where the vault put it.
@@ -401,6 +404,22 @@ public final class BudStore: ObservableObject {
             try? await operation(vault)
             inFlight -= 1
             await reload()
+        }
+    }
+
+    /// Runs a write to a map beside the buds after the writes before it. The tree is not
+    /// touched, so nothing reloads; `failed` runs once the queue has moved on, when the vault
+    /// refuses it.
+    private func writeBeside(_ operation: @escaping @MainActor (Vault) async throws -> Void, failed: @escaping @MainActor () async -> Void) {
+        let previous = pending
+        pending = Task { @MainActor [self] in
+            await previous?.value
+            do {
+                try await operation(vault)
+            } catch {
+                // Not awaited here: what it does waits for this write to be done.
+                Task { @MainActor in await failed() }
+            }
         }
     }
 
@@ -1438,9 +1457,11 @@ extension BudStore {
         keep(lens)
         toasts.show(Undoable(message: "Renamed \(before.name) to \(name)", systemImage: "line.3.horizontal.decrease.circle") { [weak self] in
             Task { @MainActor in
-                // Back only while the lens is still there under the new name.
-                guard let self, self.saved(id)?.name == name else { return }
-                self.keep(before)
+                // The name alone goes back, while the lens is still there under the new one:
+                // its question keeps any tag rename made since.
+                guard let self, var now = self.saved(id), now.name == name else { return }
+                now.name = before.name
+                self.keep(now)
             }
         })
     }
@@ -1449,10 +1470,13 @@ extension BudStore {
     public func deleteLens(_ id: UUID) {
         guard let lens = saved(id) else { return }
         drop(id)
+        deletedLenses[id] = lens
         toasts.show(Undoable(message: "Deleted \(lens.name)") { [weak self] in
             Task { @MainActor in
-                // Not over a lens that asks the same question, saved since.
-                guard let self, self.saved(lens.id) == nil, !self.savedLenses.contains(where: { $0.asksSame(as: lens) }) else { return }
+                // As it would be now, tag renames and all; not over a lens that asks the same
+                // question, saved since.
+                guard let self, let lens = self.deletedLenses.removeValue(forKey: id), self.saved(id) == nil,
+                      !self.savedLenses.contains(where: { $0.asksSame(as: lens) }) else { return }
                 self.keep(lens)
             }
         })
@@ -1495,6 +1519,9 @@ extension BudStore {
     private func renameTagInLenses(_ from: String, to: String) -> [(before: SavedLens, after: SavedLens)] {
         let pairs = savedLenses.compactMap { lens in lens.renamingTag(from, to: to).map { (lens, $0) } }
         for pair in pairs { keep(pair.1) }
+        for (id, lens) in deletedLenses {
+            if let renamed = lens.renamingTag(from, to: to) { deletedLenses[id] = renamed }
+        }
         return pairs.map { (before: $0.0, after: $0.1) }
     }
 
@@ -1507,10 +1534,11 @@ extension BudStore {
         canvasLens = LensFacet.query(of: synced)
     }
 
+    /// A lens that cannot be written as text changes nothing, here or in the vault.
     private func keep(_ lens: SavedLens) {
+        guard let text = lens.text else { return }
         lensEdits += 1
         savedLenses = SavedLens.sorted(savedLenses.filter { $0.id != lens.id } + [lens])
-        guard let text = lens.text else { return }
         writeLens(lens.id.uuidString, text)
     }
 
@@ -1525,13 +1553,8 @@ extension BudStore {
     /// One saved lens to the vault. One the vault refuses sends the list back to what the vault
     /// holds, once the writes queued behind it have landed.
     private func writeLens(_ key: String, _ text: String?) {
-        write { [weak self] vault in
-            do {
-                try await vault.setShared(.lenses, key, text)
-            } catch {
-                Task { @MainActor in await self?.reloadLenses() }
-                throw error
-            }
+        writeBeside({ vault in try await vault.setShared(.lenses, key, text) }) { [weak self] in
+            await self?.reloadLenses()
         }
     }
 }

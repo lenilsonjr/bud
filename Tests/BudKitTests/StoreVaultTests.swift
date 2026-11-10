@@ -764,6 +764,39 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.canvasFacets, [], "Deleted on another device")
     }
 
+    func testUndoingALensRenameKeepsATagRenameMadeSince() async throws {
+        let (store, _) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(thread.id, "home")
+        await store.settle()
+        let lens = try XCTUnwrap(store.saveLens("Home", query: LensQuery(tags: ["home"])))
+        store.renameLens(lens.id, to: "House things")
+        let renaming = try XCTUnwrap(store.toasts.current?.action.undo)
+        store.renameTag("home", to: "house")
+        renaming()
+        for _ in 0..<20 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.saved(lens.id)?.name, "Home")
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["house"])
+    }
+
+    func testUndoingALensDeleteBringsItBackWithATagRenameMadeSince() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(thread.id, "home")
+        await store.settle()
+        let lens = try XCTUnwrap(store.saveLens("Home", query: LensQuery(tags: ["home"])))
+        store.deleteLens(lens.id)
+        let deleting = try XCTUnwrap(store.toasts.current?.action.undo)
+        store.renameTag("home", to: "house")
+        deleting()
+        for _ in 0..<20 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["house"])
+        let stored = try await vault.shared(.lenses)
+        XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Home","query":{"tags":["house"]}}"#)
+    }
+
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {
         let (mac, vault) = await loaded()
         let lens = try XCTUnwrap(mac.saveLens("Pinned", query: .pinnedBuds))

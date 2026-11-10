@@ -13,6 +13,8 @@ struct LensMenu: View {
     @FocusState private var typing: Bool
     /// The name "Save lens…" is asking for; nil while it is not asking.
     @State private var naming: String? = nil
+    /// The name offered last; while the field still holds it, a change of rows offers another.
+    @State private var suggested = ""
     @FocusState private var typingName: Bool
 
     /// The tags the menu offers: the most used, up to this many.
@@ -34,10 +36,10 @@ struct LensMenu: View {
         }
         .padding(8)
         .frame(width: 300, alignment: .leading)
-        // The name offered follows the rows; with none ticked there is nothing to name.
+        // The name offered follows the rows until the person types one of their own.
         .onChange(of: store.canvasFacets) { _, now in
-            guard naming != nil else { return }
-            naming = now.isEmpty ? nil : SavedLens.suggestedName(now.map(store.facetName))
+            guard let name = naming else { return }
+            (naming, suggested) = SavedLens.followRows(name: name, suggested: suggested, rows: now.map(store.facetName))
         }
         .accessibilityIdentifier("lens-menu")
     }
@@ -257,7 +259,8 @@ struct LensMenu: View {
                     Spacer()
                     if canSave {
                         Button("Save lens…") {
-                            naming = SavedLens.suggestedName(store.canvasFacets.map(store.facetName))
+                            suggested = SavedLens.suggestedName(store.canvasFacets.map(store.facetName))
+                            naming = suggested
                         }
                         .buttonStyle(.budGhost)
                         .accessibilityIdentifier("lens-save")
