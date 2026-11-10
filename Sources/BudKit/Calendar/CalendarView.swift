@@ -3,11 +3,15 @@ import SwiftUI
 
 /// The Calendar view: the bar across its top with the range's title, a step back and forward,
 /// Today, the range segments and the Calendar or Timeline switch; the Threads and Show column on
-/// the left; and the grid for the range on the right. The day, the week and the month are
-/// built; the other ranges and the timeline say they are coming in the grid's place.
+/// the left; and the grid for the range on the right. The day, the week, the month, the year
+/// and a custom range are built; the quarter and the timeline say they are coming in the grid's
+/// place. Choosing Custom opens the range picker over the segments; its length beside the title
+/// opens it again.
 struct CalendarView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
+    @Environment(\.stillPicture) private var still
+    @State private var picking = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,11 +59,19 @@ struct CalendarView: View {
     private var titleRow: some View {
         let range = store.calendarState.range
         return HStack(spacing: 10) {
-            Text(range.title(for: store.calendarFocus, calendar: store.calendar))
+            Text(store.calendarTitle)
                 .textStyle(TextStyle(typeface: .display, size: 24, weight: 500))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .accessibilityIdentifier("calendar-title")
+            if range == .custom {
+                Button(store.customRange.lengthLine) { picking = true }
+                    .buttonStyle(.plain)
+                    .textRole(.label)
+                    .foregroundStyle(Theme.text3)
+                    .help("Change the range")
+                    .accessibilityIdentifier("calendar-range-length")
+            }
             HStack(spacing: 2) {
                 arrow("chevron.left", label: "Previous \(range.stepName)") { store.shiftCalendar(by: -1) }
                 arrow("chevron.right", label: "Next \(range.stepName)") { store.shiftCalendar(by: 1) }
@@ -74,6 +86,10 @@ struct CalendarView: View {
         HStack(spacing: 10) {
             Segmented(selection: $store.calendarState.range, options: CalendarRange.allCases, label: { $0.rawValue }, icon: { $0 == .custom ? "calendar.badge.clock" : nil })
                 .accessibilityIdentifier("calendar-range")
+                .onChange(of: store.calendarState.range) { _, range in if range == .custom { picking = true } }
+                .popover(isPresented: still ? .constant(false) : $picking, arrowEdge: .bottom) {
+                    RangePicker(store: store) { picking = false }
+                }
             Segmented(selection: $store.calendarState.layout, options: CalendarLayout.allCases, label: { $0.rawValue }, icon: { $0 == .calendar ? "calendar" : "calendar.day.timeline.left" })
                 .accessibilityIdentifier("calendar-layout")
         }
@@ -106,6 +122,8 @@ struct CalendarView: View {
                 TimelineView(.periodic(from: .now, by: 60)) { _ in DayView(plan: store.dayPlan) }
             } else if store.calendarState.range == .week {
                 TimelineView(.periodic(from: .now, by: 60)) { _ in WeekView(plan: store.weekPlan) }
+            } else if store.calendarState.range == .year || store.calendarState.range == .custom {
+                YearView(grid: store.yearGrid)
             } else {
                 quiet(store.calendarState.range.comingLine)
             }
