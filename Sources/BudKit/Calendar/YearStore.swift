@@ -4,9 +4,11 @@ import Foundation
 
 #if canImport(SwiftUI)
 extension BudStore {
-    /// The custom range on show: the one picked, or the next three months until one is.
+    /// The custom range on show: the state's months from the month the calendar looks at. The
+    /// date is the one source, as for every range: Today brings it back to this month, the
+    /// chevrons move it by the length, and the picker sets it to the first month picked.
     public var customRange: CustomRange {
-        calendarState.custom ?? .nextThreeMonths(from: now, calendar: calendar)
+        CustomRange(from: YearMonth(containing: calendarFocus, calendar: calendar), months: calendarState.customMonths)
     }
 
     /// The title over the grid: the range's for the day it looks at, or the custom range's own.
@@ -26,18 +28,15 @@ extension BudStore {
 
     /// The picker's presets: the two fixed ones and one for each thread with a due day ahead.
     public var rangePresets: [RangePreset] {
-        RangePreset.all(now: now, threads: tree.children(of: rootID).map { ($0.text, $0.due) }, calendar: calendar)
+        RangePreset.all(now: now, threads: tree.children(of: rootID).map { ($0.id, $0.text, $0.due) }, calendar: calendar)
     }
 
-    /// Shows a custom range: the Custom segment lights and the grid draws its months.
+    /// Shows a custom range: the calendar looks at its first month, the state keeps its length,
+    /// and the Custom segment lights.
     public func pickRange(_ range: CustomRange) {
-        calendarState.custom = range
+        calendarDate = range.start(calendar: calendar)
+        calendarState.customMonths = range.months
         calendarState.range = .custom
-    }
-
-    /// Moves the custom range its own length back or forward.
-    public func shiftCustomRange(by steps: Int) {
-        calendarState.custom = customRange.shifted(by: steps)
     }
 }
 #endif

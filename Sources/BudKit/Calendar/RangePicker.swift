@@ -17,12 +17,12 @@ struct RangePicker: View {
     init(store: BudStore, onDone: @escaping () -> Void = {}) {
         self._store = ObservedObject(wrappedValue: store)
         self.onDone = onDone
-        self._pick = State(initialValue: RangePick(store.calendarState.custom))
+        self._pick = State(initialValue: RangePick(store.customRange))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(RangePick.years(now: store.now, holding: pick.range ?? store.calendarState.custom, calendar: store.calendar), id: \.self) { year in
+            ForEach(RangePick.years(now: store.now, holding: pick.range ?? store.customRange, calendar: store.calendar), id: \.self) { year in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(String(year))
                         .textStyle(TextStyle(typeface: .text, size: 10, weight: 700))

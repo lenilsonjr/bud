@@ -98,7 +98,7 @@ final class CalendarMonthTests: XCTestCase {
         XCTAssertEqual(CalendarRange.year.title(for: now, calendar: calendar), "2026")
         XCTAssertEqual(CalendarRange.day.title(for: now, calendar: calendar), "Tuesday, 3 November 2026")
         XCTAssertEqual(CalendarRange.week.title(for: now, calendar: calendar), "2 Nov – 8 Nov 2026")
-        XCTAssertEqual(CalendarRange.custom.title(for: now, calendar: calendar), "November 2026")
+        XCTAssertEqual(CalendarRange.custom.title(for: now, calendar: calendar), "Nov 2026 – Jan 2027", "Until a range is picked, the next three months")
     }
 
     func testEachRangeStepsByItsOwnUnit() {
@@ -107,7 +107,7 @@ final class CalendarMonthTests: XCTestCase {
         XCTAssertEqual(CalendarRange.month.shift(now, by: 1, calendar: calendar), date(2026, 12, 3).addingTimeInterval(10 * 3600))
         XCTAssertEqual(CalendarRange.quarter.shift(now, by: 1, calendar: calendar), date(2027, 2, 3).addingTimeInterval(10 * 3600))
         XCTAssertEqual(CalendarRange.year.shift(now, by: -1, calendar: calendar), date(2025, 11, 3).addingTimeInterval(10 * 3600))
-        XCTAssertEqual(CalendarRange.custom.shift(now, by: 1, calendar: calendar), CalendarRange.month.shift(now, by: 1, calendar: calendar), "Until a custom range has a length, a month")
+        XCTAssertEqual(CalendarRange.custom.shift(now, by: 1, calendar: calendar), CalendarRange.quarter.shift(now, by: 1, calendar: calendar), "Until a range is picked, three months")
         XCTAssertEqual(CalendarRange.allCases.map(\.stepName), ["day", "week", "month", "quarter", "year", "range"])
     }
 
