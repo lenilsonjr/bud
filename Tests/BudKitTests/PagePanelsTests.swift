@@ -25,20 +25,6 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertFalse(state.isCollapsed(.inside))
     }
 
-    func testEachSidebarHidesAndComesBackOnItsOwn() {
-        var state = PanelState()
-        XCTAssertTrue(state.shows(.left))
-        XCTAssertTrue(state.shows(.right))
-        state.toggle(.right)
-        XCTAssertTrue(state.shows(.left))
-        XCTAssertFalse(state.shows(.right))
-        state.toggle(.left)
-        XCTAssertFalse(state.shows(.left))
-        state.toggle(.right)
-        XCTAssertTrue(state.shows(.right))
-        XCTAssertFalse(state.shows(.left))
-    }
-
     func testThePanelTitlesReadAsTheDesignWritesThem() {
         XCTAssertEqual(PagePanel.allCases.map(\.title), ["Files", "Properties", "Inside", "Where it lives", "Linked from", "Source"])
     }
@@ -60,46 +46,6 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(PanelRowText.meta(for: t.bud(leaf.id)!, in: t, calendar: calendar), "4 Nov")
         t.setWhen(leaf.id, nil)
         XCTAssertEqual(PanelRowText.meta(for: t.bud(leaf.id)!, in: t, calendar: calendar), "")
-    }
-
-    func testTheSourceIsTheFileTheVaultWritesKeysInItsOrder() {
-        let made = Date(timeIntervalSince1970: 1_793_700_000)
-        let bud = Bud(
-            text: "Verify the address", state: .done, body: "Ask the host first.\n\nThen wait a day.",
-            when: Date(timeIntervalSince1970: 1_793_750_400), due: Date(timeIntervalSince1970: 1_794_000_000), pinned: true,
-            created: made, source: "iphone", from: "linear:PRJ-77", fromState: "moved 2026-11-05T21:00:00Z", tags: ["home", "a: b"])
-        XCTAssertEqual(
-            MarkdownSource.text(of: bud),
-            """
-            ---
-            state: done
-            when: 2026-11-04
-            due: 2026-11-06
-            pinned: true
-            created: 2026-11-03T10:00:00Z
-            source: iphone
-            from: linear:PRJ-77
-            from-state: moved 2026-11-05T21:00:00Z
-            tags: [home, "a: b"]
-            ---
-            Ask the host first.
-
-            Then wait a day.
-            """)
-    }
-
-    func testANoteWithNothingSetIsItsCreatedLineAndItsBody() {
-        let bud = Bud(text: "Warm, not corporate", body: "Say it plainly.", created: Date(timeIntervalSince1970: 0))
-        XCTAssertEqual(MarkdownSource.text(of: bud), "---\ncreated: 1970-01-01T00:00:00Z\n---\nSay it plainly.")
-    }
-
-    func testAScalarIsQuotedOnlyWhenYAMLWouldReadItDifferently() {
-        XCTAssertEqual(MarkdownSource.scalar("mail:M1234"), "mail:M1234")
-        XCTAssertEqual(MarkdownSource.scalar("moved 2026-11-05T21:00:00Z"), "moved 2026-11-05T21:00:00Z")
-        XCTAssertEqual(MarkdownSource.scalar("#home"), "\"#home\"")
-        XCTAssertEqual(MarkdownSource.scalar("say \"hi\": now"), "\"say \\\"hi\\\": now\"")
-        XCTAssertEqual(MarkdownSource.scalar("true"), "\"true\"")
-        XCTAssertEqual(MarkdownSource.scalar("77"), "\"77\"")
     }
 }
 
@@ -160,9 +106,37 @@ final class PagePanelsStoreTests: XCTestCase {
         let (store, _) = await loaded()
         XCTAssertEqual(store.panels.layout, .standard)
         XCTAssertEqual(store.panels.collapsed, [.source])
-        store.panels.toggle(.right)
-        XCTAssertFalse(store.panels.shows(.right))
-        XCTAssertTrue(store.panels.shows(.left))
+        let window = CGSize(width: 1400, height: 900)
+        store.sidebar.toggle(.right, in: window)
+        XCTAssertFalse(store.sidebar.isShown(.right, in: window))
+        XCTAssertTrue(store.sidebar.isShown(.left, in: window))
+    }
+
+    func testLinkedFromIsReadOncePerChangeOfTheTree() async throws {
+        let (store, _) = await loaded()
+        let threads = store.tree.children(of: rootID)
+        let target = threads[0], from = threads[1]
+        XCTAssertEqual(store.backlinks(to: target.id), [])
+        store.setBody(from.id, "Settle [[\(target.text)]] first.")
+        await store.settle()
+        let rows = store.backlinks(to: target.id)
+        XCTAssertEqual(rows.map(\.from), [from.id])
+        XCTAssertEqual(rows, store.tree.backlinks(to: target.id))
+        store.center = target.id
+        XCTAssertEqual(store.backlinks(to: target.id), rows, "The same rows until the tree changes")
+        store.setBody(from.id, "Nothing links any more.")
+        await store.settle()
+        XCTAssertEqual(store.backlinks(to: target.id), [])
+    }
+
+    func testTheSourcePanelReadsTheFileThroughTheVault() async throws {
+        let (store, _) = await loaded()
+        let bud = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.isTodo && $0.due == nil && $0.when == nil && !$0.pinned })
+        store.setBody(bud.id, "Ask the host first.")
+        store.setPinned(bud.id, true)
+        let text = try XCTUnwrap(await store.fileText(of: bud.id))
+        XCTAssertEqual(text, "---\nstate: open\npinned: true\n---\nAsk the host first.")
+        XCTAssertNil(await store.fileText(of: UUID()))
     }
 }
 #endif

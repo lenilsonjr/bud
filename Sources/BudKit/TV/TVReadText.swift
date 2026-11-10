@@ -33,15 +33,9 @@ public enum TVReadText {
     /// The kind and dates under the title: "To-do · Due 3 Nov", "Note", "Done".
     public static func kindLine(_ bud: Bud) -> String {
         var parts = [bud.isTodo ? (bud.isDone ? "Done" : "To-do") : "Note"]
-        if let due = bud.due { parts.append("Due \(short(due))") }
-        if let when = bud.when { parts.append("Scheduled \(short(when))") }
+        if let due = bud.due { parts.append("Due \(DayText.short(due))") }
+        if let when = bud.when { parts.append("Scheduled \(DayText.short(when))") }
         if bud.pinned { parts.append("Pinned") }
         return parts.joined(separator: " · ")
-    }
-
-    private static func short(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("d MMM")
-        return f.string(from: date)
     }
 }

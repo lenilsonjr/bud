@@ -142,6 +142,9 @@ public protocol Vault: Sendable {
     /// finds the bud it was planted as before, outside the Trash. `preferredPath` is as in `create`.
     func plant(parent: String?, title: String, kind: BudKind, from: String, preferredPath: String?) async throws -> Planting
     func setBody(_ path: String, _ text: String) async throws
+    /// The bud's file as the vault holds it, front matter and body: what the Source panel shows.
+    /// A bud that is only a folder has no file yet, and no text.
+    func text(_ path: String) async throws -> String
     /// A nil state makes the bud a note.
     func setState(_ path: String, _ state: BudState?) async throws
     func setWhen(_ path: String, _ when: Date?) async throws

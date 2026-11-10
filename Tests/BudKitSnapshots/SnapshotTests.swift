@@ -226,13 +226,15 @@ final class SnapshotTests: XCTestCase {
                 XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
             }
         }
-        store.panels.toggle(.right)
+        store.sidebar.toggle(.right, in: size)
         store.panels.toggle(.inside)
         try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("page-panels-right-hidden-light.png"))
-        store.panels = PanelState()
-        store.panels.toggle(.left)
-        store.panels.toggle(.inside)
+        store.sidebar = SidebarVisibility(followsWindow: false)
+        store.sidebar.toggle(.left, in: size)
         try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("page-panels-left-hidden-light.png"))
+        // The lens page has the left toggle too, so the tree never stays stuck hidden.
+        store.open(.today)
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("lens-left-hidden-light.png"))
     }
 
     func testRendersPlantedBuds() throws {

@@ -90,7 +90,7 @@ struct DocumentView: View {
 
     private func docBar(_ bud: Bud) -> some View {
         HStack(spacing: 12) {
-            if !compact { sidebarToggle(.left) }
+            if !compact { SidebarToggle(store: store, side: .left) }
             Text(store.tree.filePath(of: id))
                 .textRole(.mono)
                 .lineLimit(1)
@@ -119,25 +119,8 @@ struct DocumentView: View {
             .buttonStyle(.plain)
             .foregroundStyle(Theme.leaf)
             .help("Show on the canvas")
-            if !compact { sidebarToggle(.right) }
+            if !compact { SidebarToggle(store: store, side: .right) }
         }
-    }
-
-    /// Hides a sidebar of panels or brings it back; both stay put while editing.
-    private func sidebarToggle(_ side: PanelSide) -> some View {
-        let shown = store.panels.shows(side)
-        return Button {
-            withAnimation(.easeOut(duration: 0.2)) { store.panels.toggle(side) }
-        } label: {
-            Image(systemName: side == .left ? "sidebar.left" : "sidebar.right")
-                .foregroundStyle(shown ? Theme.text2 : Theme.text3)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
-        .accessibilityLabel(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
-        .accessibilityIdentifier("sidebar-\(side.rawValue)-toggle")
     }
 
     // MARK: body

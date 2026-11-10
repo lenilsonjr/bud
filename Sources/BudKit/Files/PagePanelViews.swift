@@ -27,7 +27,7 @@ struct PropertiesPanel: View {
                 VStack(alignment: .leading, spacing: 2) {
                     PropertyRow(name: "State", from: owner(bud, .state)) {
                         if bud.isTodo {
-                            Segmented(selection: Binding(get: { bud.isDone }, set: { _ in store.tick(id) }), options: [false, true]) { $0 ? "Done" : "Open" }
+                            Segmented(selection: Binding(get: { bud.isDone }, set: { if $0 != bud.isDone { store.tick(id) } }), options: [false, true]) { $0 ? "Done" : "Open" }
                         } else {
                             Button("Make a to-do") { store.update(id, text: bud.text, todo: true) }
                                 .buttonStyle(.budGhost)
@@ -113,8 +113,8 @@ struct DateField: View {
 }
 
 /// What is inside the bud, every kind, one row each; a click opens the child, the box ticks a
-/// to-do. Closed to-dos hide behind a count until Show. The + in the header opens a line to
-/// plant one more at the end.
+/// to-do. Closed to-dos hide behind a count until Show, and fold again on Hide. The + in the
+/// header opens a line to plant one more at the end.
 struct InsidePanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
@@ -126,8 +126,8 @@ struct InsidePanel: View {
     var body: some View {
         if let bud = store.tree.bud(id) {
             let kids = store.tree.children(of: id)
+            let closed = kids.filter(\.isDone).count
             let shown = showClosed ? kids : kids.filter { !$0.isDone }
-            let hidden = kids.count - shown.count
             PanelView(panel: .inside, store: store, meta: kids.isEmpty ? nil : "\(kids.count)", onAdd: { open() }) {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(shown) { child in
@@ -139,8 +139,8 @@ struct InsidePanel: View {
                         }
                         .budMenu(child.id, store: store)
                     }
-                    if hidden > 0 {
-                        Button(showClosed ? "Hide closed" : "\(hidden) closed hidden · Show") { showClosed.toggle() }
+                    if closed > 0 {
+                        Button(showClosed ? "Hide closed" : "\(closed) closed hidden · Show") { showClosed.toggle() }
                             .buttonStyle(.plain)
                             .textRole(.caption)
                             .foregroundStyle(Theme.text3)
@@ -163,11 +163,11 @@ struct InsidePanel: View {
     private func open() {
         if store.panels.isCollapsed(.inside) { store.panels.toggle(.inside) }
         adding = true
-        lineFocused = true
     }
 
     /// The line a new child is typed on; ↩ plants it under this bud and keeps the line for the
-    /// next, Esc or an empty ↩ closes it.
+    /// next, Esc, Cancel or an empty ↩ closes it. Focus is asked for once the field is there,
+    /// since asking in the same update that adds it is lost.
     private func addLine(_ bud: Bud) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "plus")
@@ -177,6 +177,7 @@ struct InsidePanel: View {
                 .textFieldStyle(.plain)
                 .textStyle(PanelText.title)
                 .focused($lineFocused)
+                .onAppear { lineFocused = true }
                 .onSubmit {
                     guard store.add(line, todo: store.tree.suggestsTodo(under: id), under: id) != nil else {
                         adding = false
@@ -188,6 +189,11 @@ struct InsidePanel: View {
                 #if os(macOS)
                 .onExitCommand { adding = false }
                 #endif
+            #if os(iOS)
+            // No Esc on a touch screen: Cancel closes the line.
+            Button("Cancel") { adding = false }
+                .buttonStyle(.budGhost)
+            #endif
         }
         .padding(.horizontal, 6)
         .frame(height: 28)
@@ -256,15 +262,15 @@ struct WhereItLivesPanel: View {
 }
 
 /// The buds whose body links to this page, each with where it lives; a click goes to that bud,
-/// and the sentence the link sits in is its help. A view of its own, so typing in the page's
-/// body does not read every bud again.
+/// and the sentence the link sits in is its help. The store keeps the rows between changes of
+/// the tree, so a publish while typing does not read every bud again.
 struct LinkedFromPanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
 
     var body: some View {
         if store.tree.bud(id) != nil {
-            let links = store.tree.backlinks(to: id)
+            let links = store.backlinks(to: id)
             PanelView(panel: .linkedFrom, store: store, meta: links.isEmpty ? nil : "\(links.count)") {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(links) { link in
@@ -292,10 +298,11 @@ struct LinkedFromPanel: View {
 }
 
 /// Where the bud came from: for a planted bud its source item, the last sync and Open in …;
-/// for one written here, its file as the vault writes it.
+/// for one written here, its file as the vault holds it, read again after each change.
 struct SourcePanel: View {
     let id: UUID
     @ObservedObject var store: BudStore
+    @State private var text: String?
 
     var body: some View {
         if let bud = store.tree.bud(id) {
@@ -304,11 +311,12 @@ struct SourcePanel: View {
                     if let from = bud.from {
                         SourcePageRow(from: from, mark: store.mark(of: bud))
                     } else {
-                        Text(MarkdownSource.text(of: bud))
+                        Text(text ?? "Reading the file…")
                             .textRole(.mono)
-                            .foregroundStyle(Theme.text2)
+                            .foregroundStyle(text == nil ? Theme.text3 : Theme.text2)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .task(id: bud) { text = await store.fileText(of: id) }
                     }
                 }
                 .padding(.horizontal, 10)

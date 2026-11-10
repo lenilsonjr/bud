@@ -31,11 +31,15 @@ public final class BudStore: ObservableObject {
     @Published public private(set) var tree: Tree {
         didSet {
             links = LinkGraph(tree)
+            backlinkCache = [:]
             dropGoneFacets()
         }
     }
     /// Which buds link to which, read again whenever the tree changes.
     @Published public private(set) var links = LinkGraph()
+    /// The rows of Linked from, kept from the first ask until the tree changes, so a page does
+    /// not read every body again on each publish.
+    private var backlinkCache: [UUID: [Backlink]] = [:]
     @Published public private(set) var layout: Layout
     @Published public var center: UUID {
         didSet {
@@ -71,10 +75,18 @@ public final class BudStore: ObservableObject {
     @Published public private(set) var canvasLight: [UUID: LensQuery.Match] = [:]
     /// The canvas scale: 1 is 100%. Pinch changes it; the zoom control in the bar resets it.
     @Published public var zoom: CGFloat = 1
-    /// Whether Files shows its sidebar; follows the window shape until the bar button decides.
-    @Published public var sidebar = SidebarVisibility()
-    /// The panels around the page: which are folded and which sidebar the page bar hid.
+    /// Whether Files shows each sidebar; iOS follows the window shape until a toggle decides.
+    @Published public var sidebar = SidebarVisibility(followsWindow: BudStore.sidebarFollowsWindow)
+    /// The panels around the page: where each sits and which are folded.
     @Published public var panels = PanelState()
+
+    static var sidebarFollowsWindow: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
+    }
     /// The size of the area below the bar, so the bar button knows what the toggle flips.
     /// Not published: it changes on every frame of a resize and nothing draws from it.
     public var surfaceSize: CGSize = .zero
@@ -355,6 +367,21 @@ public final class BudStore: ObservableObject {
     }
 
     public var centerTrail: [UUID] { Array(tree.ancestors(of: center).reversed()) + [center] }
+
+    /// The buds whose body links to a page, read once per change of the tree.
+    public func backlinks(to id: UUID) -> [Backlink] {
+        if let known = backlinkCache[id] { return known }
+        let found = tree.backlinks(to: id)
+        backlinkCache[id] = found
+        return found
+    }
+
+    /// The bud's file as the vault holds it, once the writes before have landed. Nil for a bud
+    /// the vault does not know.
+    public func fileText(of id: UUID) async -> String? {
+        await pending?.value
+        return try? await vault.text(path(id))
+    }
 
     /// Posted by a Settings window that has no store of its own (the Mac's ⌘,); `userInfo["sample"]`
     /// says whether to start from the sample world. The root view performs it on its store.
