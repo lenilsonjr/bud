@@ -29,6 +29,110 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(PagePanel.allCases.map(\.title), ["Files", "Properties", "Inside", "Where it lives", "Linked from", "Source"])
     }
 
+    func testADroppedPanelLandsWhereTheLineWasInEitherSidebar() {
+        var layout = PanelLayout.standard
+        layout.move(.inside, to: .left, at: 0)
+        XCTAssertEqual(layout.left, [.inside, .files])
+        XCTAssertEqual(layout.right, [.properties, .whereItLives, .linkedFrom, .source])
+        layout.move(.files, to: .right, at: 99)
+        XCTAssertEqual(layout.left, [.inside])
+        XCTAssertEqual(layout.right, [.properties, .whereItLives, .linkedFrom, .source, .files], "Past the end is last")
+        layout.move(.source, to: .right, at: 0)
+        XCTAssertEqual(layout.right, [.source, .properties, .whereItLives, .linkedFrom, .files], "Within one side it is taken out first")
+        layout.move(.source, to: .right, at: -3)
+        XCTAssertEqual(layout.right, [.source, .properties, .whereItLives, .linkedFrom, .files])
+        XCTAssertEqual(layout.hidden, [])
+    }
+
+    func testTheGapUnderThePointerCountsThePanelsOldPlaceAndLinesTheEdgeItLandsOn() {
+        let layout = PanelLayout.standard
+        let frames: [PagePanel: CGRect] = [
+            .properties: CGRect(x: 1100, y: 0, width: 300, height: 200),
+            .inside: CGRect(x: 1100, y: 200, width: 300, height: 100),
+            .whereItLives: CGRect(x: 1100, y: 300, width: 300, height: 100),
+            .linkedFrom: CGRect(x: 1100, y: 400, width: 300, height: 100),
+            .source: CGRect(x: 1100, y: 500, width: 300, height: 32),
+        ]
+        XCTAssertEqual(PanelDrop.under(CGPoint(x: 1200, y: 10), on: .right, frames: frames, layout: layout).gap, 0)
+        XCTAssertEqual(PanelDrop.under(CGPoint(x: 1200, y: 150), on: .right, frames: frames, layout: layout).gap, 1, "Past the middle of Properties")
+        XCTAssertEqual(PanelDrop.under(CGPoint(x: 1200, y: 360), on: .right, frames: frames, layout: layout).gap, 3)
+        XCTAssertEqual(PanelDrop.under(CGPoint(x: 1200, y: 800), on: .right, frames: frames, layout: layout).gap, 5, "Below them all is after the last")
+        XCTAssertEqual(PanelDrop.under(CGPoint(x: 100, y: 800), on: .left, frames: frames, layout: layout).gap, 0, "A side with no frames yet puts it first")
+
+        let third = PanelDrop(side: .right, gap: 3)
+        XCTAssertEqual(third.line(on: .linkedFrom, in: layout), .above)
+        XCTAssertNil(third.line(on: .whereItLives, in: layout))
+        XCTAssertEqual(PanelDrop(side: .right, gap: 5).line(on: .source, in: layout), .below)
+        XCTAssertNil(PanelDrop(side: .right, gap: 5).line(on: .files, in: layout))
+        XCTAssertEqual(third.index(moving: .properties, in: layout), 2, "Moving down: the old place is counted out")
+        XCTAssertEqual(third.index(moving: .source, in: layout), 3, "Moving up: as the gap says")
+        XCTAssertEqual(third.index(moving: .files, in: layout), 3, "From the other side: as the gap says")
+        var moved = layout
+        moved.move(.properties, to: .right, at: third.index(moving: .properties, in: layout))
+        XCTAssertEqual(moved.right, [.inside, .whereItLives, .properties, .linkedFrom, .source])
+
+        XCTAssertEqual(PanelDrop.side(at: 100, in: 1400, left: 273, right: 301), .left)
+        XCTAssertEqual(PanelDrop.side(at: 1200, in: 1400, left: 273, right: 301), .right)
+        XCTAssertNil(PanelDrop.side(at: 700, in: 1400, left: 273, right: 301), "Over the page")
+        XCTAssertNil(PanelDrop.side(at: 100, in: 1400, left: nil, right: 301), "A hidden sidebar takes nothing")
+    }
+
+    func testTheMenuOffersItsItemsInOrderAndDisablesWhatDoesNothing() {
+        var state = PanelState()
+        let items = PanelMenuItem.allCases
+        XCTAssertEqual(
+            items.map { $0.title(for: .properties, in: state) },
+            ["Move to left sidebar", "Move up", "Move down", "Collapse", "Hide panel", "Show hidden panels", "Reset layout"]
+        )
+        XCTAssertEqual(items.map(\.startsGroup), [false, false, false, true, false, true, false])
+        XCTAssertEqual(PanelMenuItem.moveToOtherSide.title(for: .files, in: state), "Move to right sidebar")
+        XCTAssertEqual(PanelMenuItem.collapse.title(for: .source, in: state), "Expand")
+        XCTAssertEqual(
+            items.map { $0.isEnabled(for: .properties, in: state) },
+            [true, false, true, true, true, false, false], "At the top, nothing hidden, the standard layout"
+        )
+        XCTAssertFalse(PanelMenuItem.moveDown.isEnabled(for: .source, in: state))
+        XCTAssertTrue(PanelMenuItem.moveUp.isEnabled(for: .source, in: state))
+
+        PanelMenuItem.moveDown.apply(to: &state, for: .properties)
+        XCTAssertEqual(state.layout.right, [.inside, .properties, .whereItLives, .linkedFrom, .source])
+        PanelMenuItem.moveUp.apply(to: &state, for: .properties)
+        XCTAssertEqual(state.layout.right, PanelLayout.standard.right)
+        PanelMenuItem.moveUp.apply(to: &state, for: .properties)
+        XCTAssertEqual(state.layout.right, PanelLayout.standard.right, "Nothing above the top")
+        PanelMenuItem.moveToOtherSide.apply(to: &state, for: .properties)
+        XCTAssertEqual(state.layout.left, [.files, .properties])
+        PanelMenuItem.hide.apply(to: &state, for: .source)
+        PanelMenuItem.hide.apply(to: &state, for: .inside)
+        XCTAssertEqual(state.layout.hidden, [.inside, .source])
+        XCTAssertEqual(state.layout.right, [.whereItLives, .linkedFrom])
+        XCTAssertTrue(PanelMenuItem.showHidden.isEnabled(for: .files, in: state))
+        XCTAssertTrue(PanelMenuItem.reset.isEnabled(for: .files, in: state))
+        PanelMenuItem.collapse.apply(to: &state, for: .files)
+        XCTAssertTrue(state.isCollapsed(.files))
+        PanelMenuItem.showHidden.apply(to: &state, for: .files)
+        XCTAssertEqual(state.layout.right, [.whereItLives, .linkedFrom, .inside, .source], "Back at the end of their usual side")
+        XCTAssertEqual(state.layout.hidden, [])
+    }
+
+    func testTheLastPanelShownCannotHide() {
+        var state = PanelState(layout: PanelLayout(left: [.files], right: []))
+        XCTAssertFalse(PanelMenuItem.hide.isEnabled(for: .files, in: state))
+        state.layout.move(.inside, to: .left, at: 1)
+        XCTAssertTrue(PanelMenuItem.hide.isEnabled(for: .files, in: state))
+    }
+
+    func testResetLayoutRestoresTheStandardLayoutAndLeavesTheFolds() {
+        var state = PanelState()
+        state.layout.move(.files, to: .right, at: 0)
+        state.layout.hide(.linkedFrom)
+        state.toggle(.inside)
+        XCTAssertNotEqual(state.layout, .standard)
+        PanelMenuItem.reset.apply(to: &state, for: .files)
+        XCTAssertEqual(state.layout, .standard)
+        XCTAssertEqual(state.collapsed, [.source, .inside], "Folding is this device's and stays")
+    }
+
     func testARowsMetaIsWhatItHoldsThenItsDay() throws {
         var t = Tree.seed()
         let newsletter = try XCTUnwrap(t.children(of: rootID).first { $0.text == "Launch the newsletter" })

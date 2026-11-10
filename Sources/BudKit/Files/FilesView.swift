@@ -4,18 +4,27 @@ import SwiftUI
 /// The Files view: the page between two sidebars of panels, the file tree on the left and the
 /// page's own panels on the right. The selection is the store's center, so Canvas and Files
 /// always agree on where you are. Drawn as panes rather than a split view so it looks the same
-/// everywhere and in pictures.
+/// everywhere and in pictures. A panel dragged by its header is drawn here, lifted under the
+/// pointer, and lands in the gap the drop line showed, in either sidebar.
 struct FilesView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
     /// Files holds the keyboard itself when no field in it does, so its keys reach it.
     @FocusState private var focused: Bool
+    @Environment(\.stillPanelDrag) private var stillDrag
+    /// The panel in hand and where the pointer is, in this view's space.
+    @State private var inHand: (panel: PagePanel, at: CGPoint)? = nil
+    /// Where each panel is, in this view's space, as the panels report it during a drag.
+    @State private var frames: [PagePanel: CGRect] = [:]
+
+    static let space = "files"
 
     var body: some View {
         if compact {
             PhoneFilesView(store: store)
         } else {
             GeometryReader { geo in
+                let moving = drag(in: geo.size) ?? stillDrag
                 HStack(spacing: 0) {
                     if sidebarShown(.left, in: geo.size) {
                         PanelSidebar(store: store, side: .left)
@@ -41,6 +50,23 @@ struct FilesView: View {
                     guard !Keys.typing else { return .ignored }
                     return store.perform(.newUnderThis) ? .handled : .ignored
                 }
+                .coordinateSpace(name: Self.space)
+                .environment(\.panelDragging, PanelDragging(
+                    drag: moving,
+                    placed: { frames[$0] = $1 },
+                    moved: { panel, point in inHand = (panel, point) },
+                    ended: { panel, point in
+                        if let target = drop(at: point, in: geo.size) {
+                            let index = target.index(moving: panel, in: store.panels.layout)
+                            store.arrange { $0.layout.move(panel, to: target.side, at: index) }
+                        }
+                        inHand = nil
+                        frames = [:]
+                    }
+                ))
+                .overlay(alignment: .topLeading) {
+                    if let moving { lifted(moving).offset(x: moving.point.x - 8, y: moving.point.y - 8) }
+                }
                 .onAppear {
                     focused = true
                     sync(geo.size)
@@ -50,11 +76,45 @@ struct FilesView: View {
         }
     }
 
-    /// A sidebar shows unless a toggle hid it, or the window is too narrow on iOS. The right one
-    /// is the page's own panels, so it goes with a bud's page alone: a lens, a place and
-    /// Everything have none.
+    /// The drag with the gap it would land in; nil while nothing is in hand.
+    private func drag(in size: CGSize) -> PanelDrag? {
+        guard let inHand else { return nil }
+        return PanelDrag(panel: inHand.panel, point: inHand.at, drop: drop(at: inHand.at, in: size))
+    }
+
+    /// The gap under a point: the sidebar from its x, the gap from the panels' frames. Nil over
+    /// the page.
+    private func drop(at point: CGPoint, in size: CGSize) -> PanelDrop? {
+        let left = sidebarShown(.left, in: size) ? PanelSidebar.leftWidth + 1 : nil
+        let right = sidebarShown(.right, in: size) ? PanelSidebar.rightWidth + 1 : nil
+        return PanelDrop.side(at: point.x, in: size.width, left: left, right: right).map {
+            PanelDrop.under(point, on: $0, frames: frames, layout: store.panels.layout)
+        }
+    }
+
+    /// The panel in hand, lifted under the pointer: a raised card with the leaf line around it,
+    /// a little tilted, the panel's own header and the top of its body.
+    private func lifted(_ drag: PanelDrag) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        return PanelSidebar.panel(drag.panel, store: store)
+            .environment(\.panelDragging, PanelDragging())
+            .frame(width: 290)
+            .frame(maxHeight: 180, alignment: .top)
+            .clipShape(shape)
+            .background(Theme.raised, in: shape)
+            .overlay(shape.strokeBorder(Theme.leafLine))
+            .shadow(color: Theme.shadowStrong.opacity(0.5), radius: 20, y: 18)
+            .rotationEffect(.degrees(-2), anchor: .topLeading)
+            .opacity(0.97)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    /// A sidebar shows unless a toggle hid it, the window is too narrow on iOS, or it has no
+    /// panel to show here; one with nothing in it still opens while a panel is in hand, to take
+    /// it.
     private func sidebarShown(_ side: PanelSide, in size: CGSize) -> Bool {
-        if side == .right && store.page == nil { return false }
+        if PanelSidebar.panels(on: side, store: store).isEmpty && inHand == nil { return false }
         return store.sidebar.isShown(side, in: size)
     }
 

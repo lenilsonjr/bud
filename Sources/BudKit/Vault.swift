@@ -196,7 +196,7 @@ public protocol Vault: Sendable {
 
     /// Text the vault keeps beside the buds and syncs with them, by key: `sources` holds each
     /// connected source's settings (never a token), `leases` which device keeps an account's
-    /// planted buds live.
+    /// planted buds live, `layout` how the panels around a page are arranged.
     func shared(_ map: SharedMap) async throws -> [String: String]
     /// Nil removes the key.
     func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws
@@ -204,7 +204,7 @@ public protocol Vault: Sendable {
 
 /// The maps a vault keeps beside the buds.
 public enum SharedMap: String, Sendable {
-    case sources, leases, triggers
+    case sources, leases, triggers, layout
 }
 
 extension Vault {

@@ -337,6 +337,29 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertFalse(third.soilFolded)
     }
 
+    func testAPanelLayoutArrangedOnOneDeviceIsReadByAnotherOnTheSameVault() async throws {
+        let (mac, vault) = await loaded()
+        mac.arrange { $0.layout.move(.files, to: .right, at: 0) }
+        mac.arrange { $0.layout.hide(.source) }
+        mac.arrange { $0.toggle(.inside) }
+        await mac.settle()
+        let phone = BudStore(vault: vault)
+        await phone.reloadLayout()
+        XCTAssertEqual(phone.panels.layout, mac.panels.layout)
+        XCTAssertEqual(phone.panels.layout.right, [.files, .properties, .inside, .whereItLives, .linkedFrom])
+        XCTAssertEqual(phone.panels.layout.hidden, [.source])
+        XCTAssertFalse(phone.panels.isCollapsed(.inside), "Folding stays on the device that folded")
+        let stored = try await vault.shared(.layout)
+        XCTAssertEqual(stored.keys.sorted(), [BudStore.layoutKey])
+        XCTAssertEqual(stored[BudStore.layoutKey], "{\"left\":[],\"right\":[\"files\",\"properties\",\"inside\",\"whereItLives\",\"linkedFrom\"]}")
+
+        phone.arrange { PanelMenuItem.reset.apply(to: &$0, for: .files) }
+        await phone.settle()
+        await mac.reloadLayout()
+        XCTAssertEqual(mac.panels.layout, .standard)
+        XCTAssertTrue(mac.panels.isCollapsed(.inside))
+    }
+
     func testShowingTheSoilWritesNothing() async throws {
         let (store, vault) = await loaded()
         let before = try await vault.snapshot()
