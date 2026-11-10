@@ -84,14 +84,16 @@ public final class BudStore: ObservableObject {
     /// The cards' pictures, decoded once each and kept by the bud's id; a bud not here has not
     /// been asked for. Nothing is published for a load that changes nothing.
     @Published public private(set) var pictures: [UUID: BoardPictureState] = [:]
-    /// Which app runs the agent and with which model. Kept on this device only: another Mac
-    /// has its own installs.
-    @Published public var agentChoice = AgentChoice.read(from: .standard) {
-        didSet { agentChoice.write(to: .standard) }
+    /// Which app runs the agent and with which model. Kept in this device's defaults only:
+    /// another Mac has its own installs.
+    @Published public var agentChoice: AgentChoice {
+        didSet { if agentChoice != oldValue { agentChoice.write(to: defaults) } }
     }
-    /// What is installed on this Mac, read from PATH and the home directory when the picker
-    /// opens.
-    public var agentApps = AgentApps()
+    /// What is installed on this Mac, read from the known install places, PATH and the home
+    /// directory when the picker opens.
+    public let agentApps: AgentApps
+    /// Where this device's own choices are kept.
+    private let defaults: UserDefaults
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
@@ -264,10 +266,14 @@ public final class BudStore: ObservableObject {
     private var book = PathBook()
 
     /// A store over a vault. It shows `tree` at once and loads the vault's snapshot over it; the
-    /// vault's `watch` reloads it again whenever the vault changes under it.
-    public init(vault: Vault, tree: Tree = Tree(), devices: DeviceStore? = nil) {
+    /// vault's `watch` reloads it again whenever the vault changes under it. `defaults` is where
+    /// this device's own choices go; `agentApps` is what the agent picker finds installed.
+    public init(vault: Vault, tree: Tree = Tree(), devices: DeviceStore? = nil, defaults: UserDefaults = .standard, agentApps: AgentApps = AgentApps()) {
         self.vault = vault
         self.devices = devices ?? .shared
+        self.defaults = defaults
+        self.agentApps = agentApps
+        self.agentChoice = AgentChoice.read(from: defaults, in: agentApps)
         let tree = Self.normalized(tree)
         self.tree = tree
         self.links = LinkGraph(tree)
