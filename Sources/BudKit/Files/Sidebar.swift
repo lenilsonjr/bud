@@ -2,11 +2,16 @@
 import SwiftUI
 
 /// The left pane of Files: Places, Lenses, and Everything opened into the tree. Only Everything
-/// has rows; the Inbox, the Archive and the Trash are pages of their own.
+/// has rows; the Inbox, the Archive and the Trash are pages of their own. The saved lenses sit
+/// under the three built in, each renamed or deleted from its menu.
 struct Sidebar: View {
     @ObservedObject var store: BudStore
     @State private var expanded: Set<UUID> = []
     @State private var pull = PhonePalette.Pull()
+    /// The saved lens being renamed in place, and the name typed so far.
+    @State private var renaming: UUID? = nil
+    @State private var draft = ""
+    @FocusState private var typing: Bool
     @Environment(\.compact) private var compact
     @Environment(\.goAnywhere) private var goAnywhere
 
@@ -29,7 +34,7 @@ struct Sidebar: View {
                     .frame(height: 0)
                     eyebrow("Places")
                     place("Inbox", glyph: "tray", count: store.tree.inbox().count, selected: store.place == .inbox) { store.openInbox() }
-                    place("Everything", glyph: "leaf.fill", count: nil, selected: store.place == nil && store.lens == nil && store.center == rootID) { store.center = rootID; store.lens = nil; store.place = nil }
+                    place("Everything", glyph: "leaf.fill", count: nil, selected: onPage(rootID)) { store.center = rootID; store.lens = nil; store.place = nil; store.savedLens = nil }
                         .budDrop { store.move($0, under: rootID) }
                     ForEach(store.tree.outline(expanded: expanded), id: \.self) { row in
                         if let bud = store.tree.bud(row.id) {
@@ -37,9 +42,9 @@ struct Sidebar: View {
                                 bud: bud,
                                 tree: store.tree,
                                 depth: row.depth,
-                                selected: store.place == nil && store.lens == nil && store.center == bud.id,
+                                selected: onPage(bud.id),
                                 expanded: expanded.contains(bud.id),
-                                onSelect: { store.center = bud.id; store.place = nil },
+                                onSelect: { store.center = bud.id; store.place = nil; store.savedLens = nil },
                                 onDisclose: { toggle(bud.id) }
                             )
                             .budMenu(bud.id, store: store)
@@ -54,6 +59,7 @@ struct Sidebar: View {
                     place("Today", glyph: "sun.max", count: today.due.count + today.scheduled.count, selected: store.lens == .today) { store.lens = .today }
                     place("To-dos", glyph: "checkmark.square", count: nil, selected: store.lens == .todos) { store.lens = .todos }
                     place("Pinned", glyph: "pin", count: nil, selected: store.lens == .pinned) { store.lens = .pinned }
+                    ForEach(store.savedLenses) { lens in saved(lens) }
                     // Kept apart from the threads: templates, and what stamps them.
                     eyebrow("Library").padding(.top, 14)
                     place("Warehouse", glyph: "square.on.square.dashed", count: store.tree.templates().count, selected: store.place == .warehouse) {
@@ -71,6 +77,54 @@ struct Sidebar: View {
             .onAppear { reveal(store.center, proxy: proxy) }
             .onChange(of: store.center) { _, now in reveal(now, proxy: proxy) }
         }
+    }
+
+    /// Whether Files shows the page of `id`: no place or lens over it.
+    private func onPage(_ id: UUID) -> Bool {
+        store.place == nil && store.lens == nil && store.savedLens == nil && store.center == id
+    }
+
+    /// A saved lens: a row that opens its page, or the field that renames it.
+    @ViewBuilder private func saved(_ lens: SavedLens) -> some View {
+        if renaming == lens.id {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                    .frame(width: 16)
+                    .foregroundStyle(Theme.text2)
+                TextField("Name this lens", text: $draft)
+                    .textFieldStyle(.plain)
+                    .textRole(.body)
+                    .focused($typing)
+                    .onSubmit { finishRenaming(lens.id) }
+                    .onChange(of: typing) { _, now in if !now { finishRenaming(lens.id) } }
+                    #if os(macOS)
+                    .onExitCommand { renaming = nil }
+                    #endif
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
+            .task { typing = true }
+        } else {
+            place(lens.name, glyph: "line.3.horizontal.decrease.circle", count: nil, selected: store.savedLens == lens.id) {
+                store.open(saved: lens.id)
+            }
+            .contextMenu {
+                Button("Rename") {
+                    draft = lens.name
+                    renaming = lens.id
+                }
+                Button("Delete", role: .destructive) { store.deleteLens(lens.id) }
+            }
+        }
+    }
+
+    /// Keeps the typed name, once: return and the field losing focus both land here.
+    private func finishRenaming(_ id: UUID) {
+        guard renaming == id else { return }
+        renaming = nil
+        store.renameLens(id, to: draft)
     }
 
     /// Opens every ancestor of the selection so its row is on screen, opens the selection one

@@ -4,8 +4,8 @@ import Foundation
 /// query with none set matches every bud. The canvas lights the hits, half-lights the path down
 /// to them and fades the rest; Files lists the hits. The three lenses in Files are presets.
 public struct LensQuery: Hashable, Sendable {
-    public enum Kind: Hashable, Sendable { case todo, note }
-    public enum Day: Hashable, Sendable {
+    public enum Kind: String, Hashable, Sendable { case todo, note }
+    public enum Day: String, Hashable, Sendable {
         /// What the Today lens shows: an open to-do due on or before the day, or a bud not done
         /// that is scheduled on or before it.
         case today
@@ -188,6 +188,22 @@ public struct LensQuery: Hashable, Sendable {
         return tree.walk(under: rootID).filter {
             matches($0, holders: holders, growers: growers, around: around, start: start)
         }
+    }
+}
+
+extension LensQuery {
+    /// The hits grouped by the top-level thread they sit under, threads in their order and the
+    /// hits in reading order: how a saved lens's page lists them. A thread that is a hit itself
+    /// heads its own group.
+    public func hitsByThread(
+        _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
+    ) -> [(thread: Bud, hits: [Bud])] {
+        var groups: [UUID: [Bud]] = [:]
+        for bud in hits(tree, links: links, on: now, calendar: calendar) {
+            let thread = tree.parent(of: bud.id) == rootID ? bud.id : tree.ancestors(of: bud.id).first { tree.parent(of: $0) == rootID }
+            if let thread { groups[thread, default: []].append(bud) }
+        }
+        return tree.children(of: rootID).compactMap { thread in groups[thread.id].map { (thread, $0) } }
     }
 }
 

@@ -60,6 +60,7 @@ final class RustVault: BudKit.Vault {
         case .triggers: entries = try core.triggers()
         case .layout: entries = try core.layout()
         case .board: entries = try core.board()
+        case .lenses: entries = try core.lenses()
         }
         return Dictionary(entries.map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
     }
@@ -71,6 +72,7 @@ final class RustVault: BudKit.Vault {
         case .triggers: try core.setTrigger(id: key, trigger: value)
         case .layout: try core.setLayout(key: key, layout: value)
         case .board: try core.setBoard(key: key, columns: value)
+        case .lenses: try core.setLens(id: key, lens: value)
         }
     }
 

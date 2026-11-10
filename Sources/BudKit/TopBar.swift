@@ -216,7 +216,7 @@ struct TopBar: View {
     /// The lens or the Inbox when Files shows one instead of the center's page.
     private var placeName: String? {
         guard store.surface == .files else { return nil }
-        return store.place?.rawValue ?? store.lens?.rawValue
+        return store.place?.rawValue ?? store.lens?.rawValue ?? store.savedLens.flatMap(store.saved)?.name
     }
 
     private var breadcrumb: some View {

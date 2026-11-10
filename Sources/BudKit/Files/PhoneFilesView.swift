@@ -61,6 +61,7 @@ struct PhoneFilesView: View {
     private var whereYouAre: String {
         if let place = store.place { return place.rawValue }
         if let lens = store.lens { return lens.rawValue }
+        if let id = store.savedLens, let lens = store.saved(id) { return lens.name }
         return store.tree.title(of: store.center)
     }
 }
