@@ -102,7 +102,7 @@ public struct BudRootView: View {
         case .board:
             BoardView(store: store)
         case .calendar:
-            QuietPage(surface: store.surface)
+            CalendarView(store: store)
         }
     }
 

@@ -1,8 +1,7 @@
 import Foundation
 
 /// The four ways of looking at the same tree, from the one center: the switch in the bar lists
-/// them in this order. The canvas, Files and the board are built; Calendar shows a quiet page
-/// with its name until it is.
+/// them in this order. All four are built.
 public enum Surface: String, CaseIterable, Sendable {
     case canvas = "Canvas"
     case files = "Files"
@@ -18,9 +17,6 @@ public enum Surface: String, CaseIterable, Sendable {
         case .calendar: return .calendar
         }
     }
-
-    /// The one line under the name on a quiet page: "The board view is coming."
-    public var comingLine: String { "The \(rawValue.lowercased()) view is coming." }
 }
 
 extension Command.ID {

@@ -5,6 +5,8 @@ import SwiftUI
 struct Segmented<Option: Hashable>: View {
     @Binding var selection: Option
     let options: [Option]
+    /// A small symbol before a segment's word, for the few that carry one; nil for none.
+    var icon: (Option) -> String? = { _ in nil }
     let label: (Option) -> String
 
     var body: some View {
@@ -14,16 +16,26 @@ struct Segmented<Option: Hashable>: View {
                 Button {
                     withAnimation(.easeOut(duration: 0.15)) { selection = option }
                 } label: {
-                    Text(label(option))
-                        .textRole(.label)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .foregroundStyle(on ? Theme.text : Theme.text2)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .raisedSegment(on: on)
+                    HStack(spacing: 5) {
+                        if let symbol = icon(option) {
+                            Image(systemName: symbol)
+                                .textRole(.caption)
+                                .foregroundStyle(on ? Theme.leaf : Theme.text3)
+                                .accessibilityHidden(true)
+                        }
+                        Text(label(option))
+                            .textRole(.label)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .foregroundStyle(on ? Theme.text : Theme.text2)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .raisedSegment(on: on)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(label(option))
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(2)

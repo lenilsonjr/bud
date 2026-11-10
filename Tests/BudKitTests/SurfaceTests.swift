@@ -6,11 +6,6 @@ final class SurfaceTests: XCTestCase {
         XCTAssertEqual(Surface.allCases.map(\.rawValue), ["Canvas", "Files", "Board", "Calendar"])
     }
 
-    func testAViewNotBuiltYetSaysSoUnderItsName() {
-        XCTAssertEqual(Surface.board.comingLine, "The board view is coming.")
-        XCTAssertEqual(Surface.calendar.comingLine, "The calendar view is coming.")
-    }
-
     func testEveryViewResolvesToItsOwnCommandRowAndBack() {
         for view in Surface.allCases {
             let command = Command.of(view.command)
