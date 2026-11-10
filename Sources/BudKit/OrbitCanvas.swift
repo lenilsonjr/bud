@@ -121,23 +121,22 @@ public struct OrbitCanvas: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
+        // A card over the window takes every key; the store refuses the canvas's while one is up.
         .onKey(.back) { _ in
-            // A card open over the canvas takes Escape for itself.
-            guard store.modal == nil else { return .ignored }
-            return store.perform(.back) ? .handled : .ignored
+            store.perform(.back) ? .handled : .ignored
         }
         .onKey(.open) { _ in
-            // While the bar's line is typing it takes every key.
-            guard store.modal == nil, !barTyping else { return .ignored }
-            return store.perform(.open) ? .handled : .ignored
+            // While the bar's line is typing it takes every key. Space with nothing lit goes on.
+            guard !barTyping else { return .ignored }
+            return store.perform(.open, on: litCard(in: store.layout, viewport: viewport)) ? .handled : .ignored
         }
         .onKey(.newUnderThis) { _ in
             // A card already open keeps the window: N does not replace it. The bar types it.
-            guard store.modal == nil, !barTyping else { return .ignored }
+            guard !barTyping else { return .ignored }
             return store.perform(.newUnderThis, on: litCard(in: store.layout, viewport: viewport) ?? store.center) ? .handled : .ignored
         }
         .onChange(of: store.lastCommand) { _, now in
-            if let now { follow(now.command) }
+            if let now { follow(now) }
         }
         .onChange(of: opened) { _, _ in overDraft = false }
         .onChange(of: store.modal) { _, _ in overDraft = false }
@@ -665,10 +664,10 @@ public struct OrbitCanvas: View {
 
     /// The commands the canvas finishes once the store has let them through: from its own keys,
     /// the match pill, or the menu bar.
-    private func follow(_ command: Command.ID) {
-        switch command {
+    private func follow(_ performed: BudStore.Performed) {
+        switch performed.command {
         case .open:
-            if let lit = litCard(in: store.layout, viewport: viewport) { open(lit) }
+            if let lit = performed.bud { open(lit) }
         case .back:
             stepBack()
         case .nextMatch:

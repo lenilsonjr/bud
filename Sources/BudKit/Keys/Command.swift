@@ -75,6 +75,10 @@ public struct Command: Hashable, Identifiable, Sendable {
     public let scope: Scope
     /// The key the command answers to until the person records another.
     public let key: Key
+    /// Whether the control that has the keyboard acts on the key itself, never the store: a
+    /// list's rows, the bar's levels, the toast's Undo. Such a row is no menu item, since the
+    /// menu runs commands through the store.
+    public var inPlace = false
 
     /// Every command, in the order the menu lists them. Next row, Previous row, Choose and Close
     /// are the keys of whatever list has the keyboard: Go anywhere, the link picker, the tag and
@@ -82,25 +86,25 @@ public struct Command: Hashable, Identifiable, Sendable {
     public static let all: [Command] = [
         Command(id: .goAnywhere, name: "Go anywhere", scope: .everywhere, key: Key("k", .command)),
         Command(id: .capture, name: "Capture", scope: .everywhere, key: Key(.space, .option)),
-        Command(id: .undo, name: "Undo", scope: .everywhere, key: Key("z", .command)),
+        Command(id: .undo, name: "Undo", scope: .everywhere, key: Key("z", .command), inPlace: true),
         Command(id: .canvas, name: "Canvas", scope: .everywhere, key: Key("1", .command)),
         Command(id: .files, name: "Files", scope: .everywhere, key: Key("2", .command)),
         Command(id: .newUnderThis, name: "New under this", scope: .everywhere, key: Key("n")),
-        Command(id: .rowDown, name: "Next row", scope: .everywhere, key: Key(.downArrow)),
-        Command(id: .rowUp, name: "Previous row", scope: .everywhere, key: Key(.upArrow)),
-        Command(id: .choose, name: "Choose", scope: .everywhere, key: Key(.return)),
-        Command(id: .openInFiles, name: "Open in Files", scope: .everywhere, key: Key(.return, .command)),
-        Command(id: .close, name: "Close", scope: .everywhere, key: Key(.escape)),
+        Command(id: .rowDown, name: "Next row", scope: .everywhere, key: Key(.downArrow), inPlace: true),
+        Command(id: .rowUp, name: "Previous row", scope: .everywhere, key: Key(.upArrow), inPlace: true),
+        Command(id: .choose, name: "Choose", scope: .everywhere, key: Key(.return), inPlace: true),
+        Command(id: .openInFiles, name: "Open in Files", scope: .everywhere, key: Key(.return, .command), inPlace: true),
+        Command(id: .close, name: "Close", scope: .everywhere, key: Key(.escape), inPlace: true),
         Command(id: .open, name: "Open", scope: .canvas, key: Key(.space)),
         Command(id: .back, name: "Back", scope: .canvas, key: Key(.escape)),
         Command(id: .nextMatch, name: "Next match", scope: .canvas, key: Key("g", .command)),
         Command(id: .previousMatch, name: "Previous match", scope: .canvas, key: Key("g", [.command, .shift])),
         Command(id: .soil, name: "Soil", scope: .canvas, key: Key("j", .command)),
-        Command(id: .nest, name: "Add inside the last one", scope: .canvas, key: Key(.tab)),
-        Command(id: .rise, name: "Back up a level", scope: .canvas, key: Key(.tab, .shift)),
+        Command(id: .nest, name: "Add inside the last one", scope: .canvas, key: Key(.tab), inPlace: true),
+        Command(id: .rise, name: "Back up a level", scope: .canvas, key: Key(.tab, .shift), inPlace: true),
         Command(id: .closeOrReopen, name: "Close or reopen", scope: .document, key: Key(.return, .command)),
         Command(id: .read, name: "Read", scope: .document, key: Key(.escape)),
-        Command(id: .linkAsTyped, name: "Link as typed", scope: .document, key: Key(.tab)),
+        Command(id: .linkAsTyped, name: "Link as typed", scope: .document, key: Key(.tab), inPlace: true),
     ]
 
     private static let byID: [ID: Command] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
@@ -113,9 +117,15 @@ public struct Command: Hashable, Identifiable, Sendable {
         all.filter { $0.scope == scope }
     }
 
-    /// The rows the Mac menu bar lists for a scope: all but Undo, which Edit › Undo already
-    /// carries under the same key; the toast still binds through its row.
+    /// The rows the Mac menu bar lists for a scope: the ones the store performs. A menu key
+    /// equivalent is answered before any view sees the key, so a row that acts in place stays
+    /// out, and no two menu rows may share a modified key whatever their scope.
     public static func menu(in scope: Scope) -> [Command] {
-        all(in: scope).filter { $0.id != .undo }
+        all(in: scope).filter { !$0.inPlace }
+    }
+
+    /// The scopes with a menu row, in the table's order.
+    public static var menuScopes: [Scope] {
+        Scope.allCases.filter { !menu(in: $0).isEmpty }
     }
 }
