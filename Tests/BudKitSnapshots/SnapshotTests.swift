@@ -1103,25 +1103,14 @@ final class SnapshotTests: XCTestCase {
     /// first thread folded to its header.
     func testRendersTheTimelines() throws {
         let folder = try pictureFolder()
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.locale = Locale(identifier: "en_GB")
-        calendar.firstWeekday = 2
-        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        let store = try calendarStore()
         defer { store.calendarState = CalendarState() }
         let day: TimeInterval = 86_400
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
-        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
-        store.setWhen(issue.id, store.now.addingTimeInterval(3 * day))
-        store.setDue(issue.id, store.now.addingTimeInterval(20 * day))
-        let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
-        store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
-        store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
         let minutes = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Ten minutes a day" })
         store.setWhen(minutes.id, store.now.addingTimeInterval(7 * day))
         store.setDue(minutes.id, store.now.addingTimeInterval(45 * day))
         store.calendarState = CalendarState(range: .month, layout: .timeline)
-        store.surface = .calendar
         let month = try XCTUnwrap(store.timeline)
         XCTAssertEqual(month.threads.map(\.title), ["Launch the newsletter", "Q4 roadmap", "Learn a language", "Health reset"])
         XCTAssertTrue(month.threads[2].rows.contains { $0.endsAfter }, "The language bar runs past the month")
