@@ -106,10 +106,16 @@ public final class BudStore: ObservableObject {
     /// How long the entry cue lasts.
     public static let entryCue: TimeInterval = 1.2
 
+    /// Where the store and its views read the time: the real clock in the app, a fixed moment
+    /// in a still picture, so Today, the day labels and the counts come out the same every run.
+    public var clock: () -> Date = { Date() }
+    /// The moment the clock shows now.
+    public var now: Date { clock() }
+
     /// Whether a bud still carries its entry cue.
-    public func isFresh(_ id: UUID, now: Date = Date()) -> Bool {
+    public func isFresh(_ id: UUID, now: Date? = nil) -> Bool {
         guard let lastPlanted, lastPlanted.id == id else { return false }
-        return now.timeIntervalSince(lastPlanted.at) < Self.entryCue
+        return (now ?? clock()).timeIntervalSince(lastPlanted.at) < Self.entryCue
     }
     /// The accounts this device reads below the soil. Nothing in them reaches the vault until an
     /// item is planted.
@@ -172,8 +178,9 @@ public final class BudStore: ObservableObject {
 
     /// Brings every planted bud in line with what its source shows now: the fields the source owns
     /// change only when they changed there, and `from-state` says moved, cancelled or gone.
-    public func keepLive(_ soil: SourceStore, now: Date = Date()) async {
+    public func keepLive(_ soil: SourceStore, now: Date? = nil) async {
         guard !keepingLive else { return }
+        let now = now ?? clock()
         keepingLive = true
         defer { keepingLive = false }
         let kinds = await soil.holdLeases()
@@ -226,8 +233,8 @@ public final class BudStore: ObservableObject {
     }
 
     /// One root per account, in the order the accounts were connected.
-    public func roots(now: Date = Date()) -> [Root] {
-        sources.map { Root($0, now: now) }
+    public func roots(now: Date? = nil) -> [Root] {
+        sources.map { Root($0, now: now ?? clock()) }
     }
 
     /// The undo toast; every undoable change goes through it.
@@ -281,14 +288,16 @@ public final class BudStore: ObservableObject {
     }
 
     /// The store the apps use for now: a memory vault that reads and writes the JSON file, and
-    /// starts from the seed world when there is none.
-    public convenience init(fileURL: URL? = BudStore.defaultFile, devices: DeviceStore? = nil) {
+    /// starts from the seed world when there is none. A clock other than the real one fixes the
+    /// seed's days too, so a picture shows the same today on every run.
+    public convenience init(fileURL: URL? = BudStore.defaultFile, devices: DeviceStore? = nil, clock: @escaping () -> Date = { Date() }) {
         var loaded: Tree? = nil
         if let url = fileURL, let data = try? Data(contentsOf: url) {
             loaded = try? JSONDecoder().decode(Tree.self, from: data)
         }
-        let tree = loaded ?? Tree.seed()
+        let tree = loaded ?? Tree.seed(now: clock())
         self.init(vault: MemoryVault(tree: tree, fileURL: fileURL), tree: tree, devices: devices)
+        self.clock = clock
     }
 
     /// The tree as a vault would hand it back, so a first picture and a reload agree.
@@ -399,7 +408,7 @@ public final class BudStore: ObservableObject {
     /// Erases every bud on this device, the Trash included, and starts over: empty, or with the
     /// sample world. Not undoable: the dialog asks first. Other devices keep what they hold.
     public func freshStart(sample: Bool) {
-        let fresh = Self.normalized(sample ? Tree.seed() : Tree())
+        let fresh = Self.normalized(sample ? Tree.seed(now: clock()) : Tree())
         modal = nil
         lens = nil
         place = nil
@@ -427,7 +436,7 @@ public final class BudStore: ObservableObject {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return nil }
         var planted: Bud?
-        commit { planted = $0.add(line, todo: todo, under: parent) }
+        commit { planted = $0.add(line, todo: todo, under: parent, created: clock()) }
         guard let planted else { return nil }
         let id = planted.id
         write { [self] vault in
@@ -436,7 +445,7 @@ public final class BudStore: ObservableObject {
             )
             book.learn(id, at: path)
         }
-        lastPlanted = Planted(id: id, at: Date())
+        lastPlanted = Planted(id: id, at: clock())
         toasts.show(Undoable(message: "Planted under \(tree.title(of: parent))") { [weak self] in
             Task { @MainActor in self?.remove(id) }
         })
@@ -460,7 +469,7 @@ public final class BudStore: ObservableObject {
         let key = account.kind.key(item.id)
         if let bud = tree.planted(from: key) {
             if bud.parent == inboxID { inboxOpen = true } else { center = bud.parent }
-            lastPlanted = Planted(id: bud.id, at: Date())
+            lastPlanted = Planted(id: bud.id, at: clock())
             toasts.show(Undoable(message: "Already planted in \(tree.title(of: bud.parent))", systemImage: "leaf"))
             return bud
         }
@@ -487,8 +496,8 @@ public final class BudStore: ObservableObject {
             if account.kind == .linear, let date = item.date { setDue(id, date) }
             if let detail = item.detail { setBody(id, detail) }
         }
-        lastSeen[key] = SourceSnapshot(item, kind: account.kind, at: Date())
-        lastPlanted = Planted(id: id, at: Date())
+        lastSeen[key] = SourceSnapshot(item, kind: account.kind, at: clock())
+        lastPlanted = Planted(id: id, at: clock())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
             Task { @MainActor in self?.remove(id) }
         })
@@ -522,7 +531,7 @@ public final class BudStore: ObservableObject {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return nil }
         var captured: Bud?
-        commit { captured = $0.capture(line, source: source) }
+        commit { captured = $0.capture(line, source: source, created: clock()) }
         guard let captured else { return nil }
         let id = captured.id
         write { [self] vault in
@@ -531,7 +540,7 @@ public final class BudStore: ObservableObject {
             )
             book.learn(id, at: path)
         }
-        lastPlanted = Planted(id: id, at: Date())
+        lastPlanted = Planted(id: id, at: clock())
         toasts.show(Undoable(message: "Captured to the Inbox") { [weak self] in
             Task { @MainActor in self?.remove(id) }
         })
@@ -817,7 +826,7 @@ public final class BudStore: ObservableObject {
     }
 
     private func sendToTrash(_ id: UUID) {
-        commit { $0.trash(id) }
+        commit { $0.trash(id, at: clock()) }
         write { [self] _ in try await relocate(id) { try await $0.trash($1) } }
     }
 
@@ -907,8 +916,9 @@ public final class BudStore: ObservableObject {
     /// copy carries `from: tpl/<template>/<when>`, which also keeps one occurrence from being
     /// stamped twice: a key planted before goes to the copy already there. A to-do starts open.
     @discardableResult
-    public func stamp(_ template: UUID, into parent: UUID, key: String? = nil, at now: Date = Date()) -> Bud? {
+    public func stamp(_ template: UUID, into parent: UUID, key: String? = nil, at when: Date? = nil) -> Bud? {
         guard let top = tree.bud(template), tree.ancestors(of: template).contains(warehouseID) else { return nil }
+        let now = when ?? clock()
         let from = key ?? Tree.stampKey(top.text, at: now)
         if let copy = tree.planted(from: from) { return copy }
         let inside = tree.walk(under: template)
@@ -1060,7 +1070,7 @@ public final class BudStore: ObservableObject {
     }
 
     private func relight() {
-        canvasLight = canvasLens?.light(tree, links: links) ?? [:]
+        canvasLight = canvasLens?.light(tree, links: links, on: clock()) ?? [:]
     }
 }
 
@@ -1178,7 +1188,8 @@ extension BudStore {
 
     /// Fires every trigger due on this device now: stamps its template into its place for the
     /// occurrence, or logs why it could not, and keeps the trigger on this device.
-    public func fireTriggers(now: Date = Date(), device: String = BudStore.deviceID, calendar: Calendar = .current) {
+    public func fireTriggers(now: Date? = nil, device: String = BudStore.deviceID, calendar: Calendar = .current) {
+        let now = now ?? clock()
         for trigger in triggers {
             guard let occurrence = trigger.due(at: now, device: device, calendar: calendar) else { continue }
             var skipped: String?

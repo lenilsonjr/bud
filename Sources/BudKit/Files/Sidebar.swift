@@ -50,7 +50,7 @@ struct Sidebar: View {
                     place("Archive", glyph: "archivebox", count: store.tree.archived().count, selected: store.place == .archive) { store.openArchive() }
                     place("Trash", glyph: "trash", count: store.tree.trashed.count, selected: store.place == .trash) { store.openTrash() }
                     eyebrow("Lenses").padding(.top, 14)
-                    let today = store.tree.today()
+                    let today = store.tree.today(on: store.now)
                     place("Today", glyph: "sun.max", count: today.due.count + today.scheduled.count, selected: store.lens == .today) { store.lens = .today }
                     place("To-dos", glyph: "checkmark.square", count: nil, selected: store.lens == .todos) { store.lens = .todos }
                     place("Pinned", glyph: "pin", count: nil, selected: store.lens == .pinned) { store.lens = .pinned }

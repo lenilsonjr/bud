@@ -11,7 +11,7 @@ struct InboxPage: View {
 
     var body: some View {
         let count = store.tree.inbox().count
-        let groups = store.tree.inboxGroups(filter)
+        let groups = store.tree.inboxGroups(filter, now: store.now)
         MaybeScroll {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 4) {

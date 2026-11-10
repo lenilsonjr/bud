@@ -27,7 +27,7 @@ struct TVFilesTab: View {
     private static let empty = TextStyle(typeface: .text, size: 26, weight: 400)
 
     private var place: UUID { inside.last ?? rootID }
-    private var rows: [TVFilesRow] { TVFilesText.rows(page, in: store.tree, inside: place) }
+    private var rows: [TVFilesRow] { TVFilesText.rows(page, in: store.tree, inside: place, on: store.now) }
     private var rowIDs: [UUID] { rows.map(\.id) }
 
     var body: some View {
@@ -78,7 +78,7 @@ struct TVFilesTab: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(TVFilesPage.allCases, id: \.self) { item in
                 TVPageRow(
-                    page: item, count: TVFilesText.count(item, in: store.tree),
+                    page: item, count: TVFilesText.count(item, in: store.tree, on: store.now),
                     chosen: page == item, lit: focused == .page(item)
                 ) { page = item }
                 .focused($focused, equals: .page(item))

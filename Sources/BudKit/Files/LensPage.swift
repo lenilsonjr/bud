@@ -20,7 +20,7 @@ struct LensPage: View {
                 }
                 switch lens {
                 case .today:
-                    let today = store.tree.today()
+                    let today = store.tree.today(on: store.now)
                     group("Due", today.due, tag: { bud in bud.due.map { ("Due", $0) } })
                     group("Scheduled for today", today.scheduled, tag: { bud in bud.when.map { ("When", $0) } })
                     if today.due.isEmpty && today.scheduled.isEmpty { nothing("Nothing due or scheduled. A clear day.") }

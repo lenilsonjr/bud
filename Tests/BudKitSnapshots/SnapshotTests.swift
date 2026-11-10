@@ -10,6 +10,13 @@ import SwiftUI
 @MainActor
 final class SnapshotTests: XCTestCase {
     private let size = CGSize(width: 1400, height: 900)
+    /// The one moment every picture is taken at, so two runs draw the same days and counts.
+    private let clock: @Sendable () -> Date = { Tree.stillNow }
+
+    /// The seed world on the fixed clock.
+    private func stillStore(devices: DeviceStore? = nil) -> BudStore {
+        BudStore(fileURL: nil, devices: devices, clock: clock)
+    }
 
     func testRendersTheCanvasInBothAppearances() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
@@ -18,7 +25,7 @@ final class SnapshotTests: XCTestCase {
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         let deep = try XCTUnwrap(store.tree.children(of: newsletter.id).first)
         // One done to-do, so the pictures show the struck title and the filled check.
@@ -41,7 +48,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         let ring = store.tree.children(of: newsletter.id)
         XCTAssertGreaterThanOrEqual(ring.count, 3)
@@ -68,7 +75,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         // Two ticked rows: open to-dos that carry #home. The chips follow the breadcrumb.
         for bud in store.tree.walk(under: rootID).filter({ $0.state == .open }).prefix(3) { store.addTag(bud.id, "home") }
         store.canvasFacets = [.openTodos, .tag("home")]
@@ -104,7 +111,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.openAsFile(newsletter.id)
         for scheme in [ColorScheme.light, .dark] {
@@ -122,7 +129,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.setBody(newsletter.id, store.tree.lede(of: newsletter.id) + "\n\nThe first issue goes out before the spring fair.\n\nKeep each issue short enough to read over coffee.")
         store.openAsFile(newsletter.id)
@@ -140,7 +147,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
         let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
         for step in ["Clear the inbox", "Look at next week", "Pick three things"] {
@@ -162,12 +169,12 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
         let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
         store.add("Clear the inbox", todo: true, under: template.id)
         store.keepAsTemplate(template.id)
-        let made = Date(timeIntervalSince1970: 1_793_700_000)
+        let made = store.now.addingTimeInterval(-8 * 86_400)
         var trigger = Trigger(
             name: "Monday review", template: "Weekly review", into: nil, intoName: "Everything",
             rule: .init(every: .week, hour: 9, weekday: 2), created: made)
@@ -188,7 +195,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let short = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
         store.setBody(short.id, "# First issue\n\n- one story, **one tip**, one date\n- a link to [the club](https://example.org)")
         store.openAsFile(short.id)
@@ -209,7 +216,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
         store.setBody(name.id, "## What matters\n\nShort, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers\n- Check the domain is free")
@@ -277,8 +284,8 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
-        let now = Date()
+        let store = stillStore()
+        let now = store.now
         let mail = SourceAccount(id: "mail", kind: .mail)
         let calendar = SourceAccount(id: "calendar", kind: .calendar)
         let linear = SourceAccount(id: "linear", kind: .linear)
@@ -287,8 +294,8 @@ final class SnapshotTests: XCTestCase {
         let moved = store.plant(SourceItem(id: "E-1", title: "Flight to Lisbon"), from: calendar, at: .under(thread.id))
         let cancelled = store.plant(SourceItem(id: "E-2", title: "Flat viewing"), from: calendar, at: .under(thread.id))
         let gone = store.plant(SourceItem(id: "M-9", title: "Deposit receipt"), from: mail, at: .under(thread.id))
-        store.setDue(live.id, Date(timeIntervalSince1970: 1_793_750_400))
-        store.setWhen(moved.id, Date(timeIntervalSince1970: 1_794_000_000))
+        store.setDue(live.id, now.addingTimeInterval(86_400))
+        store.setWhen(moved.id, now.addingTimeInterval(3 * 86_400))
         store.marks = [
             "linear:PRJ-77": SourceMark(synced: now.addingTimeInterval(-300), device: "Mac", url: URL(string: "https://example.org/PRJ-77")),
             "calendar:E-1": SourceMark(status: .changed("moved"), at: now.addingTimeInterval(-3600)),
@@ -318,7 +325,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let target = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
         store.setBody(target.id, target.body + "\n\n- Settle it in [[Pick a name]] first\n- Go through the [[Lease checklist]] before signing\n- Nothing is called [[The spring fair]] yet")
         store.openAsFile(target.id)
@@ -336,7 +343,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         store.open(.today)
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
@@ -352,7 +359,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             let palette = CommandPalette(store: store, onClose: {}).padding(32)
             let data = try render(palette, scheme: scheme)
@@ -368,7 +375,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         store.add("Write the welcome note", todo: true, under: rootID)
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
@@ -384,8 +391,8 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
-        store.sources = SourceAccount.samples()
+        let store = stillStore()
+        store.sources = SourceAccount.samples(now: store.now)
         for (name, folded) in [("open", false), ("folded", true)] {
             store.soilFolded = folded
             for scheme in [ColorScheme.light, .dark] {
@@ -396,7 +403,7 @@ final class SnapshotTests: XCTestCase {
             }
         }
         // Nine items: three show, then "6 more below".
-        let nine = (1...9).map { SourceItem(id: "M-\($0)", title: "Message \($0)", detail: "Sender \($0)", date: Date().addingTimeInterval(Double(-$0 * 60))) }
+        let nine = (1...9).map { SourceItem(id: "M-\($0)", title: "Message \($0)", detail: "Sender \($0)", date: store.now.addingTimeInterval(Double(-$0 * 60))) }
         store.sources = [SourceAccount(id: "nine", kind: .mail, name: "Mail", items: nine)]
         store.soilFolded = false
         let data = try render(store: store, scheme: .light)
@@ -410,8 +417,8 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
-        store.sources = SourceAccount.samples()
+        let store = stillStore()
+        store.sources = SourceAccount.samples(now: store.now)
         for scheme in [ColorScheme.light, .dark] {
             let view = PhoneSoilSheet(store: store).frame(width: 390, height: 420)
             let data = try render(view, scheme: scheme)
@@ -427,7 +434,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .add(parent: newsletter.id)
@@ -444,7 +451,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .closeBranch(id: newsletter.id)
@@ -479,7 +486,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .settings
             let data = try render(store: store, scheme: scheme)
@@ -497,11 +504,11 @@ final class SnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let missed = MemoryPeers.fixtures()[3].id
         for (name, missing) in [("settings-devices", Set<String>()), ("settings-missed", [missed])] {
-            let peers = MemoryPeers(missing: missing)
-            let devices = DeviceStore(peers: peers)
+            let peers = MemoryPeers(missing: missing, now: clock)
+            let devices = DeviceStore(peers: peers, now: clock)
             await devices.start()
             if !missing.isEmpty { await devices.remove(MemoryPeers.fixtures()[4].id, rotate: true) }
-            let store = BudStore(fileURL: nil, devices: devices)
+            let store = stillStore(devices: devices)
             for scheme in [ColorScheme.light, .dark] {
                 store.modal = .settings
                 let data = try render(store: store, scheme: scheme)
@@ -520,17 +527,17 @@ final class SnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let alone = [Device(id: "a91cp4x8d2n6w0j3h5v9b1m7r2ks7t0e", isThisDevice: true, reach: .local)]
         let states: [(String, MemoryPeers, Int, Bool)] = [
-            ("sync-connected", MemoryPeers(), 0, false),
-            ("sync-pending", MemoryPeers(), 3, false),
-            ("sync-apart", MemoryPeers(devices: alone), 3, false),
-            ("sync-syncing", MemoryPeers(), 0, true),
+            ("sync-connected", MemoryPeers(now: clock), 0, false),
+            ("sync-pending", MemoryPeers(now: clock), 3, false),
+            ("sync-apart", MemoryPeers(devices: alone, now: clock), 3, false),
+            ("sync-syncing", MemoryPeers(now: clock), 0, true),
         ]
         for (name, peers, pending, syncing) in states {
             await peers.setPendingChanges(pending)
             await peers.setSyncing(syncing)
-            let devices = DeviceStore(peers: peers)
+            let devices = DeviceStore(peers: peers, now: clock)
             await devices.refresh()
-            let store = BudStore(fileURL: nil, devices: devices)
+            let store = stillStore(devices: devices)
             for scheme in [ColorScheme.light, .dark] {
                 let bar = TopBar(store: store, onAdd: {}, onSearch: {}).frame(width: size.width)
                 let data = try render(bar, scheme: scheme)
@@ -577,7 +584,7 @@ final class SnapshotTests: XCTestCase {
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let fixtures = MemoryPeers.fixtures()
-        let devices = DeviceStore(peers: MemoryPeers())
+        let devices = DeviceStore(peers: MemoryPeers(now: clock), now: clock)
         await devices.refresh()
         let remove = RemoveDeviceDialog(devices: devices, id: fixtures[4].id, close: {}, present: { _ in })
         let midway = RotationProgress(total: 2, done: 1, reports: [fixtures[1].id: true])
@@ -609,7 +616,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let peers = MemoryPeers()
+        let peers = MemoryPeers(now: clock)
         let ticket = try await peers.ticket(withAddresses: false)
         let full = PeerText.grouped(ticket.text)
         let partial = String(full.prefix(44))
@@ -724,7 +731,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let all = store.tree.walk(under: rootID)
         let target = try XCTUnwrap(all.first { $0.text == "Short names read better in the inbox" })
         store.addTag(target.id, "home")
@@ -757,7 +764,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .capture
             let data = try render(store: store, scheme: scheme)
@@ -773,7 +780,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         store.openInbox()
         for scheme in [ColorScheme.light, .dark] {
             let data = try render(store: store, scheme: scheme)
@@ -789,7 +796,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
         store.trash(roadmap.id)
         store.toasts.dismiss()
@@ -808,7 +815,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
         store.close(roadmap.id, cascade: true)
         store.toasts.dismiss()
@@ -827,7 +834,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
             let card = DetailCard(id: newsletter.id, store: store, onEnrich: {}, onClose: {}).padding(24)
@@ -847,7 +854,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.openAsFile(newsletter.id)
         try phonePictures("phone-files", store: store, in: folder)
@@ -903,10 +910,12 @@ final class SnapshotTests: XCTestCase {
         try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
     }
 
+    /// One frame, with no animation in flight, so a picture never lands mid-transition.
     private func render(_ content: some View, scheme: ColorScheme) throws -> Data {
         let view = content
             .environment(\.colorScheme, scheme)
             .environment(\.stillPicture, true)
+            .transaction { $0.animation = nil }
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         let appearance = try XCTUnwrap(NSAppearance(named: scheme == .dark ? .darkAqua : .aqua))

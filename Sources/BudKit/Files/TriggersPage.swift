@@ -70,7 +70,7 @@ struct TriggerCard: View {
                 Spacer()
                 NeutralTag(trigger.enabled ? "Enabled" : "Paused")
             }
-            Text(TriggerText.rule(trigger, now: Date()))
+            Text(TriggerText.rule(trigger, now: store.now))
                 .textRole(.body)
                 .foregroundStyle(Theme.text2)
             if !trigger.log.isEmpty {
