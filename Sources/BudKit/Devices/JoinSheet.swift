@@ -178,6 +178,7 @@ struct JoinSheet: View {
 /// take the phone layout: Cancel and the title in a bar, full-width buttons; the rest take the
 /// Mac card with its actions in a row.
 struct JoinSheetBody: View {
+    @Environment(\.keys) private var keys
     let phase: JoinPhase
     @Binding var text: String
     var scanning = false
@@ -239,7 +240,7 @@ struct JoinSheetBody: View {
                             .buttonStyle(.plain)
                             .font(Theme.font(TextStyle(typeface: .text, size: 17, weight: 400)))
                             .foregroundStyle(Theme.leaf)
-                            .keyboardShortcut(Keys.shortcut(.close))
+                            .keyboardShortcut(keys.shortcut(.close))
                         Spacer()
                     }
                 }
@@ -368,11 +369,11 @@ struct JoinSheetBody: View {
                     .buttonStyle(.budGhost)
                 Spacer()
                 #if os(macOS)
-                Keycap(Keys.key(for: .close))
+                Keycap(keys.key(for: .close))
                 #endif
                 Button(action: onClose) { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(Keys.shortcut(.close))
+                    .keyboardShortcut(keys.shortcut(.close))
                 Button(action: onJoin) { BudButtonLabel(title: "Join", systemImage: "arrow.right.to.line") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)
@@ -421,11 +422,11 @@ struct JoinSheetBody: View {
                     .buttonStyle(.budGhost)
                 Spacer()
                 #if os(macOS)
-                Keycap(Keys.key(for: .close))
+                Keycap(keys.key(for: .close))
                 #endif
                 Button(action: onClose) { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(Keys.shortcut(.close))
+                    .keyboardShortcut(keys.shortcut(.close))
                 Button(action: onEdit) { BudButtonLabel(title: "Edit the text") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)
@@ -472,12 +473,12 @@ struct JoinSheetBody: View {
             } else {
                 HStack(spacing: 8) {
                     #if os(macOS)
-                    Keycap(Keys.key(for: .close))
+                    Keycap(keys.key(for: .close))
                     #endif
                     Spacer()
                     Button(action: onClose) { BudButtonLabel(title: "Done") }
                         .buttonStyle(.budPrimary)
-                        .keyboardShortcut(Keys.shortcut(.close))
+                        .keyboardShortcut(keys.shortcut(.close))
                 }
             }
         }

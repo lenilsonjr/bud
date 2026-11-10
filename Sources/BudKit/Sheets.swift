@@ -12,6 +12,7 @@ enum AddMode: Hashable {
 /// card or the N key for the lit card, on Everything too. In capture mode, opened by the capture
 /// button at the top right, it has no kind: a capture is a note until it is enriched.
 struct AddSheet: View {
+    @Environment(\.keys) private var keys
     @ObservedObject var store: BudStore
     let mode: AddMode
     @State private var text = ""
@@ -60,11 +61,11 @@ struct AddSheet: View {
                 }
             }
             HStack(spacing: 8) {
-                Keycap(Keys.key(for: .close))
+                Keycap(keys.key(for: .close))
                 Spacer()
                 Button { close() } label: { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
-                    .keyboardShortcut(Keys.shortcut(.close))
+                    .keyboardShortcut(keys.shortcut(.close))
                 Button(action: plant) { BudButtonLabel(title: capturing ? "Capture" : "Add") }
                     .buttonStyle(.budPrimary)
                     .keyboardShortcut(.defaultAction)

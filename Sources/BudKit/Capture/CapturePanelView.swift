@@ -4,6 +4,7 @@ import SwiftUI
 /// The face of the ⌥Space panel: one line, the kind, where it came from, Return to capture and
 /// Esc to close. The AppKit panel around it lives in the app.
 public struct CapturePanelView: View {
+    @Environment(\.keys) private var keys
     let from: String?
     let onCapture: (CaptureRelay.Line) -> Void
     let onClose: () -> Void
@@ -30,7 +31,7 @@ public struct CapturePanelView: View {
                     .foregroundStyle(Theme.text)
                     .focused($typing)
                     .onSubmit(capture)
-                Keycap(Keys.key(for: .close))
+                Keycap(keys.key(for: .close))
             }
             .padding(.horizontal, 12)
             .frame(height: 44)

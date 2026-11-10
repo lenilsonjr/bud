@@ -26,6 +26,7 @@ struct InlineAddDraft: View {
 /// The inline bar: a kind switch and one line. Return plants and keeps the bar for the next line,
 /// Tab goes down into the bud just planted, Shift-Tab comes back up, Escape closes.
 struct InlineAddBar: View {
+    @Environment(\.keys) private var keys
     static let width: CGFloat = 320
     private static let backtab = KeyEquivalent("\u{19}")
 
@@ -64,8 +65,8 @@ struct InlineAddBar: View {
                     DispatchQueue.main.async { typing.wrappedValue = true }
                 }
                 // Shift-Tab arrives as a backtab on some keyboards, so the bar listens for both.
-                .onKeyPress(keys: [Keys.equivalent(.nest), Self.backtab]) { press in
-                    if press.modifiers.isSuperset(of: Keys.modifiers(.rise)) || press.key == Self.backtab { onRise() } else { onNest() }
+                .onKeyPress(keys: [keys.equivalent(.nest), Self.backtab]) { press in
+                    if press.modifiers.isSuperset(of: keys.modifiers(.rise)) || press.key == Self.backtab { onRise() } else { onNest() }
                     return .handled
                 }
                 .onKey(.close) { _ in

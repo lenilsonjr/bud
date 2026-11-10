@@ -61,6 +61,8 @@ public struct BudRootView: View {
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
         .environment(\.compact, compact)
+        // Every keycap and key binding in the window reads the store's layout.
+        .environment(\.keys, store.keys)
         .environment(\.goAnywhere, { store.perform(.goAnywhere) })
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }

@@ -84,11 +84,31 @@ extension Key.Modifiers {
     #endif
 }
 
+extension KeyLayout {
+    /// A command's key for a button: `.keyboardShortcut(keys.shortcut(.goAnywhere))`.
+    public func shortcut(_ id: Command.ID) -> KeyboardShortcut { key(for: id).shortcut }
+    public func equivalent(_ id: Command.ID) -> KeyEquivalent { key(for: id).equivalent }
+    public func modifiers(_ id: Command.ID) -> EventModifiers { key(for: id).eventModifiers }
+}
+
+/// The layout the window's views read their keys from, set once by the root view from its
+/// store: the app's layout, or a picture's own. A view in no window reads the app's.
+struct KeysKey: EnvironmentKey {
+    static let defaultValue = Keys.layout
+}
+
+extension EnvironmentValues {
+    var keys: KeyLayout {
+        get { self[KeysKey.self] }
+        set { self[KeysKey.self] = newValue }
+    }
+}
+
 extension Keys {
-    /// A command's key for a button: `.keyboardShortcut(Keys.shortcut(.goAnywhere))`.
-    public static func shortcut(_ id: Command.ID) -> KeyboardShortcut { key(for: id).shortcut }
-    public static func equivalent(_ id: Command.ID) -> KeyEquivalent { key(for: id).equivalent }
-    public static func modifiers(_ id: Command.ID) -> EventModifiers { key(for: id).eventModifiers }
+    /// The app's key for a button where no window's layout is at hand.
+    public static func shortcut(_ id: Command.ID) -> KeyboardShortcut { layout.shortcut(id) }
+    public static func equivalent(_ id: Command.ID) -> KeyEquivalent { layout.equivalent(id) }
+    public static func modifiers(_ id: Command.ID) -> EventModifiers { layout.modifiers(id) }
 
     /// Whether a text field has the keyboard, so a bare key is a letter typed and not a command.
     @MainActor public static var typing: Bool {
@@ -118,9 +138,22 @@ extension UIResponder {
 extension View {
     /// Runs `action` on a command's key while this view or one inside it has focus; the key's
     /// modifiers must all be down. The result says whether the key goes on to the next view.
+    /// The key is the window's layout's, read from the environment.
     public func onKey(_ id: Command.ID, phases: KeyPress.Phases = [.down, .repeat], action: @escaping (KeyPress) -> KeyPress.Result) -> some View {
-        let key = Keys.key(for: id)
-        return onKeyPress(keys: [key.equivalent], phases: phases) { press in
+        modifier(OnKey(id: id, phases: phases, action: action))
+    }
+}
+
+/// `onKey` as a modifier, so the key it listens for comes from the layout in the environment.
+private struct OnKey: ViewModifier {
+    let id: Command.ID
+    let phases: KeyPress.Phases
+    let action: (KeyPress) -> KeyPress.Result
+    @Environment(\.keys) private var keys
+
+    func body(content: Content) -> some View {
+        let key = keys.key(for: id)
+        return content.onKeyPress(keys: [key.equivalent], phases: phases) { press in
             guard press.modifiers.isSuperset(of: key.eventModifiers) else { return .ignored }
             return action(press)
         }

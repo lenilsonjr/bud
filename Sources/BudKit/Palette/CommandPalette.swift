@@ -4,6 +4,7 @@ import SwiftUI
 /// Go anywhere: a query, the buds that match with their trail, the places and lenses, and the
 /// keys in the footer. Return centers the pick on the canvas, ⌘Return opens it in Files.
 struct CommandPalette: View {
+    @Environment(\.keys) private var keys
     @ObservedObject var store: BudStore
     /// In a phone sheet: the sheet draws the card, and the list takes what height it has.
     var inSheet = false
@@ -54,7 +55,7 @@ struct CommandPalette: View {
                     Button("Cancel", action: onClose)
                         .buttonStyle(.budGhost)
                 } else {
-                    Keycap(Keys.key(for: .close).label)
+                    Keycap(keys.key(for: .close).label)
                 }
             }
             .padding(.horizontal, 16)
@@ -121,14 +122,14 @@ struct CommandPalette: View {
         .onKey(.rowUp) { _ in move(-1, in: rows.count); return .handled }
         .onKey(.close) { _ in onClose(); return .handled }
         .onKey(.choose, phases: .down) { press in
-            go(rows, inFiles: press.modifiers.isSuperset(of: Keys.modifiers(.openInFiles)))
+            go(rows, inFiles: press.modifiers.isSuperset(of: keys.modifiers(.openInFiles)))
             return .handled
         }
     }
 
     /// The keys in the footer, read off the table.
     static var footer: String {
-        let key = { (id: Command.ID) in Keys.key(for: id).label }
+        let key = { (id: Command.ID) in keys.key(for: id).label }
         return "\(key(.choose)) center on canvas · \(key(.openInFiles)) open in Files · \(key(.rowUp))\(key(.rowDown)) move · \(key(.close)) back"
     }
 
