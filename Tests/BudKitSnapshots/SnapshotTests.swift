@@ -943,7 +943,8 @@ final class SnapshotTests: XCTestCase {
         let cancelled = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
         tree.buds[cancelled].fromState = "cancelled"
         let vault = MemoryVault(tree: tree)
-        await vault.keepPicture("living-room.png", try picture())
+        let png = try picture()
+        await vault.keepPicture("living-room.png", png)
         let store = BudStore(vault: vault, tree: tree)
         await store.settle()
         store.center = newsletter.id
