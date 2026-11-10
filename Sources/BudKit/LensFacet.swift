@@ -79,6 +79,22 @@ public enum LensFacet: Hashable, Sendable {
         return known[key] ?? key.prefix(1).uppercased() + key.dropFirst()
     }
 
+    /// Ticked rows after the saved lenses changed: a saved lens that is gone drops out, and one
+    /// renamed, or changed by a tag rename, asks as it is now. Nil when nothing changes.
+    public static func synced(_ facets: [LensFacet], with lenses: [SavedLens]) -> [LensFacet]? {
+        var changed = false
+        let out = facets.compactMap { facet -> LensFacet? in
+            guard case .saved(let lens) = facet else { return facet }
+            guard let now = lenses.first(where: { $0.id == lens.id }) else {
+                changed = true
+                return nil
+            }
+            if now != lens { changed = true }
+            return .saved(now)
+        }
+        return changed ? out : nil
+    }
+
     /// The question ticked rows ask together; nil when none is ticked.
     public static func query(of facets: some Sequence<LensFacet>) -> LensQuery? {
         facets.reduce(nil as LensQuery?) { sum, facet in sum.map { $0.and(facet.query) } ?? facet.query }

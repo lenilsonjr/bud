@@ -194,25 +194,39 @@ public struct LensQuery: Hashable, Sendable {
 extension LensQuery {
     /// The hits grouped by the top-level thread they sit under, threads in their order and the
     /// hits in reading order: how a saved lens's page lists them. A thread that is a hit itself
-    /// heads its own group. One walk of the tree: in reading order each thread comes before
-    /// everything below it.
+    /// heads its own group. Hits come in reading order, so each thread's group starts where its
+    /// first hit is; each hit climbs to its thread once, through parents read in one pass.
     public func hitsByThread(
         _ tree: Tree, links: LinkGraph? = nil, on now: Date = Date(), calendar: Calendar = .current
     ) -> [(thread: Bud, hits: [Bud])] {
-        let hit = Set(hits(tree, links: links, on: now, calendar: calendar).map(\.id))
-        guard !hit.isEmpty else { return [] }
-        var out: [(thread: Bud, hits: [Bud])] = []
-        var thread: Bud?
-        var found: [Bud] = []
-        for bud in tree.walk(under: rootID) {
-            if bud.parent == rootID {
-                if let thread, !found.isEmpty { out.append((thread, found)) }
-                thread = bud
-                found = []
+        let hits = hits(tree, links: links, on: now, calendar: calendar)
+        guard !hits.isEmpty else { return [] }
+        let byID = Dictionary(tree.buds.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var top: [UUID: UUID] = [:]
+        func thread(of id: UUID) -> UUID? {
+            var path: [UUID] = []
+            var cursor = id
+            var found: UUID?
+            while found == nil, let bud = byID[cursor] {
+                if let known = top[cursor] { found = known; break }
+                path.append(cursor)
+                if bud.parent == rootID { found = cursor } else { cursor = bud.parent }
+                if path.count > byID.count { break }
             }
-            if hit.contains(bud.id) { found.append(bud) }
+            for step in path { top[step] = found }
+            return found
         }
-        if let thread, !found.isEmpty { out.append((thread, found)) }
+        var out: [(thread: Bud, hits: [Bud])] = []
+        var at: [UUID: Int] = [:]
+        for bud in hits {
+            guard let id = thread(of: bud.id), let head = byID[id] else { continue }
+            if let i = at[id] {
+                out[i].hits.append(bud)
+            } else {
+                at[id] = out.count
+                out.append((head, [bud]))
+            }
+        }
         return out
     }
 }

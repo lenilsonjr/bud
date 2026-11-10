@@ -112,6 +112,8 @@ struct Sidebar: View {
             }
             .contextMenu {
                 Button("Rename") {
+                    // A rename in progress on another lens is kept first.
+                    if let other = renaming, other != lens.id { finishRenaming(other) }
                     draft = lens.name
                     renaming = lens.id
                 }
