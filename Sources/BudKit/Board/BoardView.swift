@@ -14,7 +14,7 @@ struct BoardView: View {
     var body: some View {
         // Built once a render: the store's board is read from the whole tree.
         let board = store.board
-        let pictures = BoardCardContext(states: store.pictures, now: store.now) { [weak store] id in
+        let pictures = BoardCardContext(states: store.pictures, now: store.now, calendar: store.calendar) { [weak store] id in
             await store?.loadPicture(of: id)
         }
         VStack(alignment: .leading, spacing: 16) {
@@ -95,6 +95,7 @@ struct BoardView: View {
 struct BoardCardContext {
     var states: [UUID: BoardPictureState]
     var now: Date
+    var calendar: Calendar
     var load: (UUID) async -> Void
 
     func state(of id: UUID) -> BoardPictureState { states[id] ?? .unknown }
@@ -139,7 +140,7 @@ struct BoardColumnView: View {
     private var cards: some View {
         LazyVStack(alignment: .leading, spacing: 8) {
             ForEach(column.cards) { card in
-                BoardCardView(card: card, picture: pictures.state(of: card.id), now: pictures.now) {
+                BoardCardView(card: card, picture: pictures.state(of: card.id), now: pictures.now, calendar: pictures.calendar) {
                     await pictures.load(card.id)
                 }
             }

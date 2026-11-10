@@ -136,11 +136,12 @@ public final class BudStore: ObservableObject {
         didSet { UserDefaults.standard.set(soilFolded, forKey: Self.soilFoldedKey) }
     }
     static let soilFoldedKey = "soilFolded"
-    /// The calendar the days are counted in: the system's, or the one a picture sets.
-    public var dateCalendar: Calendar = .current
-    /// The calendar's range, layout, hidden threads and Show switches. Kept on this device only.
-    @Published public var calendar = CalendarState.load(from: .standard) {
-        didSet { if calendar != oldValue { calendar.save(to: .standard) } }
+    /// The calendar the days are counted in, beside `now` on the device store: the system's, or
+    /// the one a picture fixes.
+    public var calendar: Calendar { devices.calendar }
+    /// The Calendar view's range, layout, hidden threads and Show switches. Kept on this device only.
+    @Published public var calendarState = CalendarState.load(from: .standard) {
+        didSet { if calendarState != oldValue { calendarState.save(to: .standard) } }
     }
     /// The day the calendar is looking at; nil for today.
     @Published public var calendarDate: Date? = nil
@@ -1241,8 +1242,9 @@ extension BudStore {
 
     /// Fires every trigger due on this device now: stamps its template into its place for the
     /// occurrence, or logs why it could not, and keeps the trigger on this device.
-    public func fireTriggers(now: Date? = nil, device: String = BudStore.deviceID, calendar: Calendar = .current) {
+    public func fireTriggers(now: Date? = nil, device: String = BudStore.deviceID, calendar: Calendar? = nil) {
         let now = now ?? self.now
+        let calendar = calendar ?? self.calendar
         for trigger in triggers {
             guard let occurrence = trigger.due(at: now, device: device, calendar: calendar) else { continue }
             var skipped: String?

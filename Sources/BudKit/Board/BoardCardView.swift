@@ -9,6 +9,7 @@ struct BoardCardView: View {
     let card: BoardCard
     let picture: BoardPictureState
     let now: Date
+    let calendar: Calendar
     /// Asks the store for the picture; called once, when it is unknown.
     let load: () async -> Void
 
@@ -84,10 +85,10 @@ struct BoardCardView: View {
     /// When in pistil, due in rose, the other tags neutral, and "6 inside" at the far right.
     private var meta: some View {
         HStack(spacing: 5) {
-            if let when = card.whenText(now: now) {
+            if let when = card.whenText(now: now, calendar: calendar) {
                 chip(when, icon: "calendar", ink: Theme.pistil, wash: Theme.pistilSoft)
             }
-            if let due = card.dueText(now: now) {
+            if let due = card.dueText(now: now, calendar: calendar) {
                 chip(due, icon: "flag", ink: Theme.rose, wash: Theme.roseSoft)
             }
             ForEach(card.tags, id: \.self) { tag in
