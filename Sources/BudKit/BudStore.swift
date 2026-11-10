@@ -882,6 +882,21 @@ public final class BudStore: ObservableObject {
         }
     }
 
+    /// Go anywhere to a destination: a place or a lens is a page in Files; Everything is the
+    /// root, centered on the canvas or opened as the page in Files, the way a bud is. Either
+    /// way a quiet view gives way to one that shows the pick.
+    public func go(to destination: Destination, inFiles: Bool) {
+        switch destination {
+        case .everything: go(to: rootID, inFiles: inFiles)
+        case .inbox: openInbox()
+        case .archive: openArchive()
+        case .trash: openTrash()
+        case .today: open(.today)
+        case .todos: open(.todos)
+        case .pinned: open(.pinned)
+        }
+    }
+
     /// The Files view on the Inbox.
     public func openInbox() { open(.inbox) }
     public func openArchive() { open(.archive) }
