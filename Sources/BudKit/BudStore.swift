@@ -1305,8 +1305,10 @@ extension BudStore {
     /// The board of the center bud, with the tag columns the vault keeps for it.
     public var board: Board { board(of: center) }
 
+    /// The columns are `boardColumns(of:)`, stored or the default, so the board and its
+    /// edits read one list.
     public func board(of id: UUID) -> Board {
-        Board(tree: tree, center: id, tags: boards[id]?.tags)
+        Board(tree: tree, center: id, tags: boardColumns(of: id).tags)
     }
 
     /// Sets which tag columns a bud's board shows, in order; nil goes back to the tags in use.

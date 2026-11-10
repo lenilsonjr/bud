@@ -53,10 +53,32 @@ extension BoardColumns {
 
 // MARK: the picker
 
+/// What the picker reads, gathered once as it opens: the board's columns, the tags the buds
+/// inside carry, and the vault's tags with their counts. Typing then narrows these without
+/// reading the tree again.
+public struct BoardTagSource: Equatable, Sendable {
+    public var columns: BoardColumns
+    /// The tags in use inside the board, each once, in the order they are first met.
+    public var carried: [String]
+    /// Every tag in the vault, most used first.
+    public var counts: [TagCount]
+
+    public init(columns: BoardColumns, carried: [String], counts: [TagCount]) {
+        self.columns = columns
+        self.carried = carried
+        self.counts = counts
+    }
+
+    public init(columns: BoardColumns, inside: [Bud], counts: [TagCount]) {
+        self.init(columns: columns, carried: BoardColumns.inUse(by: inside), counts: counts)
+    }
+}
+
 /// What Add column offers for what is typed: the tags on this board, which are the columns'
 /// tags and then the tags the buds inside carry without a column yet; the other tags in the
 /// vault, most used first; and a new tag column for a spelling no bud uses, when one is typed.
-/// A tag that has a column already is listed with a check and cannot be picked twice.
+/// A tag that has a column already is listed with a check and cannot be picked twice. Each
+/// group shows at most `limit` rows; typing narrows them.
 public struct BoardTagChoices: Equatable, Sendable {
     public struct Row: Equatable, Hashable, Sendable {
         public var tag: String
@@ -93,24 +115,20 @@ public struct BoardTagChoices: Equatable, Sendable {
     public var count: Int { pickable.count + (create == nil ? 0 : 1) }
 
     /// The choices for `query`, in any case: a tag whose name holds the typed text stays, the
-    /// ones that start with it first in each group.
-    public static func rows(for query: String, columns: BoardColumns, inside: [Bud], counts: [TagCount]) -> BoardTagChoices {
+    /// ones that start with it first in each group, at most `limit` a group.
+    public static func rows(for query: String, in source: BoardTagSource, limit: Int = 6) -> BoardTagChoices {
         let typed = String(query.trimmingCharacters(in: .whitespaces).drop { $0 == "#" })
         let wanted = BudTags.key(typed)
-        let columnKeys = Set(columns.tags.map(BudTags.key))
-        var seen = columnKeys
-        let carried = BoardColumns.inUse(by: inside).filter { seen.insert(BudTags.key($0)).inserted }
-        let onBoard = columns.tags.map { Row(tag: $0, hasColumn: true) } + carried.map { Row(tag: $0) }
-        let others = counts.map(\.tag).filter { seen.insert(BudTags.key($0)).inserted }.map { Row(tag: $0) }
-        let taken = seen.contains(wanted)
-        let create = taken ? nil : BudTags.clean(typed)
-        return BoardTagChoices(onBoard: matching(onBoard, wanted), others: matching(others, wanted), create: create)
-    }
-
-    private static func matching(_ rows: [Row], _ wanted: String) -> [Row] {
-        guard !wanted.isEmpty else { return rows }
-        let found = rows.filter { BudTags.key($0.tag).contains(wanted) }
-        return found.filter { BudTags.key($0.tag).hasPrefix(wanted) } + found.filter { !BudTags.key($0.tag).hasPrefix(wanted) }
+        var seen = Set(source.columns.tags.map(BudTags.key))
+        let carried = source.carried.filter { seen.insert(BudTags.key($0)).inserted }
+        let onBoard = source.columns.tags.map { Row(tag: $0, hasColumn: true) } + carried.map { Row(tag: $0) }
+        let others = source.counts.map(\.tag).filter { seen.insert(BudTags.key($0)).inserted }.map { Row(tag: $0) }
+        let create = seen.contains(wanted) ? nil : BudTags.clean(typed)
+        return BoardTagChoices(
+            onBoard: Array(TagChoices.matching(onBoard, wanted, tag: \.tag).prefix(limit)),
+            others: Array(TagChoices.matching(others, wanted, tag: \.tag).prefix(limit)),
+            create: create
+        )
     }
 }
 
@@ -189,8 +207,10 @@ public struct BoardColumnDrop: Equatable, Sendable {
     }
 
     /// The gap under a point: after every column whose middle is left of it, from the columns'
-    /// frames in the same space as the point.
-    public static func under(_ point: CGPoint, frames: [String: CGRect], tags: [String]) -> BoardColumnDrop {
+    /// frames in the same space as the point. Nil until a column has told where it is, so a
+    /// drop before that moves nothing.
+    public static func under(_ point: CGPoint, frames: [String: CGRect], tags: [String]) -> BoardColumnDrop? {
+        guard tags.contains(where: { frames[$0] != nil }) else { return nil }
         var gap = 0
         for (i, tag) in tags.enumerated() {
             if let frame = frames[tag], frame.midX <= point.x { gap = i + 1 }
@@ -211,14 +231,20 @@ public struct BoardColumnDrag: Equatable, Sendable {
         self.drop = drop
     }
 
-    /// Where the drop line is drawn on a column; none for a gap beside the column in hand,
-    /// where a drop changes nothing.
-    public func line(on target: String, in tags: [String]) -> BoardColumnDrop.Line? {
+    /// The place the column would take on a drop; nil for no gap yet, or a gap beside the
+    /// column in hand, where a drop changes nothing.
+    public func target(in tags: [String]) -> Int? {
         guard let drop else { return nil }
         if let i = tags.firstIndex(where: { BudTags.key($0) == BudTags.key(tag) }), drop.gap == i || drop.gap == i + 1 {
             return nil
         }
-        return drop.line(on: target, in: tags)
+        return drop.index(moving: tag, in: tags)
+    }
+
+    /// Where the drop line is drawn on a column; none where a drop changes nothing.
+    public func line(on target: String, in tags: [String]) -> BoardColumnDrop.Line? {
+        guard self.target(in: tags) != nil else { return nil }
+        return drop?.line(on: target, in: tags)
     }
 }
 
@@ -227,15 +253,19 @@ public struct BoardColumnDrag: Equatable, Sendable {
 
 extension BudStore {
     /// The columns of a bud's board as the vault holds them, or the default spelled out: the
-    /// tags in use. An edit starts from this, so a column taken off a default board stays off.
+    /// tags in use. The board draws these, and an edit starts from them, so a column taken off
+    /// a default board stays off.
     public func boardColumns(of id: UUID) -> BoardColumns {
         boards[id] ?? BoardColumns(tags: BoardColumns.inUse(by: tree.walk(under: id)))
     }
 
-    /// Edits a bud's board columns and keeps them, so every device shows the same board.
+    /// Edits a bud's board columns and keeps them, so every device shows the same board. An
+    /// edit that changes nothing writes nothing: a default board stays the tags in use.
     public func editBoardColumns(of id: UUID, _ edit: (inout BoardColumns) -> Void) {
-        var columns = boardColumns(of: id)
+        let before = boardColumns(of: id)
+        var columns = before
         edit(&columns)
+        guard columns != before else { return }
         setBoardColumns(columns, of: id)
     }
 
@@ -254,9 +284,9 @@ extension BudStore {
         editBoardColumns(of: id) { $0.move(tag, to: index) }
     }
 
-    /// What Add column offers on a bud's board for what is typed.
-    public func boardTagChoices(for query: String, of id: UUID) -> BoardTagChoices {
-        BoardTagChoices.rows(for: query, columns: boardColumns(of: id), inside: tree.walk(under: id), counts: tree.tagCounts())
+    /// What Add column reads on a bud's board, gathered once as the picker opens.
+    public func boardTagSource(of id: UUID) -> BoardTagSource {
+        BoardTagSource(columns: boardColumns(of: id), inside: tree.walk(under: id), counts: tree.tagCounts())
     }
 }
 #endif

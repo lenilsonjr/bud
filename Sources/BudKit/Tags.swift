@@ -226,16 +226,19 @@ public struct TagChoices {
         let typed = query.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }
         let wanted = BudTags.key(String(typed))
         let skip = Set(carried.map(BudTags.key))
-        let found = counts.filter { count in
-            let key = BudTags.key(count.tag)
-            return !skip.contains(key) && (wanted.isEmpty || key.contains(wanted))
-        }
-        let starting = found.filter { BudTags.key($0.tag).hasPrefix(wanted) }
-        let inside = found.filter { !BudTags.key($0.tag).hasPrefix(wanted) }
-        var rows = (starting + inside).prefix(limit).map(Row.tag)
+        let found = counts.filter { !skip.contains(BudTags.key($0.tag)) }
+        var rows = matching(found, wanted, tag: \.tag).prefix(limit).map(Row.tag)
         let taken = counts.contains { BudTags.key($0.tag) == wanted } || skip.contains(wanted)
         if let tag = BudTags.clean(String(typed)), !taken { rows.append(.create(tag)) }
         return rows
+    }
+
+    /// The items whose tag holds `wanted`, a key, those whose tag starts with it first and the
+    /// rest in their order; every item for nothing typed.
+    public static func matching<T>(_ items: [T], _ wanted: String, tag: (T) -> String) -> [T] {
+        guard !wanted.isEmpty else { return items }
+        let found = items.filter { BudTags.key(tag($0)).contains(wanted) }
+        return found.filter { BudTags.key(tag($0)).hasPrefix(wanted) } + found.filter { !BudTags.key(tag($0)).hasPrefix(wanted) }
     }
 }
 
