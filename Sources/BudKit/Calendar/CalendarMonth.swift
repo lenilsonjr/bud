@@ -37,7 +37,7 @@ public struct CalendarMonth: Equatable, Sendable {
         let today = calendar.startOfDay(for: now)
         let month = parts.month
         // The first cell: the start of the week the month opens in.
-        let offset = (calendar.component(.weekday, from: start) - calendar.firstWeekday + 7) % 7
+        let offset = calendar.daysIntoWeek(of: start)
         let gridStart = calendar.date(byAdding: .day, value: -offset, to: start) ?? start
         var weeks: [[Day]] = []
         for row in 0..<Self.rows {
@@ -75,5 +75,25 @@ public struct CalendarMonth: Equatable, Sendable {
     public func shifted(by months: Int, now: Date) -> CalendarMonth {
         let date = calendar.date(byAdding: .month, value: months, to: start) ?? start
         return CalendarMonth(containing: date, now: now, calendar: calendar)
+    }
+}
+
+extension Calendar {
+    /// How many days `date` is past the first day of its week: 0 on that day, 6 on the last.
+    func daysIntoWeek(of date: Date) -> Int {
+        (component(.weekday, from: date) - firstWeekday + 7) % 7
+    }
+
+    /// Midnight of the first day of each month that starts inside `interval`, in order; the
+    /// interval's own start when it is one.
+    func monthStarts(in interval: DateInterval) -> [Date] {
+        guard let first = dateInterval(of: .month, for: interval.start)?.start else { return [] }
+        var out: [Date] = []
+        var start = first < interval.start ? (date(byAdding: .month, value: 1, to: first) ?? interval.end) : first
+        while start < interval.end {
+            out.append(startOfDay(for: start))
+            start = date(byAdding: .month, value: 1, to: start) ?? interval.end
+        }
+        return out
     }
 }

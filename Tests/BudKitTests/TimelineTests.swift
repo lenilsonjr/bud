@@ -35,8 +35,6 @@ final class TimelineTests: XCTestCase {
     func testTheMonthIsAColumnADayWithTheWeekendsShaded() throws {
         let month = try timeline(.month)
         XCTAssertEqual(month.unit, .day)
-        XCTAssertEqual(month.start, date(2026, 11, 1))
-        XCTAssertEqual(month.end, date(2026, 12, 1))
         XCTAssertEqual(month.days, 30)
         XCTAssertEqual(month.columns.count, 30)
         XCTAssertEqual(month.columns.map(\.label).prefix(3), ["1", "2", "3"])
@@ -51,24 +49,49 @@ final class TimelineTests: XCTestCase {
     func testTheQuarterIsAColumnAWeekFromItsFirstMonday() throws {
         let quarter = try timeline(.quarter)
         XCTAssertEqual(quarter.unit, .week)
-        XCTAssertEqual(quarter.start, date(2026, 10, 1))
-        XCTAssertEqual(quarter.end, date(2027, 1, 1))
         XCTAssertEqual(quarter.days, 92)
-        XCTAssertEqual(quarter.columns.map(\.label), ["5 Oct", "12 Oct", "19 Oct", "26 Oct", "2 Nov", "9 Nov", "16 Nov", "23 Nov", "30 Nov", "7 Dec", "14 Dec", "21 Dec", "28 Dec"])
-        XCTAssertEqual(quarter.columns.first?.day, 4, "October 2026 opens on a Thursday")
+        XCTAssertEqual(quarter.columns.map(\.label), ["1 Oct", "5 Oct", "12 Oct", "19 Oct", "26 Oct", "2 Nov", "9 Nov", "16 Nov", "23 Nov", "30 Nov", "7 Dec", "14 Dec", "21 Dec", "28 Dec"])
+        XCTAssertEqual(quarter.columns.prefix(2).map(\.day), [0, 4], "October 2026 opens on a Thursday: its first days have a column of their own")
         XCTAssertEqual(quarter.today, 33)
         XCTAssertEqual(quarter.columns.filter(\.isToday).map(\.label), ["2 Nov"])
         XCTAssertEqual(quarter.shaded, [0...0, 31...31, 61...61], "Each month's first day")
-        XCTAssertEqual(Timeline.subtitle(of: .quarter, containing: now, calendar: calendar), "October – December")
-        XCTAssertNil(Timeline.subtitle(of: .month, containing: now, calendar: calendar))
-        XCTAssertNil(Timeline.subtitle(of: .year, containing: now, calendar: calendar))
+        let early = try timeline(.quarter, around: date(2026, 1, 15))
+        XCTAssertEqual(early.columns.prefix(2).map(\.label), ["1 Jan", "5 Jan"])
+        let onMonday = try timeline(.quarter, around: date(2029, 1, 15))
+        XCTAssertEqual(onMonday.columns.first?.day, 0)
+        XCTAssertEqual(onMonday.columns.prefix(2).map(\.label), ["1 Jan", "8 Jan"], "A quarter opening on a Monday, as 2029 does, starts with a full week")
+    }
+
+    func testTodayInTheDaysBeforeTheFirstFullWeekBoldsTheFirstColumn() throws {
+        let tree = CalendarMonthTests.world()
+        let early = try XCTUnwrap(Timeline(
+            range: .quarter, containing: date(2026, 10, 2), now: date(2026, 10, 2).addingTimeInterval(3600),
+            entries: [], threads: CalendarThread.list(in: tree), state: CalendarState(), calendar: calendar
+        ))
+        XCTAssertEqual(early.today, 1)
+        XCTAssertEqual(early.columns.filter(\.isToday).map(\.label), ["1 Oct"])
+    }
+
+    func testEachRangeHasItsIntervalAndTheQuarterItsSubtitle() {
+        XCTAssertEqual(CalendarRange.day.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 11, 3), end: date(2026, 11, 4)))
+        XCTAssertEqual(CalendarRange.week.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 11, 2), end: date(2026, 11, 9)))
+        XCTAssertEqual(CalendarRange.month.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 11, 1), end: date(2026, 12, 1)))
+        XCTAssertEqual(CalendarRange.quarter.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 10, 1), end: date(2027, 1, 1)))
+        XCTAssertEqual(CalendarRange.quarter.interval(containing: date(2026, 2, 14), calendar: calendar), DateInterval(start: date(2026, 1, 1), end: date(2026, 4, 1)))
+        XCTAssertEqual(CalendarRange.year.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 1, 1), end: date(2027, 1, 1)))
+        XCTAssertEqual(CalendarRange.custom.interval(containing: now, calendar: calendar), DateInterval(start: date(2026, 11, 1), end: date(2027, 2, 1)), "Three months until a range is picked")
+        let picked = CustomRange(from: YearMonth(containing: now, calendar: calendar), months: 5)
+        XCTAssertEqual(CalendarRange.custom.interval(containing: now, custom: picked, calendar: calendar).end, date(2027, 4, 1))
+        XCTAssertEqual(CalendarRange.quarter.subtitle(for: now, calendar: calendar), "October – December")
+        XCTAssertEqual(CalendarRange.quarter.subtitle(for: date(2026, 5, 1), calendar: calendar), "April – June")
+        for range in [CalendarRange.day, .week, .month, .year, .custom] {
+            XCTAssertNil(range.subtitle(for: now, calendar: calendar), "\(range) has no subtitle")
+        }
     }
 
     func testTheYearIsAColumnAMonth() throws {
         let year = try timeline(.year)
         XCTAssertEqual(year.unit, .month)
-        XCTAssertEqual(year.start, date(2026, 1, 1))
-        XCTAssertEqual(year.end, date(2027, 1, 1))
         XCTAssertEqual(year.days, 365)
         XCTAssertEqual(year.columns.map(\.label), ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])
         XCTAssertEqual(year.columns.map(\.day), [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334])
@@ -87,8 +110,8 @@ final class TimelineTests: XCTestCase {
 
     func testTodayIsOffTheAxisWhenTheRangeIsElsewhere() throws {
         let next = try timeline(.month, around: date(2026, 12, 15))
-        XCTAssertEqual(next.start, date(2026, 12, 1))
         XCTAssertEqual(next.days, 31)
+        XCTAssertEqual(next.columns.last?.label, "31")
         XCTAssertNil(next.today)
         XCTAssertFalse(next.columns.contains(where: \.isToday))
         let leap = try timeline(.year, around: date(2028, 6, 1))
@@ -128,7 +151,7 @@ final class TimelineTests: XCTestCase {
         XCTAssertTrue(health.rows[0].isPoint)
         XCTAssertEqual(health.rows[0].from, 2, "Scheduled today")
         XCTAssertFalse(health.rows[0].isDue)
-        XCTAssertEqual(month.rowCount, 8, "Three headers and five rows")
+        XCTAssertEqual(month.threads.map(\.rows.count), [3, 1, 1])
     }
 
     func testABarPastTheEdgeIsClippedAndDrawsFlatThere() throws {
@@ -141,6 +164,7 @@ final class TimelineTests: XCTestCase {
         let row = try XCTUnwrap(month.threads[1].rows.first { $0.title == "Ship the release" })
         XCTAssertEqual(row.from, 0)
         XCTAssertEqual(row.to, 29)
+        XCTAssertEqual(row.days, 46, "The whole span, 20 October to 4 December, not the 30 days shown")
         XCTAssertTrue(row.startsBefore)
         XCTAssertTrue(row.endsAfter)
         XCTAssertEqual(month.threads[1].from, 0, "The rail follows the clipped bar")
@@ -149,6 +173,7 @@ final class TimelineTests: XCTestCase {
         let whole = try XCTUnwrap(quarter.threads[1].rows.first { $0.title == "Ship the release" })
         XCTAssertEqual(whole.from, 19, "20 October")
         XCTAssertEqual(whole.to, 64, "4 December")
+        XCTAssertEqual(whole.days, 46)
         XCTAssertFalse(whole.startsBefore)
         XCTAssertFalse(whole.endsAfter)
     }
@@ -228,7 +253,7 @@ final class TimelineTests: XCTestCase {
         XCTAssertEqual(folded.from, 1)
         XCTAssertEqual(folded.to, 22, "The rail still spans them")
         XCTAssertFalse(month.threads[1].isCollapsed, "The other threads stay open")
-        XCTAssertEqual(month.rowCount, 5)
+        XCTAssertEqual(month.threads.map(\.shownRows.count), [0, 1, 1])
         state.toggle(collapsed: newsletter.id)
         XCTAssertEqual(try timeline(.month, tree: tree, state: state), try timeline(.month, tree: tree), "Open again, as before")
     }
@@ -244,6 +269,32 @@ final class TimelineTests: XCTestCase {
         let old = try JSONDecoder().decode(CalendarState.self, from: Data(#"{"range":"Quarter","hiddenThreads":[]}"#.utf8))
         XCTAssertTrue(old.collapsedThreads.isEmpty, "A state saved before folding existed opens every thread")
         defaults.removePersistentDomain(forName: "timeline-state-tests")
+    }
+
+    func testAThreadThatIsGoneIsForgottenByTheHiddenAndFoldedSets() {
+        var state = CalendarState()
+        let kept = UUID()
+        let gone = UUID()
+        state.toggle(thread: kept)
+        state.toggle(thread: gone)
+        state.toggle(collapsed: kept)
+        state.toggle(collapsed: gone)
+        state.keep(threads: [kept, UUID()])
+        XCTAssertEqual(state.hiddenThreads, [kept])
+        XCTAssertEqual(state.collapsedThreads, [kept])
+    }
+
+    func testTheCalendarHelpersCountIntoTheWeekAndWalkTheMonthStarts() {
+        XCTAssertEqual(calendar.daysIntoWeek(of: date(2026, 11, 2)), 0, "A Monday")
+        XCTAssertEqual(calendar.daysIntoWeek(of: date(2026, 11, 8)), 6, "A Sunday")
+        var sunday = calendar
+        sunday.firstWeekday = 1
+        XCTAssertEqual(sunday.daysIntoWeek(of: date(2026, 11, 8)), 0)
+        let quarter = CalendarRange.quarter.interval(containing: now, calendar: calendar)
+        XCTAssertEqual(calendar.monthStarts(in: quarter), [date(2026, 10, 1), date(2026, 11, 1), date(2026, 12, 1)])
+        let mid = DateInterval(start: date(2026, 10, 15), end: date(2026, 12, 15))
+        XCTAssertEqual(calendar.monthStarts(in: mid), [date(2026, 11, 1), date(2026, 12, 1)], "Only the months that start inside")
+        XCTAssertEqual(calendar.monthStarts(in: DateInterval(start: date(2026, 10, 2), end: date(2026, 10, 20))), [])
     }
 }
 
@@ -304,6 +355,21 @@ final class TimelineStoreTests: XCTestCase {
         XCTAssertNil(store.timeline?.today, "Next year: today is off the axis")
         store.calendarState.range = .week
         XCTAssertNil(store.timeline, "The week has no timeline yet")
+    }
+
+    func testAThreadSentToTheTrashLeavesTheHiddenAndFoldedSets() throws {
+        let store = makeStore()
+        defer { store.calendarState = CalendarState() }
+        let roadmap = try XCTUnwrap(store.calendarThreads.first { $0.title == "Q4 roadmap" })
+        let newsletter = try XCTUnwrap(store.calendarThreads.first { $0.title == "Launch the newsletter" })
+        store.toggleCollapsed(roadmap.id)
+        store.toggleThread(roadmap.id)
+        store.toggleCollapsed(newsletter.id)
+        XCTAssertEqual(store.calendarState.collapsedThreads, [roadmap.id, newsletter.id])
+        store.trash(roadmap.id)
+        XCTAssertFalse(store.calendarThreads.contains { $0.id == roadmap.id })
+        XCTAssertEqual(store.calendarState.collapsedThreads, [newsletter.id], "The trashed thread is forgotten, the other kept")
+        XCTAssertTrue(store.calendarState.hiddenThreads.isEmpty)
     }
 }
 #endif

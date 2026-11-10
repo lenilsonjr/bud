@@ -37,6 +37,42 @@ public enum CalendarRange: String, CaseIterable, Codable, Sendable {
         return calendar.date(byAdding: component, value: count, to: date) ?? date
     }
 
+    /// Midnight of the range's first day and of the day after its last, around `date`: the day,
+    /// the week, the month, the three months of the quarter, the year, or the custom range's own
+    /// months. The timeline's axis and the pictures read the same span.
+    public func interval(containing date: Date, custom: CustomRange? = nil, calendar: Calendar = .current) -> DateInterval {
+        let fallback = DateInterval(start: calendar.startOfDay(for: date), duration: 86_400)
+        switch self {
+        case .day:
+            return calendar.dateInterval(of: .day, for: date) ?? fallback
+        case .week:
+            return calendar.dateInterval(of: .weekOfYear, for: date) ?? fallback
+        case .month:
+            return calendar.dateInterval(of: .month, for: date) ?? fallback
+        case .quarter:
+            let parts = calendar.dateComponents([.year, .month], from: date)
+            guard let month = parts.month, let year = parts.year,
+                  let start = calendar.date(from: DateComponents(year: year, month: (month - 1) / 3 * 3 + 1, day: 1)),
+                  let end = calendar.date(byAdding: .month, value: 3, to: start) else { return fallback }
+            return DateInterval(start: start, end: end)
+        case .year:
+            return calendar.dateInterval(of: .year, for: date) ?? fallback
+        case .custom:
+            let range = custom ?? CustomRange(from: YearMonth(containing: date, calendar: calendar), months: CalendarState.defaultCustomMonths)
+            return DateInterval(start: range.start(calendar: calendar), end: range.end(calendar: calendar))
+        }
+    }
+
+    /// The line under the title: "October – December" for the quarter, whose title is only its
+    /// number. Nil for the ranges whose title says it all.
+    public func subtitle(for date: Date, calendar: Calendar = .current) -> String? {
+        guard self == .quarter else { return nil }
+        let span = interval(containing: date, calendar: calendar)
+        let last = calendar.date(byAdding: .day, value: -1, to: span.end) ?? span.start
+        let month = DayText.formatter(format: "MMMM", calendar: calendar)
+        return "\(month.string(from: span.start)) – \(month.string(from: last))"
+    }
+
     /// The title over the grid for the date it shows: "Tuesday, 3 November 2026", "2 Nov – 8 Nov
     /// 2026", "November 2026", "Q4 2026", "2026", "Nov 2026 – Jan 2027". The formats are written
     /// out, so the title reads the same on every platform and matches the board.
