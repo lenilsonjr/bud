@@ -43,6 +43,18 @@ public struct PanelLayout: Equatable, Codable, Sendable {
         self.right = right
     }
 
+    /// Reads a layout another build may have written: a panel this build does not know is
+    /// skipped, the known ones keep their order, and a known panel on neither side is hidden.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        left = try container.decode([String].self, forKey: .left).compactMap(PagePanel.init(rawValue:))
+        right = try container.decode([String].self, forKey: .right).compactMap(PagePanel.init(rawValue:))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case left, right
+    }
+
     public static let standard = PanelLayout(
         left: [.files],
         right: [.properties, .inside, .whereItLives, .linkedFrom, .source]
