@@ -797,7 +797,7 @@ final class SnapshotTests: XCTestCase {
         let cancelled = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
         tree.buds[cancelled].fromState = "cancelled"
         let vault = MemoryVault(tree: tree)
-        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock)
+        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
         let store = BudStore(vault: vault, tree: tree, devices: devices)
         await store.settle()
         // The renderer draws at once and never runs a card's load, so the picture is kept on
