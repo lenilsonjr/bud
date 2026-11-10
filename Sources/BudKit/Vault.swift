@@ -196,19 +196,25 @@ public protocol Vault: Sendable {
 
     /// Text the vault keeps beside the buds and syncs with them, by key: `sources` holds each
     /// connected source's settings (never a token), `leases` which device keeps an account's
-    /// planted buds live, `layout` how the panels around a page are arranged.
+    /// planted buds live, `layout` how the panels around a page are arranged, `board` which tag
+    /// columns a bud's board shows, under the bud's id.
     func shared(_ map: SharedMap) async throws -> [String: String]
     /// Nil removes the key.
     func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws
+
+    /// The first picture the bud at `path` embeds, as the file holds it: what its board card
+    /// shows. Nil when it embeds none, or the vault keeps no pictures.
+    func picture(of path: String) async throws -> Data?
 }
 
 /// The maps a vault keeps beside the buds.
 public enum SharedMap: String, Sendable {
-    case sources, leases, triggers, layout
+    case sources, leases, triggers, layout, board
 }
 
 extension Vault {
     public var inboxPath: String { inboxID.uuidString }
     public var warehousePath: String { warehouseID.uuidString }
     public func pathAfterEdit(_ path: String) -> String { path }
+    public func picture(of path: String) async throws -> Data? { nil }
 }

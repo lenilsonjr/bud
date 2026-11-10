@@ -727,6 +727,15 @@ impl Vault {
         Ok(self.core().set_layout(&key, layout.as_deref())?)
     }
 
+    /// Which tag columns each bud's board shows, synced with the vault.
+    pub fn board(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().board()?))
+    }
+
+    pub fn set_board(&self, key: String, columns: Option<String>) -> Result<()> {
+        Ok(self.core().set_board(&key, columns.as_deref())?)
+    }
+
     /// How a planted bud stands with its source; none clears it.
     pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
         Ok(self.core().set_from_state(&path, state.as_deref())?)

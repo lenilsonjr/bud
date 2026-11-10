@@ -672,6 +672,39 @@ fn the_panel_layout_reaches_the_peer_and_a_change_there_comes_back() {
 }
 
 #[test]
+fn a_boards_columns_reach_the_peer_and_a_change_there_comes_back() {
+    let (mut a, mut b) = pair();
+    assert!(a.vault.board().unwrap().is_empty());
+    a.vault
+        .set_board("bud-1", Some(r#"{"tags":["researching","waiting"]}"#))
+        .unwrap();
+    a.vault
+        .set_board("bud-2", Some(r#"{"tags":["doing"]}"#))
+        .unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(
+        b.vault.board().unwrap(),
+        [
+            (
+                "bud-1".to_string(),
+                r#"{"tags":["researching","waiting"]}"#.to_string()
+            ),
+            ("bud-2".to_string(), r#"{"tags":["doing"]}"#.to_string()),
+        ]
+    );
+
+    b.vault
+        .set_board("bud-1", Some(r#"{"tags":["waiting"]}"#))
+        .unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(a.vault.board().unwrap()[0].1, r#"{"tags":["waiting"]}"#);
+
+    a.vault.set_board("bud-2", None).unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(b.vault.board().unwrap().len(), 1);
+}
+
+#[test]
 fn a_folder_file_deleted_outside_leaves_the_bud_at_its_folder_with_its_identity() {
     let (mut a, mut b) = pair();
     a.write("Routines.md", "---\npinned: true\n---\nWritten elsewhere\n");

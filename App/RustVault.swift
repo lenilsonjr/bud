@@ -8,6 +8,8 @@ import BudKit
 /// name is the core's and BudKit's carry their module.
 final class RustVault: BudKit.Vault {
     let core: Vault
+    /// The folder the pictures are read from, where the core found them.
+    private let folder: URL
 
     /// Opens the vault at `paths`, making its folders when they are not there, and brings the
     /// index up to date with the files.
@@ -16,6 +18,7 @@ final class RustVault: BudKit.Vault {
         try files.createDirectory(at: paths.vaultFolder, withIntermediateDirectories: true)
         try files.createDirectory(at: paths.indexFolder, withIntermediateDirectories: true)
         core = try openVault(vaultDir: paths.vaultFolder.path, indexPath: paths.indexFile.path)
+        folder = paths.vaultFolder
     }
 
     var inboxPath: String { "Inbox" }
@@ -56,6 +59,7 @@ final class RustVault: BudKit.Vault {
         case .leases: entries = try core.leases()
         case .triggers: entries = try core.triggers()
         case .layout: entries = try core.layout()
+        case .board: entries = try core.board()
         }
         return Dictionary(entries.map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
     }
@@ -66,7 +70,14 @@ final class RustVault: BudKit.Vault {
         case .leases: try core.setLease(id: key, lease: value)
         case .triggers: try core.setTrigger(id: key, trigger: value)
         case .layout: try core.setLayout(key: key, layout: value)
+        case .board: try core.setBoard(key: key, columns: value)
         }
+    }
+
+    /// The first embed of the bud that the index resolved to a picture, read from the folder.
+    func picture(of path: String) async throws -> Data? {
+        guard let to = try core.firstEmbed(path: path)?.to else { return nil }
+        return try Data(contentsOf: folder.appendingPathComponent(to))
     }
     func rename(_ path: String, to title: String) async throws -> String { try core.rename(path: path, newTitle: title) }
     func move(_ path: String, to parent: String?) async throws -> String { try core.moveTo(path: path, newParent: parent) }
