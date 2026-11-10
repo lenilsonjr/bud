@@ -5,6 +5,7 @@ import SwiftUI
 /// Calendar), where you are, the next step, Go anywhere, the zoom and Capture. On the Mac it
 /// leaves room for the window controls and drags the window.
 struct TopBar: View {
+    @Environment(\.keys) private var keys
     @ObservedObject var store: BudStore
     let onAdd: () -> Void
     let onSearch: () -> Void
@@ -320,7 +321,7 @@ struct TopBar: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 #if os(macOS)
-                Keycap(Keys.key(for: .goAnywhere).label)
+                Keycap(keys.key(for: .goAnywhere).label)
                 #endif
             }
             .textRole(.label)

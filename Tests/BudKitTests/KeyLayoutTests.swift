@@ -2,15 +2,8 @@ import XCTest
 @testable import BudKit
 
 final class KeyLayoutTests: XCTestCase {
-    private func freshDefaults() throws -> UserDefaults {
-        let name = "bud.tests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defaults.removePersistentDomain(forName: name)
-        return defaults
-    }
-
     /// A layout away from the Mac, where the keys the desktop answers to only show.
-    private func layout() throws -> KeyLayout { KeyLayout(defaults: try freshDefaults(), desktop: false) }
+    private func layout() throws -> KeyLayout { try freshLayout(desktop: false) }
 
     /// A layout on the Mac, which records the keys the desktop answers to by their place.
     private func desktop(_ defaults: UserDefaults? = nil) throws -> KeyLayout { KeyLayout(defaults: try defaults ?? freshDefaults(), desktop: true) }
@@ -481,9 +474,7 @@ final class KeyLayoutTests: XCTestCase {
         elsewhere.startRecording(.capture)
         XCTAssertEqual(elsewhere.record(Key("k", .option), at: 40), .bound)
         XCTAssertEqual(elsewhere.changed, 2)
-        let name = "bud.tests.still.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defaults.removePersistentDomain(forName: name)
+        let defaults = try freshDefaults()
         let still = KeyLayout(defaults: defaults, desktop: true)
         XCTAssertEqual(still.changed, 0, "A suite of its own holds none of the other's keys")
         XCTAssertEqual(still.key(for: .goAnywhere), Key("k", .command))

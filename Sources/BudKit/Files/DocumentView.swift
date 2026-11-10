@@ -9,6 +9,7 @@ import GameController
 /// properties and the links are the panels beside it, or under the words on a phone. The body
 /// autosaves half a second after the last keystroke.
 struct DocumentView: View {
+    @Environment(\.keys) private var keys
     let id: UUID
     @ObservedObject var store: BudStore
     @State private var draft = ""
@@ -70,7 +71,7 @@ struct DocumentView: View {
             .background {
                 // Close or reopen this bud from its key, drawn nowhere.
                 Button("") { store.perform(.closeOrReopen, on: id) }
-                    .keyboardShortcut(Keys.shortcut(.closeOrReopen))
+                    .keyboardShortcut(keys.shortcut(.closeOrReopen))
                     .opacity(0)
             }
             .onChange(of: store.lastCommand) { _, now in
@@ -149,10 +150,10 @@ struct DocumentView: View {
                     #if os(iOS)
                     .scrollDismissesKeyboard(.never)
                     #endif
-                    .onKeyPress(keys: Self.editorKeys) { press in
+                    .onKeyPress(keys: editorKeys) { press in
                         guard press.modifiers.isEmpty else { return .ignored }
                         if pickerKey(press.key) { return .handled }
-                        guard press.key == Keys.equivalent(.read) else { return .ignored }
+                        guard press.key == keys.equivalent(.read) else { return .ignored }
                         return store.perform(.read) ? .handled : .ignored
                     }
                 #if !os(iOS)
@@ -210,9 +211,9 @@ struct DocumentView: View {
 
     /// The keys the editor answers to: the link picker's rows, Choose, Link as typed, Close, and
     /// Read, which Close shares Esc with; the picker takes it while it is open.
-    private static var editorKeys: Set<KeyEquivalent> { [
-        Keys.equivalent(.rowUp), Keys.equivalent(.rowDown), Keys.equivalent(.choose), Keys.equivalent(.linkAsTyped),
-        Keys.equivalent(.close), Keys.equivalent(.read),
+    private var editorKeys: Set<KeyEquivalent> { [
+        keys.equivalent(.rowUp), keys.equivalent(.rowDown), keys.equivalent(.choose), keys.equivalent(.linkAsTyped),
+        keys.equivalent(.close), keys.equivalent(.read),
     ] }
 
     /// ↑↓ move the pick, ↩ links, ⇥ links with the typed text as its label, Esc closes.
@@ -220,12 +221,12 @@ struct DocumentView: View {
         guard armed, let picker = linkPicker else { return false }
         let rows = pickerRows(picker)
         switch key {
-        case Keys.equivalent(.close): closedAt = picker.range.lowerBound
-        case Keys.equivalent(.rowUp): pick = max(0, pick - 1)
-        case Keys.equivalent(.rowDown): pick = max(0, min(rows.count - 1, pick + 1))
+        case keys.equivalent(.close): closedAt = picker.range.lowerBound
+        case keys.equivalent(.rowUp): pick = max(0, pick - 1)
+        case keys.equivalent(.rowDown): pick = max(0, min(rows.count - 1, pick + 1))
         default:
             guard rows.indices.contains(pick) else { return false }
-            choose(rows[pick], labelled: key == Keys.equivalent(.linkAsTyped))
+            choose(rows[pick], labelled: key == keys.equivalent(.linkAsTyped))
         }
         return true
     }

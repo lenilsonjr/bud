@@ -17,14 +17,9 @@ extension XCTestCase {
         DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
     }
 
-    /// The table's keys and none recorded over them, on a suite of their own wiped first, so the
-    /// shortcuts sheet draws the same keycaps whatever the process's defaults hold.
-    var stillKeys: KeyLayout {
-        let name = "bud.still.keys"
-        let defaults = UserDefaults(suiteName: name) ?? .standard
-        defaults.removePersistentDomain(forName: name)
-        return KeyLayout(defaults: defaults)
-    }
+    /// The one layout every picture reads its keys from, as the clock is one moment: the table's
+    /// defaults and nothing recorded over them, whatever the process's defaults hold.
+    var stillKeys: KeyLayout { StillKeys.layout }
 
     /// The seed world on the fixed clock, which the store reads from its device store, with the
     /// still keys.
@@ -32,7 +27,23 @@ extension XCTestCase {
     func stillStore(devices: DeviceStore? = nil) -> BudStore {
         BudStore(fileURL: nil, devices: devices ?? stillDevices(), keys: stillKeys)
     }
+}
 
+/// The still layout, on a defaults suite named for this process alone, so two stores in one test
+/// share it and two runs side by side never share a file. The suite is wiped when the layout is
+/// made and again when the process ends; no picture records into it.
+enum StillKeys {
+    static let suite = "bud.still.\(UUID().uuidString)"
+
+    static let layout: KeyLayout = {
+        guard let defaults = UserDefaults(suiteName: suite) else { fatalError("No defaults suite named \(suite)") }
+        defaults.removePersistentDomain(forName: suite)
+        atexit { UserDefaults(suiteName: StillKeys.suite)?.removePersistentDomain(forName: StillKeys.suite) }
+        return KeyLayout(defaults: defaults)
+    }()
+}
+
+extension XCTestCase {
     /// The folder the pictures go to, created. Skips the test when `BUD_SNAPSHOT_DIR` is not
     /// set, so the gate on Linux and an ordinary `swift test` pass it by.
     func pictureFolder(_ name: String? = nil) throws -> URL {

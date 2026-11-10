@@ -249,6 +249,7 @@ struct ShortcutSheet: View {
 /// alike: it opens the sheet, and its tooltip names the key that does the same.
 struct HelpButton: View {
     let action: () -> Void
+    @Environment(\.keys) private var keys
     @State private var hovered = false
 
     var body: some View {
@@ -263,7 +264,7 @@ struct HelpButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
-        .help("\(ShortcutText.title) \(Keys.key(for: .shortcuts).label)")
+        .help("\(ShortcutText.title) \(keys.key(for: .shortcuts).label)")
         .accessibilityLabel(ShortcutText.title)
     }
 }

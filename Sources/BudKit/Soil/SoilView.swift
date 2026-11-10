@@ -5,6 +5,7 @@ import SwiftUI
 /// what needs you soonest nearest it. Folded, the roots become a strip of chips. An item dragged
 /// up through the line is planted where it lands; nothing here is written before that.
 struct SoilView: View {
+    @Environment(\.keys) private var keys
     let roots: [Root]
     /// The moment the roots were read at, so the leaf dots agree with them.
     let now: Date
@@ -48,7 +49,7 @@ struct SoilView: View {
                     Text("Soil").textRole(.label)
                     Image(systemName: folded ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold))
                     #if os(macOS)
-                    Keycap(Keys.key(for: .soil).label).accessibilityHidden(true)
+                    Keycap(keys.key(for: .soil).label).accessibilityHidden(true)
                     #endif
                 }
                 .foregroundStyle(Theme.text2)
@@ -58,7 +59,7 @@ struct SoilView: View {
                 .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .keyboardShortcut(Keys.shortcut(.soil))
+            .keyboardShortcut(keys.shortcut(.soil))
             .accessibilityLabel(folded ? "Open the soil" : "Fold the soil")
             .accessibilityIdentifier("soil-handle")
         }

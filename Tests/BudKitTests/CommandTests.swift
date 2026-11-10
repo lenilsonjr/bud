@@ -330,16 +330,8 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.modal, .settings)
     }
 
-    /// A layout on a suite of its own, so the test records nothing into the process's defaults.
-    private func keys() throws -> KeyLayout {
-        let name = "bud.tests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
-        defaults.removePersistentDomain(forName: name)
-        return KeyLayout(defaults: defaults, desktop: false)
-    }
-
     func testEveryKeyIsTheRecordersWhileARowRecords() throws {
-        let keys = try keys()
+        let keys = try freshLayout(desktop: false)
         let store = BudStore(fileURL: nil, keys: keys)
         store.perform(.shortcuts)
         keys.startRecording(.soil)
@@ -358,8 +350,8 @@ final class CommandStoreTests: XCTestCase {
     }
 
     func testTheStoreReadsTheLayoutItWasGivenAndTheAppsOtherwise() throws {
-        XCTAssertTrue(BudStore(fileURL: nil).keys === Keys.layout, "The app's store reads the app's keys")
-        let keys = try keys()
+        XCTAssertTrue(BudStore(vault: MemoryVault(tree: Tree())).keys === Keys.layout, "The app's store reads the app's keys")
+        let keys = try freshLayout(desktop: false)
         let store = BudStore(fileURL: nil, keys: keys)
         XCTAssertTrue(store.keys === keys)
         var changes = 0

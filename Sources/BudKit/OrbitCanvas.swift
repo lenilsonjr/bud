@@ -10,6 +10,7 @@ import SwiftUI
 /// that card, N plants a bud under it. Under the lit card a draft offers a new child; clicked, it
 /// becomes the inline bar that plants one line after another.
 public struct OrbitCanvas: View {
+    @Environment(\.keys) private var keys
     @ObservedObject var store: BudStore
     @State private var camera: CGPoint = .zero
     private var scale: CGFloat { store.zoom }
@@ -344,13 +345,13 @@ public struct OrbitCanvas: View {
                     .foregroundStyle(Theme.text)
                 if !hits.isEmpty {
                     Button { store.perform(.previousMatch) } label: { Image(systemName: "chevron.left") }
-                        .keyboardShortcut(Keys.shortcut(.previousMatch))
+                        .keyboardShortcut(keys.shortcut(.previousMatch))
                         .accessibilityLabel("Previous match")
                     Button { store.perform(.nextMatch) } label: { Image(systemName: "chevron.right") }
-                        .keyboardShortcut(Keys.shortcut(.nextMatch))
+                        .keyboardShortcut(keys.shortcut(.nextMatch))
                         .accessibilityLabel("Next match")
                     #if os(macOS)
-                    Keycap(Keys.key(for: .nextMatch).label).accessibilityHidden(true)
+                    Keycap(keys.key(for: .nextMatch).label).accessibilityHidden(true)
                     #endif
                 }
             }

@@ -78,6 +78,7 @@ struct TicketSheet: View {
 
 /// The sheet itself, drawn from values so a picture can show any of its states.
 struct TicketSheetBody: View {
+    @Environment(\.keys) private var keys
     let ticket: Ticket?
     let state: TicketSheetState
     var copied = false
@@ -123,12 +124,12 @@ struct TicketSheetBody: View {
             }
             HStack(spacing: 8) {
                 #if os(macOS)
-                Keycap(Keys.key(for: .close))
+                Keycap(keys.key(for: .close))
                 #endif
                 Spacer()
                 Button(action: onDone) { BudButtonLabel(title: "Done") }
                     .buttonStyle(.budPrimary)
-                    .keyboardShortcut(Keys.shortcut(.close))
+                    .keyboardShortcut(keys.shortcut(.close))
             }
         }
         .textRole(.body)
