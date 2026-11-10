@@ -24,6 +24,11 @@ final class ModalTests: XCTestCase {
         XCTAssertEqual(ModalMetrics.cardWidth(window: 390), 358)
     }
 
+    func testACardIsNoTallerThanTheWindowLessItsMargins() {
+        XCTAssertEqual(ModalMetrics.cardHeight(window: 852), 820, "an iPhone's window leaves 16 pt above and below")
+        XCTAssertEqual(ModalMetrics.cardHeight(window: 20), 0)
+    }
+
     func testTheShortcutsSheetIsAWideCardUntilTheWindowIsNarrower() {
         XCTAssertEqual(Modal.shortcuts.width, 720)
         XCTAssertEqual(Modal.settings.width, 480)

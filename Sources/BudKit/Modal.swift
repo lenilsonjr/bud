@@ -90,6 +90,12 @@ enum ModalMetrics {
     static func cardWidth(window: CGFloat, card: CGFloat = width) -> CGFloat {
         min(card, window - 2 * margin)
     }
+
+    /// The tallest a card may be: the window's height less a margin above and below, so a card
+    /// taller than a phone scrolls inside and the scrim stays in reach to close it.
+    static func cardHeight(window: CGFloat) -> CGFloat {
+        max(0, window - 2 * margin)
+    }
 }
 
 #if canImport(SwiftUI) && !os(tvOS)
@@ -108,6 +114,7 @@ struct ModalHost: View {
                 GeometryReader { window in
                     card(for: modal)
                         .frame(width: ModalMetrics.cardWidth(window: window.size.width, card: modal.width))
+                        .frame(maxHeight: ModalMetrics.cardHeight(window: window.size.height))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: compact ? .bottom : .center)
                         .padding(.bottom, compact ? ModalMetrics.margin : 0)
                 }

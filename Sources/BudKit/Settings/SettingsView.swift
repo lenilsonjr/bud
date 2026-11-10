@@ -27,49 +27,35 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Settings")
-                .textStyle(Self.title)
-                .foregroundStyle(Theme.text)
-            section("Appearance", caption: "Bud follows the system until you pick a side.") {
-                Segmented(selection: $flags.appearance, options: Appearance.allCases) { $0.rawValue }
-            }
-            section("Vault", caption: "The folder of Markdown files Bud reads and writes.") {
-                Text(vaultPath)
-                    .textRole(.mono)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .foregroundStyle(Theme.text3)
-                    .textSelection(.enabled)
-            }
-            DevicesSection(devices: devices, present: { modal in
-                if let present { present(modal) } else { local = modal }
-            })
-            SourcesSection(sources: .shared, present: { modal in
-                if let present { present(modal) } else { local = modal }
-            })
-            section("Start over", caption: "Erases every bud on this device and starts again, empty or with the sample vault.") {
-                Button {
-                    if let present { present(.freshStart) } else { local = .freshStart }
-                } label: {
-                    BudButtonLabel(title: "Start over…", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(.budDestructive)
-            }
+        Group {
             if let onDone {
-                HStack {
-                    Spacer()
-                    Button(action: onDone) { BudButtonLabel(title: "Done") }
-                        .buttonStyle(.budPrimary)
-                        .keyboardShortcut(.defaultAction)
+                // A modal on iPhone and iPad: the title and Done stay put and the sections scroll
+                // between them once they are taller than the card the window allows.
+                VStack(alignment: .leading, spacing: 20) {
+                    heading
+                    ViewThatFits(in: .vertical) {
+                        sections
+                        MaybeScroll { sections.frame(maxWidth: .infinity, alignment: .leading) }
+                    }
+                    HStack {
+                        Spacer()
+                        Button(action: onDone) { BudButtonLabel(title: "Done") }
+                            .buttonStyle(.budPrimary)
+                            .keyboardShortcut(.defaultAction)
+                    }
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 20) {
+                    heading
+                    sections
+                }
+                .frame(minWidth: 360, alignment: .leading)
+                .padding(24)
             }
         }
         .textRole(.body)
         .foregroundStyle(Theme.text)
         .tint(Theme.leaf)
-        .frame(minWidth: 360, alignment: .leading)
-        .padding(onDone == nil ? 24 : 0)
         .sheet(item: $local) { modal in
             Group {
                 switch modal {
@@ -97,6 +83,42 @@ public struct SettingsView: View {
             .frame(width: ModalMetrics.width - 2 * ModalMetrics.padding)
             .padding(ModalMetrics.padding)
             .background(Theme.raised)
+        }
+    }
+
+    private var heading: some View {
+        Text("Settings")
+            .textStyle(Self.title)
+            .foregroundStyle(Theme.text)
+    }
+
+    private var sections: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            section("Appearance", caption: "Bud follows the system until you pick a side.") {
+                Segmented(selection: $flags.appearance, options: Appearance.allCases) { $0.rawValue }
+            }
+            section("Vault", caption: "The folder of Markdown files Bud reads and writes.") {
+                Text(vaultPath)
+                    .textRole(.mono)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .foregroundStyle(Theme.text3)
+                    .textSelection(.enabled)
+            }
+            DevicesSection(devices: devices, present: { modal in
+                if let present { present(modal) } else { local = modal }
+            })
+            SourcesSection(sources: .shared, present: { modal in
+                if let present { present(modal) } else { local = modal }
+            })
+            section("Start over", caption: "Erases every bud on this device and starts again, empty or with the sample vault.") {
+                Button {
+                    if let present { present(.freshStart) } else { local = .freshStart }
+                } label: {
+                    BudButtonLabel(title: "Start over…", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.budDestructive)
+            }
         }
     }
 
