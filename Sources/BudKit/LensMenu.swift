@@ -332,10 +332,10 @@ struct LensMenu: View {
         .task { typingName = true }
     }
 
-    /// Asked again at the moment of saving: the rows or the saved lenses may have changed
-    /// since the field opened.
+    /// The store asks again at the moment of saving: the rows or the saved lenses may have
+    /// changed since the field opened.
     private func save() {
-        guard let name = naming, refusal(name) == nil, store.saveLens(name) != nil else { return }
+        guard let name = naming, store.saveLens(name) != nil else { return }
         naming = nil
     }
 

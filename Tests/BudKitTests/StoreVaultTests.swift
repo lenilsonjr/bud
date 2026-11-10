@@ -713,9 +713,9 @@ final class StoreVaultTests: XCTestCase {
         let lens = try XCTUnwrap(store.saveLens("Home", query: LensQuery(tags: ["home"])))
         store.applyLens(lens.id)
         store.renameTag("home", to: "house")
+        await store.settle()
         XCTAssertEqual(store.saved(lens.id)?.query.tags, ["house"])
         XCTAssertEqual(store.canvasLens, LensQuery(tags: ["house"]), "The ticked lens asks the new tag")
-        await store.settle()
         let stored = try await vault.shared(.lenses)
         XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Home","query":{"tags":["house"]}}"#)
         await undo(store) { store.saved(lens.id)?.query.tags == ["home"] }
@@ -795,6 +795,43 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.saved(lens.id)?.query.tags, ["house"])
         let stored = try await vault.shared(.lenses)
         XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Home","query":{"tags":["house"]}}"#)
+    }
+
+    func testATagRenameReachesASavedLensWhenNoBudHereCarriesTheTag() async throws {
+        let (store, vault) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        store.renameTag("garden", to: "yard")
+        await store.settle()
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["yard"])
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in saved lenses")
+        let stored = try await vault.shared(.lenses)
+        XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Garden","query":{"tags":["yard"]}}"#)
+    }
+
+    func testUndoingATagRenameTakesItBackFromADeletedLensToo() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        store.deleteLens(lens.id)
+        let deleting = try XCTUnwrap(store.toasts.current?.action.undo)
+        store.renameTag("garden", to: "yard")
+        await store.settle()
+        await undo(store) { false }
+        deleting()
+        for _ in 0..<20 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["garden"], "Back as it was deleted")
+    }
+
+    func testTappingATickedSavedLensUnticksItsRowAlone() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Today", query: .today))
+        store.applyLens(lens.id)
+        store.canvasFacets.append(.pinned)
+        store.applyLens(lens.id)
+        XCTAssertEqual(store.canvasFacets, [.pinned])
+        store.canvasFacets = [.done]
+        store.applyLens(lens.id)
+        XCTAssertEqual(store.canvasFacets, [.saved(lens)], "Unticked, it takes the place of the rows")
     }
 
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {
