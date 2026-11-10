@@ -10,7 +10,7 @@ public struct Swatch: Equatable, Sendable {
     /// Accepts `#RRGGBB` and `#RRGGBBAA`, with or without the hash. Anything else is nil.
     public init?(hex: String) {
         var text = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard text.count == 6 || text.count == 8, UInt32(text, radix: 16) != nil else { return nil }
+        guard text.count == 6 || text.count == 8, text.allSatisfy(\.isHexDigit) else { return nil }
         if text.count == 6 { text += "FF" }
         guard let full = UInt32(text, radix: 16) else { return nil }
         red = Double((full >> 24) & 0xFF) / 255
@@ -22,11 +22,24 @@ public struct Swatch: Equatable, Sendable {
     /// The value back as the design file writes it: `#RRGGBB`, with `AA` only when translucent.
     public var hex: String {
         let channels = alpha < 1 ? [red, green, blue, alpha] : [red, green, blue]
-        return "#" + channels.map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
+        return "#" + channels.map { channel in
+            let byte = UInt8((channel * 255).rounded())
+            return String(byte < 16 ? "0" : "") + String(byte, radix: 16, uppercase: true)
+        }.joined()
     }
 
-    /// Relative luminance as WCAG 2 defines it, 0 for black and 1 for white. Alpha is ignored:
-    /// a translucent token is judged as if it were painted opaque.
+    /// This colour painted over an opaque one: the usual source-over blend, channel by channel.
+    public func over(_ backdrop: Swatch) -> Swatch {
+        var mixed = backdrop
+        mixed.red = alpha * red + (1 - alpha) * backdrop.red
+        mixed.green = alpha * green + (1 - alpha) * backdrop.green
+        mixed.blue = alpha * blue + (1 - alpha) * backdrop.blue
+        mixed.alpha = 1
+        return mixed
+    }
+
+    /// Relative luminance as WCAG 2 defines it, 0 for black and 1 for white. Alpha is ignored;
+    /// paint a translucent colour `over` its backdrop first.
     public var luminance: Double {
         func linear(_ channel: Double) -> Double {
             channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
@@ -34,10 +47,12 @@ public struct Swatch: Equatable, Sendable {
         return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
     }
 
-    /// The WCAG contrast ratio against another colour, 1 for the same colour up to 21 for black
-    /// on white. Body text wants at least 4.5, large text and chrome at least 3.
-    public func contrast(against other: Swatch) -> Double {
-        let (bright, dim) = luminance > other.luminance ? (luminance, other.luminance) : (other.luminance, luminance)
+    /// The WCAG contrast ratio of this colour painted on another, 1 for the same colour up to 21
+    /// for black on white. A translucent colour is blended over the other first, so a hairline
+    /// is judged as the eye sees it. Body text wants at least 4.5, large text and chrome 3.
+    public func contrast(against backdrop: Swatch) -> Double {
+        let painted = alpha < 1 ? over(backdrop).luminance : luminance
+        let (bright, dim) = painted > backdrop.luminance ? (painted, backdrop.luminance) : (backdrop.luminance, painted)
         return (bright + 0.05) / (dim + 0.05)
     }
 }
@@ -58,83 +73,125 @@ public struct Tone: Equatable, Sendable {
 
 /// The `ui-` colour tokens from the Foundations board, one per appearance. Light is the leaf
 /// palette; dark is Graphite: neutral greys for the window, surfaces, lines and text, with green
-/// kept for actions, selection and the lit card. `Theme` turns these into dynamic `Color`s; keep
-/// every value here so the two files never drift.
+/// kept for actions, selection and the lit card. `Theme` turns these into dynamic `Color`s.
 public enum Palette {
-    public static let amethyst = Tone("#5B2A9E", "#C3B2EE")
-    public static let amethystSoft = Tone("#5B2A9E14", "#B9A6E61F")
-    public static let brand = Tone("#5B2A9E", "#5B2A9E")
-    public static let canvas = Tone("#EDF3E7", "#161616")
-    public static let card = Tone("#CDE3C1", "#222222")
-    public static let cardAgent = Tone("#E3D9F6", "#2B2445")
-    public static let cardAgentInk = Tone("#3E1C70", "#DCCFF7")
-    public static let cardAgentLine = Tone("#BDABE7", "#5F4D96")
-    public static let cardInk = Tone("#14281B", "#EDEDEB")
-    public static let cardLine = Tone("#8FB882", "#343434")
-    public static let cardLit = Tone("#8CCC8C", "#5DBB68")
-    public static let cardLitInk = Tone("#0E1C13", "#0B160D")
-    public static let cardLitLine = Tone("#4E8A55", "#9BDDA1")
-    public static let cardLitMeta = Tone("#24432B", "#1F3A23")
-    public static let cardMeta = Tone("#4B6650", "#9A9A94")
-    public static let cardNote = Tone("#E3E8C0", "#25241F")
-    public static let cardNoteLine = Tone("#B4BF79", "#3B3930")
-    public static let cardNoteMeta = Tone("#626A3C", "#A8A48F")
-    public static let glass = Tone("#FFFFFFE0", "#1C1C1CE6")
-    public static let glow = Tone("#8CCC8C59", "#7FCB8626")
-    public static let hub = Tone("#24432B", "#262626")
-    public static let hubAccent = Tone("#8CCC8C", "#8CCC8C")
-    public static let hubInk = Tone("#EEF6EA", "#F2F2F0")
-    public static let hubLine = Tone("#24432B", "#3A3A3A")
-    public static let hubMark = Tone("#B9A6E6", "#B9A6E6")
-    public static let hubMeta = Tone("#A9C7A3", "#A0A09A")
-    public static let kraft = Tone("#F6EFDF", "#1F1D18")
-    public static let kraftInk = Tone("#86652A", "#D9B877")
-    public static let leaf = Tone("#3B7A45", "#7FCB86")
-    public static let leafFill = Tone("#3F7F48", "#5DBB68")
-    public static let leafGlow = Tone("#8CCC8C40", "#7FCB861F")
-    public static let leafLine = Tone("#4E8A5580", "#7FCB8666")
-    public static let leafSoft = Tone("#4E8A551C", "#7FCB861F")
-    public static let light = Tone("#FFFFFFB3", "#FFFFFF0A")
-    public static let light0 = Tone("#FFFFFF00", "#FFFFFF00")
-    public static let line = Tone("#1B3A2417", "#FFFFFF14")
-    public static let lineStrong = Tone("#1B3A2430", "#FFFFFF26")
-    public static let lit = Tone("#DCEED3", "#1F2A21")
-    public static let onLeaf = Tone("#FFFFFF", "#0B160D")
-    public static let pistil = Tone("#7A4E12", "#EFC77F")
-    public static let pistilSoft = Tone("#DCAC6240", "#DCAC6238")
-    public static let raised = Tone("#FFFFFF", "#242424")
-    public static let rose = Tone("#A23A59", "#EC9BB4")
-    public static let roseSoft = Tone("#DF96B53D", "#E58AA626")
-    public static let scrim = Tone("#1B2E2138", "#000000A6")
-    public static let shadow = Tone("#1B2E211A", "#00000066")
-    public static let shadowStrong = Tone("#1B2E2133", "#000000A6")
-    public static let sidebar = Tone("#E8EFE2", "#141414")
-    public static let surface = Tone("#FFFFFF", "#1A1A1A")
-    public static let text = Tone("#14281B", "#EDEDEB")
-    public static let text2 = Tone("#435848", "#B5B5B0")
-    public static let text3 = Tone("#6C7F6E", "#85857F")
-    public static let window = Tone("#F7F9F3", "#141414")
-
-    /// Every token by the name the board gives it, so the design file's table can be checked
-    /// against this one row by row.
+    /// Every token by the name the board gives it, light then dark. This table is the one place
+    /// a value lives: the named statics below read from it, and a test holds it against the
+    /// design file row by row.
     public static let tokens: [String: Tone] = [
-        "ui-amethyst": amethyst, "ui-amethyst-soft": amethystSoft, "ui-brand": brand,
-        "ui-canvas": canvas, "ui-card": card, "ui-card-agent": cardAgent,
-        "ui-card-agent-ink": cardAgentInk, "ui-card-agent-line": cardAgentLine,
-        "ui-card-ink": cardInk, "ui-card-line": cardLine, "ui-card-lit": cardLit,
-        "ui-card-lit-ink": cardLitInk, "ui-card-lit-line": cardLitLine,
-        "ui-card-lit-meta": cardLitMeta, "ui-card-meta": cardMeta, "ui-card-note": cardNote,
-        "ui-card-note-line": cardNoteLine, "ui-card-note-meta": cardNoteMeta, "ui-glass": glass,
-        "ui-glow": glow, "ui-hub": hub, "ui-hub-accent": hubAccent, "ui-hub-ink": hubInk,
-        "ui-hub-line": hubLine, "ui-hub-mark": hubMark, "ui-hub-meta": hubMeta, "ui-kraft": kraft,
-        "ui-kraft-ink": kraftInk, "ui-leaf": leaf, "ui-leaf-fill": leafFill, "ui-leaf-glow": leafGlow,
-        "ui-leaf-line": leafLine, "ui-leaf-soft": leafSoft, "ui-light": light, "ui-light-0": light0,
-        "ui-line": line, "ui-line-strong": lineStrong, "ui-lit": lit, "ui-on-leaf": onLeaf,
-        "ui-pistil": pistil, "ui-pistil-soft": pistilSoft, "ui-raised": raised, "ui-rose": rose,
-        "ui-rose-soft": roseSoft, "ui-scrim": scrim, "ui-shadow": shadow,
-        "ui-shadow-strong": shadowStrong, "ui-sidebar": sidebar, "ui-surface": surface,
-        "ui-text": text, "ui-text-2": text2, "ui-text-3": text3, "ui-window": window,
+        "ui-amethyst": Tone("#5B2A9E", "#C3B2EE"),
+        "ui-amethyst-soft": Tone("#5B2A9E14", "#B9A6E61F"),
+        "ui-brand": Tone("#5B2A9E", "#5B2A9E"),
+        "ui-canvas": Tone("#EDF3E7", "#161616"),
+        "ui-card": Tone("#CDE3C1", "#222222"),
+        "ui-card-agent": Tone("#E3D9F6", "#2B2445"),
+        "ui-card-agent-ink": Tone("#3E1C70", "#DCCFF7"),
+        "ui-card-agent-line": Tone("#BDABE7", "#5F4D96"),
+        "ui-card-ink": Tone("#14281B", "#EDEDEB"),
+        "ui-card-line": Tone("#8FB882", "#343434"),
+        "ui-card-lit": Tone("#8CCC8C", "#5DBB68"),
+        "ui-card-lit-ink": Tone("#0E1C13", "#0B160D"),
+        "ui-card-lit-line": Tone("#4E8A55", "#9BDDA1"),
+        "ui-card-lit-meta": Tone("#24432B", "#1F3A23"),
+        "ui-card-meta": Tone("#4B6650", "#9A9A94"),
+        "ui-card-note": Tone("#E3E8C0", "#25241F"),
+        "ui-card-note-line": Tone("#B4BF79", "#3B3930"),
+        "ui-card-note-meta": Tone("#626A3C", "#A8A48F"),
+        "ui-glass": Tone("#FFFFFFE0", "#1C1C1CE6"),
+        "ui-glow": Tone("#8CCC8C59", "#7FCB8626"),
+        "ui-hub": Tone("#24432B", "#262626"),
+        "ui-hub-accent": Tone("#8CCC8C", "#8CCC8C"),
+        "ui-hub-ink": Tone("#EEF6EA", "#F2F2F0"),
+        "ui-hub-line": Tone("#24432B", "#3A3A3A"),
+        "ui-hub-mark": Tone("#B9A6E6", "#B9A6E6"),
+        "ui-hub-meta": Tone("#A9C7A3", "#A0A09A"),
+        "ui-kraft": Tone("#F6EFDF", "#1F1D18"),
+        "ui-kraft-ink": Tone("#86652A", "#D9B877"),
+        "ui-leaf": Tone("#3B7A45", "#7FCB86"),
+        "ui-leaf-fill": Tone("#3F7F48", "#5DBB68"),
+        "ui-leaf-glow": Tone("#8CCC8C40", "#7FCB861F"),
+        "ui-leaf-line": Tone("#4E8A5580", "#7FCB8666"),
+        "ui-leaf-soft": Tone("#4E8A551C", "#7FCB861F"),
+        "ui-light": Tone("#FFFFFFB3", "#FFFFFF0A"),
+        "ui-light-0": Tone("#FFFFFF00", "#FFFFFF00"),
+        "ui-line": Tone("#1B3A2417", "#FFFFFF14"),
+        "ui-line-strong": Tone("#1B3A2430", "#FFFFFF26"),
+        "ui-lit": Tone("#DCEED3", "#1F2A21"),
+        "ui-on-leaf": Tone("#FFFFFF", "#0B160D"),
+        "ui-pistil": Tone("#7A4E12", "#EFC77F"),
+        "ui-pistil-soft": Tone("#DCAC6240", "#DCAC6238"),
+        "ui-raised": Tone("#FFFFFF", "#242424"),
+        "ui-rose": Tone("#A23A59", "#EC9BB4"),
+        "ui-rose-soft": Tone("#DF96B53D", "#E58AA626"),
+        "ui-scrim": Tone("#1B2E2138", "#000000A6"),
+        "ui-shadow": Tone("#1B2E211A", "#00000066"),
+        "ui-shadow-strong": Tone("#1B2E2133", "#000000A6"),
+        "ui-sidebar": Tone("#E8EFE2", "#141414"),
+        "ui-surface": Tone("#FFFFFF", "#1A1A1A"),
+        "ui-text": Tone("#14281B", "#EDEDEB"),
+        "ui-text-2": Tone("#435848", "#B5B5B0"),
+        "ui-text-3": Tone("#6C7F6E", "#85857F"),
+        "ui-window": Tone("#F7F9F3", "#141414"),
     ]
+
+    public static let amethyst = token("ui-amethyst")
+    public static let amethystSoft = token("ui-amethyst-soft")
+    public static let brand = token("ui-brand")
+    public static let canvas = token("ui-canvas")
+    public static let card = token("ui-card")
+    public static let cardAgent = token("ui-card-agent")
+    public static let cardAgentInk = token("ui-card-agent-ink")
+    public static let cardAgentLine = token("ui-card-agent-line")
+    public static let cardInk = token("ui-card-ink")
+    public static let cardLine = token("ui-card-line")
+    public static let cardLit = token("ui-card-lit")
+    public static let cardLitInk = token("ui-card-lit-ink")
+    public static let cardLitLine = token("ui-card-lit-line")
+    public static let cardLitMeta = token("ui-card-lit-meta")
+    public static let cardMeta = token("ui-card-meta")
+    public static let cardNote = token("ui-card-note")
+    public static let cardNoteLine = token("ui-card-note-line")
+    public static let cardNoteMeta = token("ui-card-note-meta")
+    public static let glass = token("ui-glass")
+    public static let glow = token("ui-glow")
+    public static let hub = token("ui-hub")
+    public static let hubAccent = token("ui-hub-accent")
+    public static let hubInk = token("ui-hub-ink")
+    public static let hubLine = token("ui-hub-line")
+    public static let hubMark = token("ui-hub-mark")
+    public static let hubMeta = token("ui-hub-meta")
+    public static let kraft = token("ui-kraft")
+    public static let kraftInk = token("ui-kraft-ink")
+    public static let leaf = token("ui-leaf")
+    public static let leafFill = token("ui-leaf-fill")
+    public static let leafGlow = token("ui-leaf-glow")
+    public static let leafLine = token("ui-leaf-line")
+    public static let leafSoft = token("ui-leaf-soft")
+    public static let light = token("ui-light")
+    public static let light0 = token("ui-light-0")
+    public static let line = token("ui-line")
+    public static let lineStrong = token("ui-line-strong")
+    public static let lit = token("ui-lit")
+    public static let onLeaf = token("ui-on-leaf")
+    public static let pistil = token("ui-pistil")
+    public static let pistilSoft = token("ui-pistil-soft")
+    public static let raised = token("ui-raised")
+    public static let rose = token("ui-rose")
+    public static let roseSoft = token("ui-rose-soft")
+    public static let scrim = token("ui-scrim")
+    public static let shadow = token("ui-shadow")
+    public static let shadowStrong = token("ui-shadow-strong")
+    public static let sidebar = token("ui-sidebar")
+    public static let surface = token("ui-surface")
+    public static let text = token("ui-text")
+    public static let text2 = token("ui-text-2")
+    public static let text3 = token("ui-text-3")
+    public static let window = token("ui-window")
+
+    private static func token(_ name: String) -> Tone {
+        guard let tone = tokens[name] else { preconditionFailure("Palette has no token named \(name)") }
+        return tone
+    }
 }
 
 /// Corner radii. The named ones are the Foundations board's scale, one per kind of element;
