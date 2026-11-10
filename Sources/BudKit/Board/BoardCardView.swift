@@ -48,7 +48,8 @@ struct BoardCardView: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadow, radius: 1, y: 1)
         .task(id: card.picture) {
-            picture = card.picture == nil ? nil : await store.picture(of: card.id)
+            guard card.picture != nil else { picture = nil; return }
+            picture = await store.picture(of: card.id)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("board-card")
