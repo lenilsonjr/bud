@@ -64,18 +64,12 @@ public actor MemoryVault: Vault {
         guard let bud = tree.bud(try known(path)) else { return "" }
         var keys: [String] = []
         if let state = bud.state { keys.append("state: \(state.rawValue)") }
-        if let when = bud.when { keys.append("when: \(Self.day(when))") }
-        if let due = bud.due { keys.append("due: \(Self.day(due))") }
+        if let when = bud.when { keys.append("when: \(DayText.fileDate(when))") }
+        if let due = bud.due { keys.append("due: \(DayText.fileDate(due))") }
         if bud.pinned { keys.append("pinned: true") }
         if let from = bud.from { keys.append("from: \(from)") }
         if !bud.tags.isEmpty { keys.append("tags: [\(bud.tags.joined(separator: ", "))]") }
         return (keys.isEmpty ? "" : "---\n" + keys.joined(separator: "\n") + "\n---\n") + bud.body
-    }
-
-    /// `2026-11-05`, in the device's own calendar, as the vault on disk writes a day.
-    private static func day(_ date: Date) -> String {
-        let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
     public func setState(_ path: String, _ state: BudState?) async throws {
