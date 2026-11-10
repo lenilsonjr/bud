@@ -5,13 +5,13 @@
 //! names needs no rewrite of the index.
 //!
 //! A link's target resolves to the one bud whose title it is, then to the one bud whose title it
-//! is in any case, then to the bud at that path, with or without `.md`. An embed's target
-//! resolves to the one attachment whose file name is the target's, then whose file name is it in
-//! any case, then the one the target is the path of; among several, the one in the bud's own
-//! folder comes first, then the one beside the bud's file, then the one at the path from the
-//! vault root. A path is read from the bud's folder, `..` and a leading `/` included. More than
-//! one at the first rank that has any, or none at all, leaves it unresolved. Trash is never a
-//! target.
+//! is in any case, then to the bud at that path, with or without `.md`. An embed's target with a
+//! folder in it is a path, as Obsidian reads one: from the folder the bud's file is in, `..` and
+//! a leading `/` included, then from the vault root. A bare file name resolves to the one
+//! attachment with that name, then with that name in any case; among several, the one in the
+//! bud's own folder comes first, then the one beside the bud's file, then the one at the root.
+//! More than one at the first rank that has any, or none at all, leaves it unresolved. Trash is
+//! never a target.
 
 use crate::{lock, prose, Result, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -270,25 +270,34 @@ fn path_from(dir: &str, target: &str) -> String {
 
 /// The attachment `target` names from the bud at `from`, by the order in the module comment.
 fn resolve_embed(conn: &Connection, from: &str, target: &str) -> Result<Option<String>> {
-    let name = target.rsplit('/').next().unwrap_or(target);
-    // The target as a path from the bud's own folder, from the folder its file is in, and from
-    // the vault root.
-    let own = path_from(from.strip_suffix(".md").unwrap_or(from), target);
-    let beside = path_from(from.rsplit_once('/').map_or("", |(dir, _)| dir), target);
-    let exact = path_from("", target);
+    let beside_dir = from.rsplit_once('/').map_or("", |(dir, _)| dir);
+    if target.contains('/') {
+        // A path: from the folder the bud's file is in, then from the vault root.
+        let near = path_from(beside_dir, target);
+        let at_root = path_from("", target);
+        let mut stmt = conn.prepare_cached(
+            "SELECT path, name FROM attachments WHERE substr(path, 1, 7) != '.trash/'
+             AND path IN (?1, ?2)",
+        )?;
+        let found: Vec<(String, String)> = stmt
+            .query_map(params![near, at_root], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<std::result::Result<_, _>>()?;
+        return Ok(one_at_best(found, |(path, _)| *path != near));
+    }
+    // A bare name: the bud's own folder, the folder its file is in, and the root, in that order.
+    let own = format!("{}/{target}", from.strip_suffix(".md").unwrap_or(from));
+    let beside = path_from(beside_dir, target);
     let mut stmt = conn.prepare_cached(
         "SELECT path, name FROM attachments WHERE substr(path, 1, 7) != '.trash/'
-         AND (name = ?1 COLLATE NOCASE OR path IN (?2, ?3, ?4))",
+         AND name = ?1 COLLATE NOCASE",
     )?;
     let found: Vec<(String, String)> = stmt
-        .query_map(params![name, own, beside, exact], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?
+        .query_map(params![target], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
-    let rank = |(path, found_name): &(String, String)| {
-        let by_name = if found_name == name {
+    let rank = |(path, name): &(String, String)| {
+        let by_name = if name == target {
             0
-        } else if found_name.to_lowercase() == name.to_lowercase() {
+        } else if name.to_lowercase() == target.to_lowercase() {
             1
         } else {
             2
@@ -297,7 +306,7 @@ fn resolve_embed(conn: &Connection, from: &str, target: &str) -> Result<Option<S
             0
         } else if *path == beside {
             1
-        } else if *path == exact {
+        } else if path == target {
             2
         } else {
             3

@@ -121,14 +121,16 @@ fn among_twins_the_one_beside_the_buds_file_wins_when_its_own_folder_has_none() 
 }
 
 #[test]
-fn a_path_is_read_from_the_buds_folder_with_dots_and_a_leading_slash() {
+fn a_path_is_read_from_the_folder_of_the_buds_file_then_from_the_root_and_never_by_name() {
     let (vault, _dir, _index) = vault_with(&[
         (
             "Launch/Pick a name.md",
-            "![](../Attachments/photo.png) ![](/cover.png) ![](../../cover.png) ![[Attachments/photo.png]]\n",
+            "![](../Attachments/photo.png) ![](/cover.png) ![](../../cover.png) ![[Attachments/photo.png]] ![](Pics/cover.png)\n",
         ),
         ("Attachments/photo.png", "a"),
-        ("cover.png", "c"),
+        ("Launch/Attachments/photo.png", "b"),
+        ("Launch/Pick a name/Attachments/photo.png", "c"),
+        ("cover.png", "d"),
     ]);
     assert_eq!(
         to(&vault.embeds("Launch/Pick a name.md").unwrap()),
@@ -136,9 +138,14 @@ fn a_path_is_read_from_the_buds_folder_with_dots_and_a_leading_slash() {
             ("../Attachments/photo.png", Some("Attachments/photo.png")),
             ("/cover.png", Some("cover.png")),
             ("../../cover.png", Some("cover.png")),
-            ("Attachments/photo.png", Some("Attachments/photo.png")),
+            (
+                "Attachments/photo.png",
+                Some("Launch/Attachments/photo.png")
+            ),
+            ("Pics/cover.png", None),
         ],
-        "the first two as Obsidian writes them, the last from the vault root"
+        "as Obsidian reads them: `..` steps out of the file's folder past the bud's own, \
+         a bare folder is looked for beside the file first, and a wrong folder is not a name"
     );
 }
 
