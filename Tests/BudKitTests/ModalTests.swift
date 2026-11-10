@@ -39,8 +39,8 @@ final class ModalTests: XCTestCase {
     }
 
     func testButtonColoursMatchTheKit() {
-        XCTAssertEqual(Palette.leafFill, Tone("#3F7F48", "#8CCC8C"))
-        XCTAssertEqual(Palette.onLeaf, Tone("#FFFFFF", "#0E1C13"))
-        XCTAssertEqual(Palette.scrim, Tone("#1B2E2138", "#040A06A6"))
+        XCTAssertEqual(Palette.leafFill, Tone("#3F7F48", "#5DBB68"))
+        XCTAssertEqual(Palette.onLeaf, Tone("#FFFFFF", "#0B160D"))
+        XCTAssertEqual(Palette.scrim, Tone("#1B2E2138", "#000000A6"))
     }
 }
