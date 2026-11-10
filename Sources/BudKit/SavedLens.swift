@@ -141,28 +141,41 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         return (name == suggested ? next : name, next)
     }
 
-    /// The saved lenses after a tag rename: each that asks for the tag asks for the new name,
-    /// and where two now ask one question the one first by name stays and the other goes.
+    /// The saved lenses after a tag rename: each that asks for the tag asks for the new name.
+    /// Where the rename makes a lens ask what another already asks, one lens per question
+    /// stays, the first by name, and the others go. Only lenses this rename changed bring that
+    /// about: duplicates there were before stay as they were, and so does a lens this build
+    /// cannot read.
     public static func afterTagRename(_ lenses: [SavedLens], from: String, to: String) -> TagRename {
         var out = TagRename()
         var now: [SavedLens] = []
+        var changed: Set<UUID> = []
         for lens in lenses {
             if let renamed = lens.renamingTag(from, to: to) {
                 out.asked += 1
                 out.renamed.append((lens, renamed))
+                changed.insert(lens.id)
                 now.append(renamed)
             } else {
                 now.append(lens)
             }
         }
-        var kept: [SavedLens] = []
-        for lens in sorted(now) {
-            if let same = kept.first(where: { $0.asksSame(as: lens) }) {
+        // Each readable question a changed lens now asks, with every lens asking it.
+        let readable = sorted(now).filter { $0.foreign == nil }
+        var questions: [LensQuery] = []
+        for lens in readable where changed.contains(lens.id) && !questions.contains(lens.query) {
+            questions.append(lens.query)
+        }
+        for question in questions {
+            let asking = readable.filter { $0.query == question }
+            let unchanged = asking.filter { !changed.contains($0.id) }
+            // Duplicates from before stay; the changed lenses join the first of them. Otherwise
+            // the first by name stays.
+            let stays = unchanged.count > 1 ? unchanged : [asking[0]]
+            for lens in asking where !stays.contains(where: { $0.id == lens.id }) {
                 let before = lenses.first { $0.id == lens.id } ?? lens
-                out.merged.append((before, same))
+                out.merged.append((before, stays[0]))
                 out.renamed.removeAll { $0.after.id == lens.id }
-            } else {
-                kept.append(lens)
             }
         }
         return out

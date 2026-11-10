@@ -68,7 +68,7 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.tree.bud(other.id)?.body, "See [[\(thread.text)|the launch]].")
     }
 
-    func testATagRenameUndoneAtOnceStillPutsEveryBudBack() async throws {
+    func testATagRenameUndonePutsEveryBudBack() async throws {
         let (store, vault) = await loaded()
         let a = try XCTUnwrap(store.tree.children(of: rootID).first)
         let b = try XCTUnwrap(store.tree.children(of: rootID).dropFirst().first)
@@ -77,7 +77,9 @@ final class StoreVaultTests: XCTestCase {
         await store.settle()
         store.renameTag("home", to: "house")
         XCTAssertEqual(store.tree.bud(a.id)?.tags, ["house"])
-        // Undo before the rename has reached the vault: the undo waits for it.
+        // The toast comes once the rename has reached the vault.
+        await store.settle()
+        XCTAssertEqual(store.toasts.current?.action.message.hasPrefix("Renamed #home to #house in"), true)
         store.toasts.current?.action.undo?()
         for _ in 0..<100 where store.tree.bud(b.id)?.body != "Milk #home" { await Task.yield() }
         await store.settle()
@@ -130,6 +132,7 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#house"])
         store.renameTag("house", to: "place")
         XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#place"])
+        await store.settle()
         store.toasts.current?.action.undo?()
         for _ in 0..<100 where store.canvasFacets.map(\.name) != ["Open to-dos", "#house"] { await Task.yield() }
         XCTAssertEqual(store.canvasFacets.map(\.name), ["Open to-dos", "#house"])
@@ -816,8 +819,8 @@ final class StoreVaultTests: XCTestCase {
         store.deleteLens(lens.id)
         let deleting = try XCTUnwrap(store.toasts.current?.action.undo)
         store.renameTag("garden", to: "yard")
-        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in 1 saved lens")
         await store.settle()
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in 1 saved lens")
         await undo(store) { store.saved(shown.id)?.query.tags == ["garden"] }
         deleting()
         for _ in 0..<20 { await Task.yield() }
@@ -842,9 +845,9 @@ final class StoreVaultTests: XCTestCase {
         let pantry = try XCTUnwrap(store.saveLens("Pantry", query: LensQuery(tags: ["house"])))
         let kitchen = try XCTUnwrap(store.saveLens("Kitchen", query: LensQuery(tags: ["home"])))
         store.renameTag("home", to: "house")
+        await store.settle()
         XCTAssertEqual(store.toasts.current?.action.message,
                        "Renamed #home to #house in 1 saved lens, and merged Pantry into Kitchen")
-        await store.settle()
         XCTAssertEqual(store.savedLenses.map(\.name), ["Kitchen"])
         XCTAssertEqual(store.saved(kitchen.id)?.query.tags, ["house"])
         var stored = try await vault.shared(.lenses)
@@ -870,18 +873,20 @@ final class StoreVaultTests: XCTestCase {
         store.addTag(thread.id, "home")
         await store.settle()
         store.renameTag("home", to: "house")
-        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #home to #house in 1 bud")
         await store.settle()
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #home to #house in 1 bud")
         _ = try XCTUnwrap(store.saveLens("House", query: LensQuery(tags: ["house"])))
         store.renameTag("house", to: "flat")
-        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #house to #flat in 1 bud and 1 saved lens")
         await store.settle()
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #house to #flat in 1 bud and 1 saved lens")
         let garden = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
         store.deleteLens(garden.id)
         store.renameTag("garden", to: "yard")
+        await store.settle()
         XCTAssertEqual(store.toasts.current?.action.message, "Deleted Garden", "A deleted lens alone shows nothing")
         _ = try XCTUnwrap(store.saveLens("Shed", query: LensQuery(tags: ["shed"])))
         store.renameTag("shed", to: "barn")
+        await store.settle()
         XCTAssertEqual(store.toasts.current?.action.message, "Renamed #shed to #barn in 1 saved lens")
     }
 
@@ -948,6 +953,34 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertTrue(store.savedLensThreads.flatMap(\.hits).contains { $0.text == "Call the printer" })
         store.lens = .today
         XCTAssertEqual(store.savedLensThreads, [])
+    }
+
+    func testUndoingARenameThatMergedATickedLensAwayTicksItAgain() async throws {
+        let (store, _) = await loaded()
+        let pantry = try XCTUnwrap(store.saveLens("Pantry", query: LensQuery(tags: ["house"])))
+        _ = try XCTUnwrap(store.saveLens("Kitchen", query: LensQuery(tags: ["home"])))
+        store.applyLens(pantry.id)
+        store.renameTag("home", to: "house")
+        await store.settle()
+        XCTAssertNil(store.saved(pantry.id))
+        XCTAssertEqual(store.canvasFacets, [], "Gone from the canvas with the lens")
+        await undo(store) { store.saved(pantry.id) != nil }
+        XCTAssertEqual(store.canvasFacets, [.saved(pantry)])
+    }
+
+    func testARenameReachingOnlyADeletedLensLeavesDuplicatesThatWereThere() async throws {
+        let (store, vault) = await loaded()
+        let a = UUID(), b = UUID()
+        try await vault.setShared(.lenses, a.uuidString, #"{"name":"One","query":{"pinned":true}}"#)
+        try await vault.setShared(.lenses, b.uuidString, #"{"name":"Two","query":{"pinned":true}}"#)
+        await store.reloadLenses()
+        let garden = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        store.deleteLens(garden.id)
+        store.renameTag("garden", to: "pinned")
+        await store.settle()
+        XCTAssertEqual(store.savedLenses.map(\.id), [a, b])
+        let stored = try await vault.shared(.lenses)
+        XCTAssertEqual(Set(stored.keys), [a.uuidString, b.uuidString])
     }
 
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {

@@ -261,6 +261,47 @@ final class SavedLensTests: XCTestCase {
         XCTAssertEqual(second.merged.map(\.into), [house])
     }
 
+    /// Duplicates there were before a rename stay; a lens the rename makes ask the same joins
+    /// the first of them.
+    func testDuplicatesThatWereThereSurviveARenameThatReachesAThirdLens() {
+        let one = SavedLens(name: "Alpha", query: LensQuery(tags: ["house"]))
+        let two = SavedLens(name: "Beta", query: LensQuery(tags: ["house"]))
+        let joins = SavedLens(name: "Aardvark", query: LensQuery(tags: ["home"]))
+        let plan = SavedLens.afterTagRename([one, two, joins], from: "home", to: "house")
+        XCTAssertEqual(plan.asked, 1)
+        XCTAssertEqual(plan.merged.map(\.gone), [joins], "The changed lens goes, though first by name")
+        XCTAssertEqual(plan.merged.map(\.into), [one])
+        XCTAssertEqual(plan.renamed.count, 0)
+
+        let apart = SavedLens(name: "Aardvark", query: LensQuery(tags: ["home", "work"]))
+        let other = SavedLens.afterTagRename([one, two, apart], from: "home", to: "house")
+        XCTAssertEqual(other.merged.count, 0, "Asking something else, it merges nothing")
+        XCTAssertEqual(other.renamed.map(\.after.query), [LensQuery(tags: ["house", "work"])])
+    }
+
+    /// Lenses this build cannot read never merge, though they read the same.
+    func testUnreadableLensesNeverMerge() throws {
+        let read = SavedLens.read([
+            UUID().uuidString: #"{"name":"First","query":{}}"#,
+            UUID().uuidString: #"{"name":"Second","query":{}}"#,
+            UUID().uuidString: #"{"name":"Third","query":{"tags":["home"]}}"#,
+        ])
+        XCTAssertTrue(read[0].asksSame(as: read[1]))
+        let plan = SavedLens.afterTagRename(read, from: "home", to: "house")
+        XCTAssertEqual(plan.asked, 1)
+        XCTAssertEqual(plan.merged.count, 0)
+    }
+
+    /// A rename that reaches no saved lens merges none, duplicates and all.
+    func testARenameThatReachesNoSavedLensMergesNone() {
+        let one = SavedLens(name: "One", query: .pinnedBuds)
+        let two = SavedLens(name: "Two", query: .pinnedBuds)
+        let plan = SavedLens.afterTagRename([one, two], from: "garden", to: "yard")
+        XCTAssertEqual(plan.asked, 0)
+        XCTAssertEqual(plan.merged.count, 0)
+        XCTAssertEqual(plan.renamed.count, 0)
+    }
+
     func testTheTagRenameToastNamesWhatChanged() {
         let a = SavedLens(name: "Kitchen", query: LensQuery(tags: ["home"]))
         let b = SavedLens(name: "Pantry", query: LensQuery(tags: ["home"]))
