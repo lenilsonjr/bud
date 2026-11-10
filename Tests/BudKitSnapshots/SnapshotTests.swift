@@ -750,7 +750,7 @@ final class SnapshotTests: XCTestCase {
     /// beyond its column's.
     func testRendersTheBoard() async throws {
         let folder = try pictureFolder()
-        let now = Tree.stillNow
+        let now = stillClock()
         let day: TimeInterval = 86_400
         var tree = Tree.seed(now: now)
         let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
