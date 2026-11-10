@@ -5,17 +5,20 @@ import SwiftUI
 /// then one column per tag in the person's order, the slot that adds a column, then Done, and
 /// Cancelled folded at the end behind "Show cancelled". A tag column dragged by its header is
 /// drawn here, lifted under the pointer, and lands in the gap the drop line showed; its ⋯ menu
-/// moves it or takes it off the board. The cards are read only this round: nothing drags
-/// between columns.
+/// moves it or takes it off the board. A card dragged to another column lands there through
+/// the store, which writes the tag or the state and offers to take it back.
 struct BoardView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
     @Environment(\.stillPicture) private var still
+    @Environment(\.stillBoardDrag) private var stillDrag
     @State private var showsCancelled = false
     /// The tag column in hand and where the pointer is, in this view's space.
     @State private var inHand: (tag: String, at: CGPoint)? = nil
     /// Where each tag column is, in this view's space, as the columns report it during a drag.
     @State private var frames: [String: CGRect] = [:]
+    /// The column the card in hand hovers over, while it hovers.
+    @State private var targeted: BoardColumn.Kind?
 
     static let space = "board"
 
@@ -85,8 +88,9 @@ struct BoardView: View {
         let row = HStack(alignment: .top, spacing: 12) {
             ForEach(board.columns) { column in
                 if column.kind == .done { BoardAddColumn(store: store) }
-                BoardColumnView(column: column, pictures: pictures, edit: column.tag == nil ? nil : edit)
+                BoardColumnView(column: column, pictures: pictures, edit: column.tag == nil ? nil : edit, hover: hover(on: column.kind, in: board))
                     .frame(width: column.kind == .done ? 220 : 232)
+                    .boardDrop(onTarget: { target(column.kind, $0) }) { store.drop($0, on: column.kind) }
             }
             cancelled(board, pictures: pictures)
         }
@@ -98,11 +102,30 @@ struct BoardView: View {
         }
     }
 
+    /// What a column shows of the drag: in a still picture, the card the environment lifts over
+    /// the column it names; live, whether the card in hand hovers over it.
+    private func hover(on kind: BoardColumn.Kind, in board: Board) -> BoardCardHover? {
+        if still {
+            guard let stillDrag, stillDrag.over == kind else { return nil }
+            return BoardCardHover(targeted: true, lifted: board.card(stillDrag.card))
+        }
+        return targeted == kind ? BoardCardHover(targeted: true) : nil
+    }
+
+    private func target(_ kind: BoardColumn.Kind, _ hovering: Bool) {
+        if hovering {
+            targeted = kind
+        } else if targeted == kind {
+            targeted = nil
+        }
+    }
+
     /// Cancelled: a 40 pt stub with its count until shown, then a column like Done.
     @ViewBuilder private func cancelled(_ board: Board, pictures: BoardCardContext) -> some View {
         if showsCancelled {
-            BoardColumnView(column: board.cancelled, pictures: pictures) { showsCancelled = false }
+            BoardColumnView(column: board.cancelled, pictures: pictures, hover: hover(on: .cancelled, in: board)) { showsCancelled = false }
                 .frame(width: 220)
+                .boardDrop(onTarget: { target(.cancelled, $0) }) { store.drop($0, on: .cancelled) }
         } else {
             Button { showsCancelled = true } label: {
                 VStack(spacing: 8) {
@@ -149,6 +172,9 @@ struct BoardColumnView: View {
     let pictures: BoardCardContext
     /// How a tag column edits the board; nil on Open, Done and Cancelled.
     var edit: BoardColumnEdit? = nil
+    /// The card in hand over this column: the drop hint at the top, and in a still picture the
+    /// lifted card itself; nil while nothing hovers.
+    var hover: BoardCardHover? = nil
     /// Folds Cancelled back behind its stub; nil on the other columns.
     var onHide: (() -> Void)? = nil
     @Environment(\.stillPicture) private var still
@@ -176,10 +202,13 @@ struct BoardColumnView: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(column.isFixed ? Theme.sidebar : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            if !column.isFixed {
+            if hover?.targeted == true {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.leafLine, lineWidth: 1.5)
+            } else if !column.isFixed {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.line, lineWidth: 1)
             }
         }
+        .overlay(alignment: .top) { liftedCard }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(column.title)
         if let tag = column.tag, let edit {
@@ -213,11 +242,28 @@ struct BoardColumnView: View {
 
     private var cards: some View {
         LazyVStack(alignment: .leading, spacing: 8) {
+            if hover?.targeted == true {
+                BoardDropHint(column: column.kind)
+            }
             ForEach(column.cards) { card in
                 BoardCardView(card: card, picture: pictures.state(of: card.id), now: pictures.now, calendar: pictures.calendar) {
                     await pictures.load(card.id)
                 }
+                .boardDraggable(card.id)
             }
+        }
+    }
+
+    /// The card a still picture holds over this column, raised and turned a little, the way the
+    /// system's preview carries a live one.
+    @ViewBuilder private var liftedCard: some View {
+        if let card = hover?.lifted {
+            BoardCardView(card: card, picture: pictures.state(of: card.id), now: pictures.now, calendar: pictures.calendar) {}
+                .frame(width: 232)
+                .rotationEffect(.degrees(-2))
+                .shadow(color: Theme.shadowStrong, radius: 14, y: 8)
+                .offset(x: -36, y: 64)
+                .allowsHitTesting(false)
         }
     }
 

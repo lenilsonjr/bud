@@ -750,6 +750,33 @@ final class SnapshotTests: XCTestCase {
     /// beyond its column's.
     func testRendersTheBoard() async throws {
         let folder = try pictureFolder()
+        let (store, _) = try await boardStore()
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store).frame(width: 1440, height: 900)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("board-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
+    /// The board with a card in hand over Done: the column lit, "Drop to close it" at its top,
+    /// and the card raised over it.
+    func testRendersTheBoardWithACardOverDone() async throws {
+        let folder = try pictureFolder()
+        let (store, proof) = try await boardStore()
+        let view = BudRootView(store: store)
+            .environment(\.stillBoardDrag, BoardDrag(card: proof, over: .done))
+            .frame(width: 1440, height: 900)
+        let data = try render(view, scheme: .light)
+        let file = folder.appendingPathComponent("board-drop-light.png")
+        try data.write(to: file)
+        XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+    }
+
+    /// The newsletter thread as a board, on the fixed clock: tag columns, a card with a picture,
+    /// one done, one cancelled. Returns the store on it and the "doing" card the pictures lift.
+    private func boardStore() async throws -> (BudStore, UUID) {
         let now = stillClock()
         let day: TimeInterval = 86_400
         var tree = Tree.seed(now: now)
@@ -783,13 +810,7 @@ final class SnapshotTests: XCTestCase {
         store.keepPicture(try XCTUnwrap(BoardPicture.decode(png)), of: board.id)
         store.center = newsletter.id
         store.surface = .board
-        for scheme in [ColorScheme.light, .dark] {
-            let view = BudRootView(store: store).frame(width: 1440, height: 900)
-            let data = try render(view, scheme: scheme)
-            let file = folder.appendingPathComponent("board-\(scheme == .dark ? "dark" : "light").png")
-            try data.write(to: file)
-            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
-        }
+        return (store, marta.id)
     }
 
     /// Add column on the newsletter board, the picker open beside the slot: the search line,
