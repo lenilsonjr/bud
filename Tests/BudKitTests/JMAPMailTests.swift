@@ -5,29 +5,35 @@ import FoundationNetworking
 @testable import BudKit
 
 /// A server that answers each request from a script, and keeps what it was asked.
+/// Answers requests from a script: replies in order, or by the request's path for the ones a
+/// source sends at once, whose order is not fixed.
 final class ScriptedHTTP: HTTP, @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [HTTPReply]
+    private let routes: [String: HTTPReply]
     private(set) var asked: [URLRequest] = []
 
-    init(_ replies: [(String, Int)]) { self.replies = replies.map { HTTPReply(body: Data($0.0.utf8), status: $0.1) } }
+    init(_ replies: [(String, Int)], routes: [String: (String, Int)] = [:]) {
+        self.replies = replies.map { HTTPReply(body: Data($0.0.utf8), status: $0.1) }
+        self.routes = routes.mapValues { HTTPReply(body: Data($0.0.utf8), status: $0.1) }
+    }
 
     /// Replies with headers, for a source that asks by ETag.
     init(headed replies: [(String, Int, [String: String])]) {
         self.replies = replies.map { HTTPReply(body: Data($0.0.utf8), status: $0.1, headers: $0.2) }
-    }
-
-    func send(_ request: URLRequest) async throws -> (Data, Int) {
-        let reply = try await exchange(request)
-        return (reply.body, reply.status)
+        routes = [:]
     }
 
     func exchange(_ request: URLRequest) async throws -> HTTPReply {
         lock.withLock {
             asked.append(request)
+            if let path = request.url?.path, let routed = routes[path] { return routed }
             return replies.isEmpty ? HTTPReply(body: Data(), status: 500) : replies.removeFirst()
         }
     }
+
+    /// The paths asked, in no particular order.
+    var paths: Set<String> { lock.withLock { Set(asked.compactMap { $0.url?.path }) } }
 
     func body(_ i: Int) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }

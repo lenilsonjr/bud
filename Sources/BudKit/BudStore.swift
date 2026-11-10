@@ -446,14 +446,13 @@ public final class BudStore: ObservableObject {
         }
         // A calendar owns the event's day: the bud starts with it.
         if account.kind == .calendar, let date = item.date { setWhen(id, date) }
-        // Linear owns the issue's due date, and the body says its team and state.
-        if account.kind == .linear {
-            if let date = item.date { setDue(id, date) }
+        // Linear and GitHub own the body: the team and state, or the repository and kind. Linear
+        // owns the issue's due date too.
+        if account.kind == .linear || account.kind == .github {
+            if account.kind == .linear, let date = item.date { setDue(id, date) }
             if let detail = item.detail { setBody(id, detail) }
         }
-        // GitHub: the body says the repository and whether it is an issue or a pull request.
-        if account.kind == .github, let detail = item.detail { setBody(id, detail) }
-        lastSeen[key] = SourceSnapshot(item, at: Date())
+        lastSeen[key] = SourceSnapshot(item, kind: account.kind, at: Date())
         lastPlanted = Planted(id: id, at: Date())
         toasts.show(Undoable(message: "Planted in \(tree.title(of: parent)), from \(account.name)") { [weak self] in
             Task { @MainActor in self?.remove(id) }

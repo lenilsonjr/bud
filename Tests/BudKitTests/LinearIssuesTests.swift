@@ -32,7 +32,7 @@ final class LinearIssuesTests: XCTestCase {
         XCTAssertTrue(first.todo)
         XCTAssertEqual(first.date, LinearIssues.day("2026-11-10"))
         XCTAssertNil(result.items[1].priority, "Linear's 0 is no priority")
-        XCTAssertEqual(result.updated, LinearIssues.instant("2026-11-05T11:30:00.000Z"))
+        XCTAssertEqual(result.updated, SourceDates.instant("2026-11-05T11:30:00.000Z"))
     }
 
     func testChangesAreAskedForByUpdatedAtSinceTheLastRead() async throws {
@@ -41,7 +41,7 @@ final class LinearIssuesTests: XCTestCase {
             ("{\"data\": {\"viewer\": {\"assignedIssues\": {\"nodes\": [{\"updatedAt\": \"2026-11-05T12:00:00.000Z\"}]}}}}", 200),
         ])
         let linear = LinearIssues(token: "k", http: http)
-        let since = LinearIssues.instant("2026-11-05T11:30:00.000Z")!
+        let since = SourceDates.instant("2026-11-05T11:30:00.000Z")!
         let quiet = try await linear.changed(since: since)
         XCTAssertNil(quiet)
         let moved = try await linear.changed(since: since)
@@ -107,7 +107,7 @@ final class LinearSourceTests: XCTestCase {
         let store = SourceStore(defaults: UserDefaults(suiteName: "lin-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
         var now = Date(timeIntervalSince1970: 1_793_900_000)
         store.clock = { now }
-        await store.connectLinear(name: "", token: "k")
+        await store.connect(.linear, name: "", token: "k")
         XCTAssertEqual(store.accounts.first?.name, "Linear")
         XCTAssertEqual(store.accounts.first?.items.map(\.title), ["Ship"])
         await store.refresh()
@@ -127,7 +127,7 @@ final class LinearSourceTests: XCTestCase {
         """
         let http = ScriptedHTTP([(window("Ship"), 200), (closed, 200)])
         let store = SourceStore(defaults: UserDefaults(suiteName: "lin-\(UUID().uuidString)")!, tokens: MemoryTokens(), http: http)
-        await store.connectLinear(name: "Work", token: "k")
+        await store.connect(.linear, name: "Work", token: "k")
         let found = await store.sightings(for: [("linear:ENG-1", nil), ("linear:ENG-7", nil), ("linear:ENG-8", nil)])
         guard case .seen(let open) = found["linear:ENG-1"], case .seen(let done) = found["linear:ENG-7"] else {
             return XCTFail("Expected both seen: \(found)")

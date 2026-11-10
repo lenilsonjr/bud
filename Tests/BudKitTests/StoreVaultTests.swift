@@ -553,7 +553,7 @@ final class StoreVaultTests: XCTestCase {
         let soil = SourceStore(
             defaults: UserDefaults(suiteName: "live-\(UUID().uuidString)")!, tokens: MemoryTokens(),
             http: ScriptedHTTP([(empty, 200), (done, 200)]))
-        await soil.connectLinear(name: "Work", token: "k")
+        await soil.connect(.linear, name: "Work", token: "k")
         await store.keepLive(soil)
         await store.settle()
         let now = try XCTUnwrap(store.tree.bud(bud.id))

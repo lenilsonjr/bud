@@ -7,16 +7,17 @@ public struct SourceSnapshot: Codable, Hashable, Sendable {
     public var title: String
     /// Linear: the team and state the bud's body says.
     public var detail: String?
+    /// Not for GitHub: its last update moves with every comment, and no rule reads it.
     public var date: Date?
     public var todo: Bool
     public var cancelled: Bool
     /// When this device saw it.
     public var at: Date?
 
-    public init(_ item: SourceItem, at: Date? = nil) {
+    public init(_ item: SourceItem, kind: SourceKind? = nil, at: Date? = nil) {
         title = item.title
         detail = item.detail
-        date = item.date
+        date = kind == .github ? nil : item.date
         todo = item.todo
         cancelled = item.cancelled
         self.at = at
@@ -59,7 +60,7 @@ public enum LiveRules {
         guard case .seen(let item) = sighting else {
             return (bud.fromState == "gone" ? [] : [.mark("gone")], last)
         }
-        let seen = SourceSnapshot(item, at: now)
+        let seen = SourceSnapshot(item, kind: kind, at: now)
         var changes: [LiveChange] = []
         var mark: String?? = nil
         if bud.fromState == "gone" { mark = .some(nil) }
