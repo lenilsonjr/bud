@@ -22,9 +22,9 @@ final class CalendarDragTests: XCTestCase {
 
     func testMovingADayKeepsItsTimeOfDay() {
         let morning = date(2026, 11, 3, 9, 30)
-        XCTAssertEqual(DateField.when.moved(morning, toDay: date(2026, 11, 14), calendar: calendar), date(2026, 11, 14, 9, 30))
-        XCTAssertEqual(DateField.due.moved(morning, toDay: date(2026, 10, 30, 23, 59), calendar: calendar), date(2026, 10, 30, 9, 30), "Back in time too, and only the day of the target counts")
-        XCTAssertEqual(DateField.when.moved(morning, toDay: date(2026, 11, 3, 18), calendar: calendar), morning, "The same day moves nothing")
+        XCTAssertEqual(DateKey.when.moved(morning, toDay: date(2026, 11, 14), calendar: calendar), date(2026, 11, 14, 9, 30))
+        XCTAssertEqual(DateKey.due.moved(morning, toDay: date(2026, 10, 30, 23, 59), calendar: calendar), date(2026, 10, 30, 9, 30), "Back in time too, and only the day of the target counts")
+        XCTAssertEqual(DateKey.when.moved(morning, toDay: date(2026, 11, 3, 18), calendar: calendar), morning, "The same day moves nothing")
     }
 
     func testAnEntryMovedKeepsItsOtherDay() throws {
@@ -84,9 +84,9 @@ final class CalendarDragTests: XCTestCase {
     }
 
     func testAFieldDrawsWithItsSymbol() {
-        XCTAssertEqual(DateField.when.symbol, "arrow.right")
-        XCTAssertEqual(DateField.due.symbol, "flag")
-        XCTAssertEqual(DateField.allCases.map(\.rawValue), ["when", "due"], "The front matter keys")
+        XCTAssertEqual(DateKey.when.symbol, "arrow.right")
+        XCTAssertEqual(DateKey.due.symbol, "flag")
+        XCTAssertEqual(DateKey.allCases.map(\.rawValue), ["when", "due"], "The front matter keys")
     }
 
     func testADayLabelReadsTheSameEverywhere() {

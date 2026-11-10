@@ -27,7 +27,7 @@ extension BudStore {
     /// back. Only that key reaches the file: `when` or `due`, nothing else. The one step every
     /// drag on a calendar ends in, whichever view it was dragged in; a drop on the day it is
     /// already on changes nothing and says nothing.
-    public func moveDate(_ field: DateField, of id: UUID, to day: Date) {
+    public func moveDate(_ field: DateKey, of id: UUID, to day: Date) {
         guard let bud = tree.bud(id), let old = field == .when ? bud.when : bud.due else { return }
         let new = field.moved(old, toDay: day, calendar: calendar)
         guard calendar.startOfDay(for: new) != calendar.startOfDay(for: old) else { return }
@@ -46,7 +46,7 @@ extension BudStore {
     public func moveDue(of id: UUID, to day: Date) { moveDate(.due, of: id, to: day) }
 
     /// The one day's write, here and in the vault, without a toast.
-    private func set(_ field: DateField, of id: UUID, to date: Date?) {
+    private func set(_ field: DateKey, of id: UUID, to date: Date?) {
         switch field {
         case .when: setWhen(id, date)
         case .due: setDue(id, date)

@@ -13,7 +13,7 @@ struct MonthGridView: View {
     /// The month with a drag applied, from the store, so the bud in hand is drawn where it would land.
     let preview: (CalendarDrag) -> MonthGrid
     /// A day let go on a day: the field, the bud and the day.
-    let onMove: (DateField, UUID, Date) -> Void
+    let onMove: (DateKey, UUID, Date) -> Void
     @Environment(\.stillCalendarDrag) private var stillDrag
     /// The end or item in hand and where the pointer is, in the rows' space.
     @State private var inHand: CalendarDrag? = nil
@@ -58,11 +58,7 @@ struct MonthGridView: View {
                                 }
                             }
                             ForEach(shown.bars(inRow: row, fitting: fits)) { bar in
-                                BarPiece(bar: bar, lifted: moving?.entry == bar.entry)
-                                    .overlay(alignment: .leading) { handle(bar.entry, .when, size: geo.size) }
-                                    .overlay(alignment: .trailing) { handle(bar.entry, .due, size: geo.size) }
-                                    .frame(width: CGFloat(bar.columns) * width - 2 * Self.barInset, height: Self.barHeight)
-                                    .offset(x: CGFloat(bar.from) * width + Self.barInset, y: Self.laneTop + CGFloat(bar.lane) * Self.laneHeight)
+                                piece(bar, lifted: moving?.entry == bar.entry, width: width, size: geo.size)
                             }
                         }
                         .frame(width: geo.size.width, height: height)
@@ -134,7 +130,7 @@ struct MonthGridView: View {
                 .padding(.horizontal, 2)
                 .background(lifted ? Theme.leafFill : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 .contentShape(Rectangle())
-                .gesture(lift(item.entry, item.isDue ? .due : .when, size: size))
+                .gesture(lift(item.entry, item.isDue ? DateKey.due : DateKey.when, size: size))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(item.title), \(item.isDue ? "due" : "scheduled")")
             }
@@ -149,8 +145,21 @@ struct MonthGridView: View {
         .clipped()
     }
 
+    /// One piece of a bar in its lane, with the handle at each end: the leading one lifts the
+    /// scheduled day, the trailing one the due day.
+    private func piece(_ bar: MonthGrid.Bar, lifted: Bool, width: CGFloat, size: CGSize) -> some View {
+        let pieceWidth = CGFloat(bar.columns) * width - 2 * Self.barInset
+        let x = CGFloat(bar.from) * width + Self.barInset
+        let y = Self.laneTop + CGFloat(bar.lane) * Self.laneHeight
+        return BarPiece(bar: bar, lifted: lifted)
+            .overlay(alignment: .leading) { handle(bar.entry, DateKey.when, size: size) }
+            .overlay(alignment: .trailing) { handle(bar.entry, DateKey.due, size: size) }
+            .frame(width: pieceWidth, height: Self.barHeight)
+            .offset(x: x, y: y)
+    }
+
     /// The strip at a bar's end that takes the drag: clear, over the piece, the width of a thumb.
-    private func handle(_ entry: UUID, _ field: DateField, size: CGSize) -> some View {
+    private func handle(_ entry: UUID, _ field: DateKey, size: CGSize) -> some View {
         Color.clear
             .frame(width: Self.handleWidth)
             .contentShape(Rectangle())
@@ -160,7 +169,7 @@ struct MonthGridView: View {
 
     /// The drag that lifts a day: the pointer and the day under it while it moves, the move when
     /// it lets go on a day, nothing when it lets go off the grid.
-    private func lift(_ entry: UUID, _ field: DateField, size: CGSize) -> some Gesture {
+    private func lift(_ entry: UUID, _ field: DateKey, size: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
             .updating($holding) { _, state, _ in state = true }
             .onChanged { value in
@@ -173,7 +182,7 @@ struct MonthGridView: View {
     }
 
     /// The day under the pointer, said beside it: the arrow or the flag and "14 Nov".
-    private func dayChip(_ field: DateField, _ day: Date) -> some View {
+    private func dayChip(_ field: DateKey, _ day: Date) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
         return HStack(spacing: 5) {
             Image(systemName: field.symbol)
