@@ -12,6 +12,9 @@ struct Sidebar: View {
     @State private var renaming: UUID? = nil
     @State private var draft = ""
     @FocusState private var typing: Bool
+    /// Whether the rename field has had focus yet: a loss of focus before it ever had it is
+    /// the field arriving, not the person leaving.
+    @State private var hadFocus = false
     @Environment(\.compact) private var compact
     @Environment(\.goAnywhere) private var goAnywhere
 
@@ -96,7 +99,9 @@ struct Sidebar: View {
                     .textRole(.body)
                     .focused($typing)
                     .onSubmit { finishRenaming(lens.id) }
-                    .onChange(of: typing) { _, now in if !now { finishRenaming(lens.id) } }
+                    .onChange(of: typing) { _, now in
+                        if now { hadFocus = true } else if hadFocus { finishRenaming(lens.id) }
+                    }
                     #if os(macOS)
                     .onExitCommand { renaming = nil }
                     #endif
@@ -115,6 +120,7 @@ struct Sidebar: View {
                     // A rename in progress on another lens is kept first.
                     if let other = renaming, other != lens.id { finishRenaming(other) }
                     draft = lens.name
+                    hadFocus = false
                     renaming = lens.id
                 }
                 Button("Delete", role: .destructive) { store.deleteLens(lens.id) }

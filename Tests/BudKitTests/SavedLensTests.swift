@@ -31,17 +31,62 @@ final class SavedLensTests: XCTestCase {
                        #"{"pinned":true,"source":"mail","tags":["home","work"]}"#)
     }
 
-    func testTheMapIsReadSortedByNameAndABadEntryIsSkipped() {
+    func testTheMapIsReadSortedByNameAndAKeyThatIsNoIdIsSkipped() {
         let a = SavedLens(name: "kitchen", query: LensQuery(tags: ["home"]))
         let b = SavedLens(name: "Errands", query: .todos)
         let stored = [
             a.id.uuidString: a.text!,
             b.id.uuidString: b.text!,
             "not-an-id": b.text!,
-            UUID().uuidString: "not json",
-            UUID().uuidString: #"{"name":"  ","query":{}}"#,
         ]
         XCTAssertEqual(SavedLens.read(stored), [b, a])
+    }
+
+    /// An entry this build cannot make sense of still shows, untitled and matching nothing, so
+    /// it can be deleted; renamed, it keeps what it held.
+    func testAnUnreadableOrNamelessEntryShowsAsAnUntitledLens() throws {
+        let garbled = UUID(), blank = UUID(), noQuery = UUID()
+        let read = SavedLens.read([
+            garbled.uuidString: "not json",
+            blank.uuidString: #"{"name":"  ","query":{"pinned":true}}"#,
+            noQuery.uuidString: #"{"name":"Bare"}"#,
+        ])
+        let byID = Dictionary(uniqueKeysWithValues: read.map { ($0.id, $0) })
+        let g = try XCTUnwrap(byID[garbled])
+        XCTAssertEqual(g.name, SavedLens.untitled)
+        XCTAssertTrue(g.query.never)
+        XCTAssertEqual(g.foreign, #""not json""#)
+        var renamed = g
+        renamed.name = "Old"
+        XCTAssertEqual(renamed.text, #"{"name":"Old","query":"not json"}"#)
+        let b = try XCTUnwrap(byID[blank])
+        XCTAssertEqual(b.name, SavedLens.untitled)
+        XCTAssertEqual(b.query, .pinnedBuds, "A question it can read still asks")
+        XCTAssertNil(b.foreign)
+        let n = try XCTUnwrap(byID[noQuery])
+        XCTAssertEqual(n.name, "Bare")
+        XCTAssertTrue(n.query.never)
+        XCTAssertEqual(n.foreign, "null")
+    }
+
+    /// Every lens read back can be written again: keeping one never meets a lens without text.
+    func testEveryLensReadHasTextToWrite() {
+        let read = SavedLens.read([
+            UUID().uuidString: "not json",
+            UUID().uuidString: #"{"name":"New","query":{"mood":"calm"}}"#,
+            UUID().uuidString: SavedLens(name: "To-dos", query: .todos).text!,
+        ])
+        XCTAssertEqual(read.count, 3)
+        XCTAssertTrue(read.allSatisfy { $0.text != nil })
+    }
+
+    func testTheOfferedNameFollowsTheRowsUntilOneIsTyped() {
+        let offered = SavedLens.followRows(name: "Pinned", suggested: "Pinned", rows: ["Pinned", "#home"])
+        XCTAssertEqual(offered.name, "Pinned, #home")
+        XCTAssertEqual(offered.suggested, "Pinned, #home")
+        let typed = SavedLens.followRows(name: "Kitchen", suggested: "Pinned", rows: ["Pinned", "#home"])
+        XCTAssertEqual(typed.name, "Kitchen", "Typed text stays")
+        XCTAssertEqual(typed.suggested, "Pinned, #home")
     }
 
     func testANameIsTrimmedAndAnEmptyOneRefused() {

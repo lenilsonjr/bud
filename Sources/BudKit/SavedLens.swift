@@ -48,11 +48,6 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         var query: LensQuery
     }
 
-    /// The name alone, for an entry whose question is not even an object this build can open.
-    private struct Named: Decodable {
-        var name: String
-    }
-
     /// Whether two lenses ask one question: the same query, or the same text from a newer
     /// build.
     public func asksSame(as other: SavedLens) -> Bool {
@@ -82,38 +77,46 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         return (try? encoder.encode(Entry(name: name, query: query))).map { String(decoding: $0, as: UTF8.self) }
     }
 
-    /// The lenses the vault's map holds, sorted by name. An entry whose key is not an id, or
-    /// whose text is not a name and a question at all, is skipped.
+    /// The lenses the vault's map holds, sorted by name. An entry whose key is not an id is
+    /// skipped; every other one shows, so it can be deleted: one with no name is untitled, and
+    /// one whose question this build cannot read matches nothing and keeps its text.
     public static func read(_ stored: [String: String]) -> [SavedLens] {
         let lenses = stored.compactMap { key, text -> SavedLens? in
             guard let id = UUID(uuidString: key) else { return nil }
+            var nothing = LensQuery()
+            nothing.never = true
+            guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+                // Not an entry at all: the whole text is kept as the question, as a string.
+                return SavedLens(id: id, name: untitled, query: nothing, foreign: quoted(text))
+            }
+            let name = (object["name"] as? String).flatMap(clean) ?? untitled
+            guard let raw = json(object["query"] ?? NSNull()) else {
+                return SavedLens(id: id, name: name, query: nothing, foreign: quoted(text))
+            }
             let unknown = LensQuery.Unknown()
             let decoder = JSONDecoder()
             decoder.userInfo[LensQuery.Unknown.key] = unknown
-            let data = Data(text.utf8)
-            if let entry = try? decoder.decode(Entry.self, from: data) {
-                guard let name = clean(entry.name) else { return nil }
-                guard unknown.found else { return SavedLens(id: id, name: name, query: entry.query) }
-                guard let raw = rawQuery(in: text) else { return nil }
-                return SavedLens(id: id, name: name, query: entry.query, foreign: raw)
+            guard let query = try? decoder.decode(LensQuery.self, from: Data(raw.utf8)) else {
+                return SavedLens(id: id, name: name, query: nothing, foreign: raw)
             }
-            // A question that is no object at all still has its name and its text kept.
-            guard let named = try? decoder.decode(Named.self, from: data), let name = clean(named.name),
-                  let raw = rawQuery(in: text) else { return nil }
-            var nothing = LensQuery()
-            nothing.never = true
-            return SavedLens(id: id, name: name, query: nothing, foreign: raw)
+            return SavedLens(id: id, name: name, query: query, foreign: unknown.found ? raw : nil)
         }
         return sorted(lenses)
     }
 
-    /// The question of an entry as JSON text, whatever it holds.
-    private static func rawQuery(in text: String) -> String? {
-        guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              let query = object["query"],
-              let data = try? JSONSerialization.data(withJSONObject: query, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
-        else { return nil }
+    /// A JSON value as text, keys sorted.
+    private static func json(_ value: Any) -> String? {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed]
+        ) else { return nil }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Text as a JSON string.
+    private static func quoted(_ text: String) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        return (try? encoder.encode(text)).map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// By name, in any case; two of one name by id, so the order is the same on every device.
@@ -128,6 +131,16 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     public static func suggestedName(_ names: [String]) -> String {
         names.joined(separator: ", ")
     }
+
+    /// The name field after the ticked rows change: a name still as it was offered follows the
+    /// rows; one the person typed stays. The second is the name offered now.
+    public static func followRows(name: String, suggested: String, rows: [String]) -> (name: String, suggested: String) {
+        let next = suggestedName(rows)
+        return (name == suggested ? next : name, next)
+    }
+
+    /// The name a lens shows when the vault holds none it can read.
+    public static let untitled = "Untitled lens"
 }
 
 /// A question as the vault keeps it: only the facets that are set, under stable keys, the sets
