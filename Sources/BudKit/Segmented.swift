@@ -34,13 +34,15 @@ struct Segmented<Option: Hashable>: View {
 
 /// The lit segment's chrome: raised, a strong line and a hair of shadow; off, none of it. The
 /// switch's segments and the folded switch in a narrow bar share it, so one reads as the other.
+/// The shadow is the switch's own, lighter than the board's shadow token, which would weigh
+/// five times as much in the dark under a chrome this small.
 struct RaisedSegment: ViewModifier {
     var on = true
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
         content
-            .background(shape.fill(on ? Theme.raised : .clear).shadow(color: on ? Theme.shadow : .clear, radius: 1, y: 1))
+            .background(shape.fill(on ? Theme.raised : .clear).shadow(color: .black.opacity(on ? 0.08 : 0), radius: 1, y: 1))
             .overlay(shape.stroke(on ? Theme.lineStrong : .clear, lineWidth: 1))
             .contentShape(Rectangle())
     }
