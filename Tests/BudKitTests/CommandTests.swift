@@ -255,14 +255,20 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.modal, .settings)
     }
 
-    func testTheSheetsOwnKeyIsTheRecordersWhileARowRecords() {
+    func testEveryKeyIsTheRecordersWhileARowRecords() {
         let (store, _) = store()
         defer { Keys.layout.cancelRecording() }
         store.perform(.shortcuts)
         Keys.layout.startRecording(.soil)
-        XCTAssertFalse(store.allows(.shortcuts))
+        XCTAssertFalse(store.allows(.shortcuts), "Not even the sheet's own key closes it")
         XCTAssertFalse(store.perform(.shortcuts))
         XCTAssertEqual(store.modal, .shortcuts)
+        store.modal = nil
+        XCTAssertFalse(store.allows(.goAnywhere), "The menu bar greys out whatever is up")
+        XCTAssertFalse(store.allows(.undo))
+        XCTAssertFalse(store.perform(.back))
+        XCTAssertNil(store.lastCommand)
+        store.modal = .shortcuts
         Keys.layout.cancelRecording()
         XCTAssertTrue(store.perform(.shortcuts))
         XCTAssertNil(store.modal)

@@ -975,13 +975,14 @@ public final class BudStore: ObservableObject {
         return center
     }
 
-    /// Whether a command can run now: a card over the window takes every key, the shortcuts
-    /// sheet letting only its own through to close it, and not even that while a row records,
-    /// since the recorder hears every key, then the scope must hold on what the window shows.
-    /// New under this needs a target as well, which the canvas always has and Files only on a
-    /// bud's page; Close or reopen needs a to-do's page.
+    /// Whether a command can run now: while the shortcuts sheet records a key every key is the
+    /// recorder's, so nothing runs and the menu bar greys out; a card over the window takes
+    /// every key, the shortcuts sheet letting only its own through to close it; then the scope
+    /// must hold on what the window shows. New under this needs a target as well, which the
+    /// canvas always has and Files only on a bud's page; Close or reopen needs a to-do's page.
     public func allows(_ id: Command.ID) -> Bool {
-        guard modal == nil || (modal == .shortcuts && id == .shortcuts && Keys.layout.recording == nil) else { return false }
+        guard Keys.layout.recording == nil else { return false }
+        guard modal == nil || (modal == .shortcuts && id == .shortcuts) else { return false }
         switch id {
         case .newUnderThis: return surface == .canvas || page != nil
         case .closeOrReopen: return page.flatMap { tree.bud($0) }?.isTodo == true
