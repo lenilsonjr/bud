@@ -34,7 +34,11 @@ struct LensMenu: View {
         }
         .padding(8)
         .frame(width: 300, alignment: .leading)
-        .onChange(of: store.canvasFacets.isEmpty) { _, empty in if empty { naming = nil } }
+        // The name offered follows the rows; with none ticked there is nothing to name.
+        .onChange(of: store.canvasFacets) { _, now in
+            guard naming != nil else { return }
+            naming = now.isEmpty ? nil : SavedLens.suggestedName(now.map(store.facetName))
+        }
         .accessibilityIdentifier("lens-menu")
     }
 

@@ -78,7 +78,9 @@ public final class BudStore: ObservableObject {
         }
     }
     /// The lenses the person named and kept, sorted by name, as the vault holds them.
-    @Published public private(set) var savedLenses: [SavedLens] = []
+    @Published public private(set) var savedLenses: [SavedLens] = [] {
+        didSet { if savedLenses != oldValue { syncSavedFacets() } }
+    }
     /// The rows ticked in the canvas lens menu, in the order they were ticked; they set
     /// `canvasLens` to the question they ask together.
     @Published public var canvasFacets: [LensFacet] = [] {
@@ -799,6 +801,7 @@ public final class BudStore: ObservableObject {
         let ticked = canvasFacets
         renameFacets(from, to: to)
         let renamed = canvasFacets
+        let lenses = renameTagInLenses(from, to: to)
         let edits = TagEdits()
         write { [self] vault in
             let records = try await vault.renameTag(from, to: to)
@@ -810,6 +813,8 @@ public final class BudStore: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.undoRenameTag(edits)
+                // Each saved lens it reached goes back, unless it has been changed since.
+                for (before, after) in lenses where self.saved(after.id) == after { self.keep(before) }
                 // The lens goes back too, unless it has been changed since.
                 if self.canvasFacets.map(\.name) == renamed.map(\.name) { self.canvasFacets = ticked }
             }
@@ -1416,7 +1421,11 @@ extension BudStore {
         let lens = SavedLens(name: name, query: query)
         keep(lens)
         toasts.show(Undoable(message: "Saved \(name)", systemImage: "line.3.horizontal.decrease.circle") { [weak self] in
-            Task { @MainActor in self?.drop(lens.id) }
+            Task { @MainActor in
+                // Only the lens as it was saved: one renamed or changed since stays.
+                guard let self, self.saved(lens.id) == lens else { return }
+                self.drop(lens.id)
+            }
         })
         return lens
     }
@@ -1441,7 +1450,11 @@ extension BudStore {
         guard let lens = saved(id) else { return }
         drop(id)
         toasts.show(Undoable(message: "Deleted \(lens.name)") { [weak self] in
-            Task { @MainActor in self?.keep(lens) }
+            Task { @MainActor in
+                // Not over a lens that asks the same question, saved since.
+                guard let self, self.saved(lens.id) == nil, !self.savedLenses.contains(where: { $0.asksSame(as: lens) }) else { return }
+                self.keep(lens)
+            }
         })
     }
 
@@ -1475,6 +1488,23 @@ extension BudStore {
         let loaded = SavedLens.read(stored)
         if loaded != savedLenses { savedLenses = loaded }
         if let open = savedLens, saved(open) == nil { savedLens = nil }
+    }
+
+    /// A tag rename reaches the saved lenses that ask for the tag, here and in the vault; a
+    /// lens a newer build wrote stays as it is. What each was before and after, for the undo.
+    private func renameTagInLenses(_ from: String, to: String) -> [(before: SavedLens, after: SavedLens)] {
+        let pairs = savedLenses.compactMap { lens in lens.renamingTag(from, to: to).map { (lens, $0) } }
+        for pair in pairs { keep(pair.1) }
+        return pairs.map { (before: $0.0, after: $0.1) }
+    }
+
+    /// The canvas follows the saved lenses: one that is gone drops out of the ticked rows, and
+    /// one that changed asks as it is now.
+    private func syncSavedFacets() {
+        guard let synced = LensFacet.synced(canvasFacets, with: savedLenses) else { return }
+        canvasFacets = synced
+        // The rows are the same rows, so the question is worked out here.
+        canvasLens = LensFacet.query(of: synced)
     }
 
     private func keep(_ lens: SavedLens) {

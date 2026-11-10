@@ -77,6 +77,59 @@ final class SavedLensTests: XCTestCase {
         XCTAssertEqual(SavedLens.read([key.uuidString: mood.text!]).first?.foreign, mood.foreign, "Read again the same")
     }
 
+    /// A known key in a shape this build does not expect keeps the entry, matching nothing.
+    func testAKnownKeyOfAnotherShapeMatchesNothingAndKeepsItsText() throws {
+        let source = UUID(), day = UUID(), odd = UUID()
+        let read = SavedLens.read([
+            source.uuidString: #"{"name":"Sources","query":{"source":["a","b"]}}"#,
+            day.uuidString: #"{"name":"Days","query":{"day":{"before":3}}}"#,
+            odd.uuidString: #"{"name":"Odd","query":5}"#,
+        ])
+        XCTAssertEqual(read.map(\.name), ["Days", "Odd", "Sources"])
+        XCTAssertTrue(read.allSatisfy { $0.query.never })
+        XCTAssertEqual(read.map(\.foreign), [#"{"day":{"before":3}}"#, "5", #"{"source":["a","b"]}"#])
+        var days = read[0]
+        days.name = "Later"
+        XCTAssertEqual(days.text, #"{"name":"Later","query":{"day":{"before":3}}}"#)
+    }
+
+    func testATagRenameReachesALensThatAsksForItButNotAForeignOne() throws {
+        let lens = SavedLens(name: "Kitchen", query: LensQuery(pinned: true, tags: ["home/kitchen", "work"]))
+        let renamed = try XCTUnwrap(lens.renamingTag("Home", to: "house"))
+        XCTAssertEqual(renamed.query.tags, ["house/kitchen", "work"])
+        XCTAssertEqual(renamed.id, lens.id)
+        XCTAssertTrue(renamed.query.pinned)
+        XCTAssertNil(lens.renamingTag("garden", to: "yard"), "Not asked for")
+        let foreign = try XCTUnwrap(SavedLens.read([UUID().uuidString: #"{"name":"New","query":{"tags":["home"],"mood":"calm"}}"#]).first)
+        XCTAssertNil(foreign.renamingTag("home", to: "house"))
+    }
+
+    /// The ticked rows follow the saved lenses: a deleted one drops out, a changed one asks as
+    /// it is now.
+    func testTheTickedRowsFollowTheSavedLenses() throws {
+        let kitchen = SavedLens(name: "Kitchen", query: LensQuery(tags: ["home"]))
+        let ticked: [LensFacet] = [.saved(kitchen), .pinned]
+        XCTAssertNil(LensFacet.synced(ticked, with: [kitchen]), "Nothing changed")
+        XCTAssertEqual(LensFacet.synced(ticked, with: []), [.pinned])
+        var renamed = kitchen
+        renamed.name = "Cooking"
+        renamed.query.tags = ["house"]
+        let synced = try XCTUnwrap(LensFacet.synced(ticked, with: [renamed]))
+        XCTAssertEqual(synced.first?.name, "Cooking")
+        XCTAssertEqual(LensFacet.query(of: synced), LensQuery(pinned: true, tags: ["house"]))
+    }
+
+    func testTwoLensesAskTheSameQuestionByQueryOrByForeignText() throws {
+        let a = SavedLens(name: "A", query: .todos)
+        XCTAssertTrue(a.asksSame(as: SavedLens(name: "B", query: .todos)))
+        XCTAssertFalse(a.asksSame(as: SavedLens(name: "A", query: .today)))
+        let text = #"{"name":"N","query":{"mood":"calm"}}"#
+        let x = try XCTUnwrap(SavedLens.read([UUID().uuidString: text]).first)
+        let y = try XCTUnwrap(SavedLens.read([UUID().uuidString: text]).first)
+        XCTAssertTrue(x.asksSame(as: y))
+        XCTAssertFalse(x.asksSame(as: SavedLens(name: "N", query: x.query)), "A foreign question is its text")
+    }
+
     func testAQuestionThisBuildKnowsCarriesNoForeignText() {
         let lens = SavedLens(name: "To-dos", query: .todos)
         XCTAssertNil(SavedLens.read([lens.id.uuidString: lens.text!]).first?.foreign)

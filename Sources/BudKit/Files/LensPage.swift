@@ -8,40 +8,77 @@ struct LensPage: View {
     let lens: Lens
 
     var body: some View {
+        LensColumn(eyebrow: "LENS · ACROSS ALL THREADS", title: lens.rawValue) {
+            switch lens {
+            case .today:
+                let today = store.tree.today(on: store.now)
+                LensGroup(store: store, name: "Due", buds: today.due, tag: { bud in bud.due.map { ("Due", $0) } })
+                LensGroup(store: store, name: "Scheduled for today", buds: today.scheduled, tag: { bud in bud.when.map { ("When", $0) } })
+                if today.due.isEmpty && today.scheduled.isEmpty { LensNothing(text: "Nothing due or scheduled. A clear day.") }
+            case .todos:
+                let threads = store.tree.openTodos()
+                ForEach(threads, id: \.thread.id) { entry in
+                    LensGroup(store: store, name: entry.thread.text, buds: entry.todos, tag: { bud in bud.due.map { ("Due", $0) } })
+                }
+                if threads.isEmpty { LensNothing(text: "No open to-dos anywhere.") }
+            case .pinned:
+                let pinned = store.tree.pinned()
+                LensGroup(store: store, name: "Pinned", buds: pinned, tag: { _ in nil })
+                if pinned.isEmpty { LensNothing(text: "Nothing pinned yet.") }
+            }
+        }
+    }
+}
+
+/// A saved lens's page: what its question finds across every thread, grouped by thread, with
+/// any due date beside each hit.
+struct SavedLensPage: View {
+    @ObservedObject var store: BudStore
+    let lens: SavedLens
+
+    var body: some View {
+        LensColumn(eyebrow: "SAVED LENS · ACROSS ALL THREADS", title: lens.name) {
+            let groups = lens.query.hitsByThread(store.tree, links: store.links, on: store.now)
+            ForEach(groups, id: \.thread.id) { group in
+                LensGroup(store: store, name: group.thread.text, buds: group.hits, tag: { bud in bud.due.map { ("Due", $0) } })
+            }
+            if groups.isEmpty { LensNothing(text: "Nothing matches this lens right now.") }
+        }
+    }
+}
+
+/// The page every lens shares: the eyebrow and the title above, then what the lens finds.
+struct LensColumn<Content: View>: View {
+    let eyebrow: String
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
         MaybeScroll {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("LENS · ACROSS ALL THREADS")
+                    Text(eyebrow)
                         .textRole(.eyebrow)
                         .foregroundStyle(Theme.text3)
-                    Text(lens.rawValue)
+                    Text(title)
                         .textRole(.title)
                         .foregroundStyle(Theme.text)
                 }
-                switch lens {
-                case .today:
-                    let today = store.tree.today(on: store.now)
-                    group("Due", today.due, tag: { bud in bud.due.map { ("Due", $0) } })
-                    group("Scheduled for today", today.scheduled, tag: { bud in bud.when.map { ("When", $0) } })
-                    if today.due.isEmpty && today.scheduled.isEmpty { nothing("Nothing due or scheduled. A clear day.") }
-                case .todos:
-                    let threads = store.tree.openTodos()
-                    ForEach(threads, id: \.thread.id) { entry in
-                        group(entry.thread.text, entry.todos, tag: { bud in bud.due.map { ("Due", $0) } })
-                    }
-                    if threads.isEmpty { nothing("No open to-dos anywhere.") }
-                case .pinned:
-                    let pinned = store.tree.pinned()
-                    group("Pinned", pinned, tag: { _ in nil })
-                    if pinned.isEmpty { nothing("Nothing pinned yet.") }
-                }
+                content
             }
             .pageColumn()
         }
     }
+}
 
-    @ViewBuilder
-    private func group(_ name: String, _ buds: [Bud], tag: @escaping (Bud) -> (String, Date)?) -> some View {
+/// One group of a lens page under its name; nothing at all when it holds no buds.
+struct LensGroup: View {
+    @ObservedObject var store: BudStore
+    let name: String
+    let buds: [Bud]
+    let tag: (Bud) -> (String, Date)?
+
+    var body: some View {
         if !buds.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.uppercased())
@@ -54,51 +91,16 @@ struct LensPage: View {
             }
         }
     }
+}
 
-    private func nothing(_ text: String) -> some View {
+/// What a lens page says when it finds nothing.
+struct LensNothing: View {
+    let text: String
+
+    var body: some View {
         Text(text)
             .textRole(.body)
             .foregroundStyle(Theme.text3)
-    }
-}
-
-/// A saved lens's page: what its question finds across every thread, grouped by thread, with
-/// any due date beside each hit.
-struct SavedLensPage: View {
-    @ObservedObject var store: BudStore
-    let lens: SavedLens
-
-    var body: some View {
-        MaybeScroll {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("SAVED LENS · ACROSS ALL THREADS")
-                        .textRole(.eyebrow)
-                        .foregroundStyle(Theme.text3)
-                    Text(lens.name)
-                        .textRole(.title)
-                        .foregroundStyle(Theme.text)
-                }
-                let groups = lens.query.hitsByThread(store.tree, links: store.links, on: store.now)
-                ForEach(groups, id: \.thread.id) { group in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(group.thread.text.uppercased())
-                            .textRole(.eyebrow)
-                            .foregroundStyle(Theme.text3)
-                            .padding(.bottom, 4)
-                        ForEach(group.hits) { bud in
-                            ListRow(bud: bud, store: store, tag: bud.due.map { ("Due", $0) })
-                        }
-                    }
-                }
-                if groups.isEmpty {
-                    Text("Nothing matches this lens right now.")
-                        .textRole(.body)
-                        .foregroundStyle(Theme.text3)
-                }
-            }
-            .pageColumn()
-        }
     }
 }
 

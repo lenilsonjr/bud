@@ -705,6 +705,65 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertNil(store.savedLens)
     }
 
+    func testATagRenameReachesTheSavedLensesAndTheCanvasAndUndoTakesItBack() async throws {
+        let (store, vault) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        store.addTag(thread.id, "home")
+        await store.settle()
+        let lens = try XCTUnwrap(store.saveLens("Home", query: LensQuery(tags: ["home"])))
+        store.applyLens(lens.id)
+        store.renameTag("home", to: "house")
+        XCTAssertEqual(store.saved(lens.id)?.query.tags, ["house"])
+        XCTAssertEqual(store.canvasLens, LensQuery(tags: ["house"]), "The ticked lens asks the new tag")
+        await store.settle()
+        let stored = try await vault.shared(.lenses)
+        XCTAssertEqual(stored[lens.id.uuidString], #"{"name":"Home","query":{"tags":["house"]}}"#)
+        await undo(store) { store.saved(lens.id)?.query.tags == ["home"] }
+        XCTAssertEqual(store.saved(lens.id), lens)
+        XCTAssertEqual(store.canvasLens, lens.query)
+    }
+
+    func testUndoingASaveLeavesALensRenamedSince() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        let saving = try XCTUnwrap(store.toasts.current?.action.undo)
+        store.renameLens(lens.id, to: "Kept")
+        saving()
+        for _ in 0..<20 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Kept"])
+    }
+
+    func testUndoingADeleteSkipsALensWhoseQuestionIsSavedAgain() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        store.deleteLens(lens.id)
+        let deleting = try XCTUnwrap(store.toasts.current?.action.undo)
+        let again = try XCTUnwrap(store.saveLens("Pinned again", query: .pinnedBuds))
+        deleting()
+        for _ in 0..<20 { await Task.yield() }
+        await store.settle()
+        XCTAssertEqual(store.savedLenses, [again])
+    }
+
+    func testDeletingOrRenamingASavedLensReachesTheCanvas() async throws {
+        let (store, vault) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        store.applyLens(lens.id)
+        store.renameLens(lens.id, to: "Stuck")
+        XCTAssertEqual(store.canvasFacets.first?.name, "Stuck", "The chip shows the new name")
+        store.deleteLens(lens.id)
+        XCTAssertEqual(store.canvasFacets, [])
+        XCTAssertNil(store.canvasLens)
+
+        let other = try XCTUnwrap(store.saveLens("Today", query: .today))
+        store.applyLens(other.id)
+        await store.settle()
+        try await vault.setShared(.lenses, other.id.uuidString, nil)
+        await store.reloadLenses()
+        XCTAssertEqual(store.canvasFacets, [], "Deleted on another device")
+    }
+
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {
         let (mac, vault) = await loaded()
         let lens = try XCTUnwrap(mac.saveLens("Pinned", query: .pinnedBuds))

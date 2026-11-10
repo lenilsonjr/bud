@@ -48,6 +48,28 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         var query: LensQuery
     }
 
+    /// The name alone, for an entry whose question is not even an object this build can open.
+    private struct Named: Decodable {
+        var name: String
+    }
+
+    /// Whether two lenses ask one question: the same query, or the same text from a newer
+    /// build.
+    public func asksSame(as other: SavedLens) -> Bool {
+        foreign == nil && other.foreign == nil ? query == other.query : foreign == other.foreign
+    }
+
+    /// The lens after a tag rename, when its question asks for the tag or one nested under it;
+    /// nil when it does not, or when a newer build wrote it and its text stays as it is.
+    public func renamingTag(_ from: String, to: String) -> SavedLens? {
+        guard foreign == nil else { return nil }
+        let tags = Set(query.tags.map { BudTags.renamed($0, from: from, to: to) ?? $0 }.map(BudTags.key))
+        guard tags != query.tags else { return nil }
+        var out = self
+        out.query.tags = tags
+        return out
+    }
+
     /// The text the vault keeps for the lens: its name, and its question as it was read when
     /// this build could not read all of it.
     public var text: String? {
@@ -68,14 +90,19 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
             let unknown = LensQuery.Unknown()
             let decoder = JSONDecoder()
             decoder.userInfo[LensQuery.Unknown.key] = unknown
-            guard let entry = try? decoder.decode(Entry.self, from: Data(text.utf8)),
-                  let name = clean(entry.name) else { return nil }
-            var foreign: String? = nil
-            if unknown.found {
+            let data = Data(text.utf8)
+            if let entry = try? decoder.decode(Entry.self, from: data) {
+                guard let name = clean(entry.name) else { return nil }
+                guard unknown.found else { return SavedLens(id: id, name: name, query: entry.query) }
                 guard let raw = rawQuery(in: text) else { return nil }
-                foreign = raw
+                return SavedLens(id: id, name: name, query: entry.query, foreign: raw)
             }
-            return SavedLens(id: id, name: name, query: entry.query, foreign: foreign)
+            // A question that is no object at all still has its name and its text kept.
+            guard let named = try? decoder.decode(Named.self, from: data), let name = clean(named.name),
+                  let raw = rawQuery(in: text) else { return nil }
+            var nothing = LensQuery()
+            nothing.never = true
+            return SavedLens(id: id, name: name, query: nothing, foreign: raw)
         }
         return sorted(lenses)
     }
@@ -84,7 +111,7 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     private static func rawQuery(in text: String) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
               let query = object["query"],
-              let data = try? JSONSerialization.data(withJSONObject: query, options: [.sortedKeys, .withoutEscapingSlashes])
+              let data = try? JSONSerialization.data(withJSONObject: query, options: [.sortedKeys, .withoutEscapingSlashes, .fragmentsAllowed])
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
@@ -128,9 +155,19 @@ extension LensQuery: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let known = Set(CodingKeys.allCases.map(\.rawValue))
         var unknown = try decoder.container(keyedBy: AnyKey.self).allKeys.contains { !known.contains($0.stringValue) }
+        // A value of the type this build expects, or a mark that it met one it does not: a
+        // newer build may write a known key in a shape this one cannot read.
+        func field<T: Decodable>(_ key: CodingKeys, _: T.Type) -> T? {
+            guard c.contains(key), (try? c.decodeNil(forKey: key)) != true else { return nil }
+            guard let value = try? c.decode(T.self, forKey: key) else {
+                unknown = true
+                return nil
+            }
+            return value
+        }
         // A value this build knows by name, or a mark that it met one it does not.
-        func named<T: RawRepresentable>(_ key: CodingKeys, _: T.Type) throws -> T? where T.RawValue == String {
-            guard let raw = try c.decodeIfPresent(String.self, forKey: key) else { return nil }
+        func named<T: RawRepresentable>(_ key: CodingKeys, _: T.Type) -> T? where T.RawValue == String {
+            guard let raw = field(key, String.self) else { return nil }
             guard let value = T(rawValue: raw) else {
                 unknown = true
                 return nil
@@ -138,20 +175,20 @@ extension LensQuery: Codable {
             return value
         }
         self.init(
-            kind: try named(.kind, Kind.self),
-            state: try named(.state, BudState.self),
-            day: try named(.day, Day.self),
-            pinned: try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false,
-            holdsOpen: try c.decodeIfPresent(Bool.self, forKey: .holdsOpen) ?? false,
-            tags: Set(try c.decodeIfPresent([String].self, forKey: .tags) ?? []),
-            linked: Set(try c.decodeIfPresent([UUID].self, forKey: .linked) ?? []),
-            grown: try c.decodeIfPresent(Bool.self, forKey: .grown) ?? false,
-            source: try c.decodeIfPresent(String.self, forKey: .source)
+            kind: named(.kind, Kind.self),
+            state: named(.state, BudState.self),
+            day: named(.day, Day.self),
+            pinned: field(.pinned, Bool.self) ?? false,
+            holdsOpen: field(.holdsOpen, Bool.self) ?? false,
+            tags: Set(field(.tags, [String].self) ?? []),
+            linked: Set(field(.linked, [UUID].self) ?? []),
+            grown: field(.grown, Bool.self) ?? false,
+            source: field(.source, String.self)
         )
         // Two answers asked of one slot leave nothing to read back, so it is kept as it is. A
         // part this build cannot read matches nothing rather than being left out, which would
         // ask a broader question than the one saved.
-        never = try c.decodeIfPresent(Bool.self, forKey: .never) ?? false
+        never = field(.never, Bool.self) ?? false
         if unknown {
             never = true
             (decoder.userInfo[Unknown.key] as? Unknown)?.found = true
