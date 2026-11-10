@@ -14,6 +14,8 @@ struct ShortcutSheet: View {
     @Environment(\.compact) private var compact
     @ObservedObject private var layout = Keys.layout
     @FocusState private var listening: Bool
+    /// The row the pointer is over, on the Mac, where Reset waits for it and the dot stays.
+    @State private var hovered: Command.ID?
 
     /// How tall the list may grow before it scrolls.
     private static let listHeight: CGFloat = 480
@@ -116,13 +118,18 @@ struct ShortcutSheet: View {
         let recording = layout.recording == command.id
         let wants = layout.conflict?.id == command.id
         let holds = layout.conflict?.holder == command.id
+        #if os(macOS)
+        let offersReset = hovered == command.id
+        #else
+        let offersReset = true
+        #endif
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 Text(command.name)
                     .textRole(.body)
                     .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
-                if layout.isChanged(command.id) || wants {
+                if (layout.isChanged(command.id) || wants) && offersReset {
                     Button(ShortcutText.reset) { layout.reset(command.id) }
                         .buttonStyle(.plain)
                         .textRole(.caption)
@@ -153,6 +160,12 @@ struct ShortcutSheet: View {
         .padding(.leading, 10)
         .padding(.trailing, 6)
         .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        #if os(macOS)
+        .onHover { over in
+            if over { hovered = command.id } else if hovered == command.id { hovered = nil }
+        }
+        #endif
     }
 
     /// The line under a row: how to stop while it records, why its key did not land, or which
