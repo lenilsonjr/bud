@@ -1639,8 +1639,8 @@ extension BudStore {
 
     /// A tag rename reaches the saved lenses that ask for the tag, here and in the vault, and
     /// the deleted ones an Undo may bring back; a lens a newer build wrote stays as it is, and
-    /// of two that now ask one question the one first by name stays. What each was before and
-    /// after, and what went, goes into `rename`, for the undo.
+    /// every lens stays, even two that now ask one question. What each was before and after
+    /// goes into `rename`, for the undo.
     private func renameTagInLenses(
         _ from: String, to: String, into rename: LensTagRename,
         landed: @escaping @MainActor (SavedLens.TagRename, _ refused: Bool) -> Void
