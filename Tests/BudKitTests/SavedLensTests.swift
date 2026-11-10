@@ -175,6 +175,11 @@ final class SavedLensTests: XCTestCase {
         XCTAssertFalse(x.asksSame(as: SavedLens(name: "N", query: x.query)), "A foreign question is its text")
     }
 
+    func testAKnownLensWritesSlashesAsTheyAre() {
+        let lens = SavedLens(name: "Home/kitchen", query: LensQuery(tags: ["home/kitchen"]))
+        XCTAssertEqual(lens.text, #"{"name":"Home/kitchen","query":{"tags":["home/kitchen"]}}"#)
+    }
+
     func testAQuestionThisBuildKnowsCarriesNoForeignText() {
         let lens = SavedLens(name: "To-dos", query: .todos)
         XCTAssertNil(SavedLens.read([lens.id.uuidString: lens.text!]).first?.foreign)

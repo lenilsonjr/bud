@@ -69,7 +69,7 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     /// this build could not read all of it.
     public var text: String? {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         if let foreign {
             guard let name = try? encoder.encode(name) else { return nil }
             return #"{"name":"# + String(decoding: name, as: UTF8.self) + #","query":"# + foreign + "}"

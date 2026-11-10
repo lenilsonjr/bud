@@ -11,10 +11,12 @@ struct Sidebar: View {
     /// The saved lens being renamed in place, and the name typed so far.
     @State private var renaming: UUID? = nil
     @State private var draft = ""
-    @FocusState private var typing: Bool
+    /// Which saved lens's rename field has focus, so moving from one field to another is a
+    /// loss of focus for the first and a gain for the second.
+    @FocusState private var typing: UUID?
     /// Whether the rename field has had focus yet: a loss of focus before it ever had it is
     /// the field arriving, not the person leaving.
-    @State private var hadFocus = false
+    @State private var hadFocus: UUID? = nil
     @Environment(\.compact) private var compact
     @Environment(\.goAnywhere) private var goAnywhere
 
@@ -97,10 +99,14 @@ struct Sidebar: View {
                 TextField("Name this lens", text: $draft)
                     .textFieldStyle(.plain)
                     .textRole(.body)
-                    .focused($typing)
+                    .focused($typing, equals: lens.id)
                     .onSubmit { finishRenaming(lens.id) }
-                    .onChange(of: typing) { _, now in
-                        if now { hadFocus = true } else if hadFocus { finishRenaming(lens.id) }
+                    .onChange(of: typing) { before, now in
+                        if now == lens.id {
+                            hadFocus = lens.id
+                        } else if before == lens.id, hadFocus == lens.id {
+                            finishRenaming(lens.id)
+                        }
                     }
                     #if os(macOS)
                     .onExitCommand { renaming = nil }
@@ -110,7 +116,7 @@ struct Sidebar: View {
             .padding(.vertical, 5)
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
-            .task { typing = true }
+            .task { typing = lens.id }
         } else {
             place(lens.name, glyph: "line.3.horizontal.decrease.circle", count: nil, selected: store.savedLens == lens.id) {
                 store.open(saved: lens.id)
@@ -120,7 +126,7 @@ struct Sidebar: View {
                     // A rename in progress on another lens is kept first.
                     if let other = renaming, other != lens.id { finishRenaming(other) }
                     draft = lens.name
-                    hadFocus = false
+                    hadFocus = nil
                     renaming = lens.id
                 }
                 Button("Delete", role: .destructive) { store.deleteLens(lens.id) }
