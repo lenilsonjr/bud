@@ -72,6 +72,9 @@ public final class DeviceStore: ObservableObject {
     private var peers: Peers
     /// Where the store, and the bud store over it, read the time; a picture hands it a fixed moment.
     public let now: @Sendable () -> Date
+    /// The calendar the days are counted in, beside the clock: the system's, or the one a picture
+    /// fixes, so every view counts days the same way.
+    public let calendar: Calendar
     private var listening: Task<Void, Never>?
     private var renewing: Task<Void, Never>?
     private var renewingRequest: Task<Void, Never>?
@@ -87,9 +90,10 @@ public final class DeviceStore: ObservableObject {
     /// and the app hands it the real node once that has started (`use`); pictures keep it alone.
     public static let shared = DeviceStore(peers: MemoryPeers.forLaunch(arguments: ProcessInfo.processInfo.arguments))
 
-    public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(peers: Peers, now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current) {
         self.peers = peers
         self.now = now
+        self.calendar = calendar
     }
 
     deinit {
