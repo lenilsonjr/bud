@@ -121,6 +121,48 @@ fn among_twins_the_one_beside_the_buds_file_wins_when_its_own_folder_has_none() 
 }
 
 #[test]
+fn a_path_is_read_from_the_buds_folder_with_dots_and_a_leading_slash() {
+    let (vault, _dir, _index) = vault_with(&[
+        (
+            "Launch/Pick a name.md",
+            "![](../Attachments/photo.png) ![](/cover.png) ![](../../cover.png) ![[Attachments/photo.png]]\n",
+        ),
+        ("Attachments/photo.png", "a"),
+        ("cover.png", "c"),
+    ]);
+    assert_eq!(
+        to(&vault.embeds("Launch/Pick a name.md").unwrap()),
+        vec![
+            ("../Attachments/photo.png", Some("Attachments/photo.png")),
+            ("/cover.png", Some("cover.png")),
+            ("../../cover.png", Some("cover.png")),
+            ("Attachments/photo.png", Some("Attachments/photo.png")),
+        ],
+        "the first two as Obsidian writes them, the last from the vault root"
+    );
+}
+
+#[test]
+fn the_buds_own_folder_comes_before_the_path_from_the_root() {
+    let (vault, _dir, _index) = vault_with(&[
+        (
+            "Launch.md",
+            "![[photo.png]] ![](Launch/photo.png) ![](/photo.png)\n",
+        ),
+        ("Launch/photo.png", "a"),
+        ("photo.png", "b"),
+    ]);
+    assert_eq!(
+        to(&vault.embeds("Launch.md").unwrap()),
+        vec![
+            ("photo.png", Some("Launch/photo.png")),
+            ("Launch/photo.png", Some("Launch/photo.png")),
+            ("/photo.png", Some("photo.png")),
+        ]
+    );
+}
+
+#[test]
 fn the_first_embed_is_the_first_that_names_a_picture() {
     let (vault, _dir, _index) = vault_with(&[
         (
@@ -246,6 +288,52 @@ fn pictures_follow_a_rename_a_trashing_and_a_delete_of_their_bud() {
     vault.empty_trash().unwrap();
     assert!(vault.attachments().unwrap().is_empty());
     assert!(vault.rescan().unwrap().is_unchanged());
+}
+
+#[test]
+fn a_rename_gives_way_to_a_stale_row_at_the_new_path() {
+    let (mut vault, dir, index) = vault_with(&[
+        ("Launch.md", "![[photo.png]]\n"),
+        ("Launch/photo.png", "png bytes"),
+    ]);
+    // An index that fell out of step still holds a picture at the path the rename will take.
+    rusqlite::Connection::open(index.path().join("index.db"))
+        .unwrap()
+        .execute(
+            "INSERT INTO attachments (path, name, size, mtime) VALUES ('Launch day/photo.png', 'photo.png', 1, 1)",
+            [],
+        )
+        .unwrap();
+    let renamed = vault.rename("Launch.md", "Launch day").unwrap();
+    assert!(dir.path().join("Launch day/photo.png").is_file());
+    let found = vault.attachments().unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].path, "Launch day/photo.png");
+    assert_eq!(
+        found[0].size, 9,
+        "the moved picture's row, not the stale one"
+    );
+    assert_eq!(
+        vault.embeds(&renamed).unwrap()[0].to.as_deref(),
+        Some("Launch day/photo.png")
+    );
+}
+
+#[test]
+fn the_watcher_leaves_an_unchanged_picture_alone() {
+    let (vault, dir, _index) = vault_with(&[("cover.png", "png bytes")]);
+    let (tx, batches) = channel();
+    let _watch = vault.watch(Box::new(Collect(Mutex::new(tx)))).unwrap();
+    // Reading the picture, or touching it without a change, is no change to the index.
+    let bytes = std::fs::read(dir.path().join("cover.png")).unwrap();
+    let before = vault.attachment("cover.png").unwrap().unwrap();
+    std::fs::write(dir.path().join("cover.png"), &bytes).unwrap();
+    let batch = batches.recv_timeout(Duration::from_secs(2));
+    if vault.attachment("cover.png").unwrap().unwrap().mtime == before.mtime {
+        assert!(batch.is_err(), "same size and time: nothing to tell");
+    } else {
+        assert_eq!(batch.unwrap(), vec!["cover.png".to_string()]);
+    }
 }
 
 struct Collect(Mutex<Sender<Vec<String>>>);

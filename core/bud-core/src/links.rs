@@ -6,10 +6,12 @@
 //!
 //! A link's target resolves to the one bud whose title it is, then to the one bud whose title it
 //! is in any case, then to the bud at that path, with or without `.md`. An embed's target
-//! resolves to the one attachment with that file name, then with that file name in any case,
-//! then at that path; among several with one name, the one in the bud's own folder comes first,
-//! then the one beside the bud's file. More than one at the first rank that has any, or none at
-//! all, leaves it unresolved. Trash is never a target.
+//! resolves to the one attachment whose file name is the target's, then whose file name is it in
+//! any case, then the one the target is the path of; among several, the one in the bud's own
+//! folder comes first, then the one beside the bud's file, then the one at the path from the
+//! vault root. A path is read from the bud's folder, `..` and a leading `/` included. More than
+//! one at the first rank that has any, or none at all, leaves it unresolved. Trash is never a
+//! target.
 
 use crate::{lock, prose, Result, Vault};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -130,8 +132,8 @@ fn split(inner: &str) -> Option<(String, Option<String>)> {
 
 /// `![alt](path "title")` at the start of `text`: the path, the alt text and how many bytes the
 /// whole takes. The path may sit in `<...>` when it has spaces, and otherwise ends at the first
-/// space; `%20` and its kin are decoded, as Obsidian writes them. None when there is no such
-/// image, or the path is empty.
+/// space; a `#fragment` is left off it, and `%20` and its kin are decoded, as Obsidian writes
+/// them. None when there is no such image, or the path is empty.
 fn image(text: &str) -> Option<(String, Option<String>, usize)> {
     let alt_len = text[2..].find(']')?;
     let alt = &text[2..2 + alt_len];
@@ -142,21 +144,34 @@ fn image(text: &str) -> Option<(String, Option<String>, usize)> {
     if text.as_bytes().get(after) != Some(&b'(') {
         return None;
     }
-    let inner_len = text[after + 1..].find(')')?;
-    let inner = text[after + 1..after + 1 + inner_len].trim();
-    if inner.contains('(') {
+    let inner = text[after + 1..].trim_start();
+    // The path sits in `<...>`, or ends at the first space or the closing parenthesis.
+    let (path, rest) = match inner.strip_prefix('<') {
+        Some(rest) => rest.split_once('>')?,
+        None => inner.split_at(inner.find([' ', '\t', ')']).unwrap_or(inner.len())),
+    };
+    if path.contains(['(', ')']) {
         return None;
     }
-    let target = match inner.strip_prefix('<') {
-        Some(rest) => rest.split('>').next().unwrap_or(""),
-        None => inner.split_whitespace().next().unwrap_or(""),
+    // After the path comes the closing parenthesis, or a quoted title and then it; the title may
+    // hold anything but its own quote.
+    let rest = rest.trim_start();
+    let close = match rest.chars().next() {
+        Some(quote @ ('"' | '\'')) => {
+            let title_len = rest[1..].find(quote)?;
+            rest[1 + title_len + 1..].trim_start()
+        }
+        _ => rest,
     };
-    let target = percent_decode(target.trim());
+    if !close.starts_with(')') {
+        return None;
+    }
+    let target = percent_decode(path.split('#').next().unwrap_or("").trim());
     if target.is_empty() {
         return None;
     }
     let label = Some(alt.trim().to_string()).filter(|l| !l.is_empty());
-    Some((target, label, after + 1 + inner_len + 1))
+    Some((target, label, text.len() - close.len() + 1))
 }
 
 /// `text` with each `%XX` as the byte it stands for; what is not valid UTF-8 after that, or not
@@ -233,35 +248,56 @@ fn resolve(conn: &Connection, target: &str) -> Result<Option<String>> {
     Ok(one_at_best(found, rank))
 }
 
+/// `target` read from the folder `dir`: `.` and `..` are resolved, a leading `/` starts at the
+/// vault root, and `..` above the root is dropped.
+fn path_from(dir: &str, target: &str) -> String {
+    let (dir, target) = match target.strip_prefix('/') {
+        Some(root_relative) => ("", root_relative),
+        None => (dir, target),
+    };
+    let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
+    for part in target.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    parts.join("/")
+}
+
 /// The attachment `target` names from the bud at `from`, by the order in the module comment.
 fn resolve_embed(conn: &Connection, from: &str, target: &str) -> Result<Option<String>> {
-    let target = target.strip_prefix("./").unwrap_or(target);
-    // The bud's own folder, and the folder its file is in.
-    let own = format!("{}/{target}", from.strip_suffix(".md").unwrap_or(from));
-    let beside = match from.rsplit_once('/') {
-        Some((dir, _)) => format!("{dir}/{target}"),
-        None => target.to_string(),
-    };
+    let name = target.rsplit('/').next().unwrap_or(target);
+    // The target as a path from the bud's own folder, from the folder its file is in, and from
+    // the vault root.
+    let own = path_from(from.strip_suffix(".md").unwrap_or(from), target);
+    let beside = path_from(from.rsplit_once('/').map_or("", |(dir, _)| dir), target);
+    let exact = path_from("", target);
     let mut stmt = conn.prepare_cached(
         "SELECT path, name FROM attachments WHERE substr(path, 1, 7) != '.trash/'
-         AND (name = ?1 COLLATE NOCASE OR path IN (?1, ?2, ?3))",
+         AND (name = ?1 COLLATE NOCASE OR path IN (?2, ?3, ?4))",
     )?;
     let found: Vec<(String, String)> = stmt
-        .query_map(params![target, own, beside], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map(params![name, own, beside, exact], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
         .collect::<std::result::Result<_, _>>()?;
-    let rank = |(path, name): &(String, String)| {
-        let by_name = if name == target {
+    let rank = |(path, found_name): &(String, String)| {
+        let by_name = if found_name == name {
             0
-        } else if name.to_lowercase() == target.to_lowercase() {
+        } else if found_name.to_lowercase() == name.to_lowercase() {
             1
         } else {
             2
         };
-        let by_path = if path == target {
+        let by_path = if *path == own {
             0
-        } else if *path == own {
-            1
         } else if *path == beside {
+            1
+        } else if *path == exact {
             2
         } else {
             3
@@ -317,10 +353,20 @@ fn read(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Vec
 }
 
 fn read_embeds(conn: &Connection, sql: &str, args: impl rusqlite::Params) -> Result<Vec<Embed>> {
+    // One lookup per distinct target in a bud, however often it is written there.
+    let mut resolved: HashMap<(String, String), Option<String>> = HashMap::new();
     rows(conn, sql, args)?
         .into_iter()
         .map(|(from, target, label)| {
-            let to = resolve_embed(conn, &from, &target)?;
+            let key = (from.clone(), target.clone());
+            let to = match resolved.get(&key) {
+                Some(to) => to.clone(),
+                None => {
+                    let to = resolve_embed(conn, &from, &target)?;
+                    resolved.insert(key, to.clone());
+                    to
+                }
+            };
             Ok(Embed {
                 from,
                 target,
@@ -519,6 +565,26 @@ mod tests {
             ]
         );
         assert_eq!(targets(body), vec![]);
+    }
+
+    #[test]
+    fn an_image_keeps_its_title_and_leaves_off_a_fragment() {
+        let body = "![](photo.png \"a (b)\") ![](photo.png#center) ![](<a b.png> 'c)d') [[After]]";
+        assert_eq!(
+            embeds(body),
+            vec![
+                ("photo.png".into(), None),
+                ("photo.png".into(), None),
+                ("a b.png".into(), None),
+            ]
+        );
+        assert_eq!(targets(body), vec![("After".into(), None)]);
+        let found = parse(body);
+        assert_eq!(
+            found[3].position,
+            body.find("[[After").unwrap(),
+            "the title's parenthesis did not end the image early"
+        );
     }
 
     #[test]

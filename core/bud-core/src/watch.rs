@@ -197,8 +197,7 @@ fn reindex_path(
         Ok(meta) if meta.is_file() => {
             if scan::is_picture(&rel) {
                 if let Some(picture) = scan::probe_picture(&context.root, relative) {
-                    attachments::index(tx, &picture)?;
-                    changed.insert(rel.clone());
+                    changed.extend(attachments::sync(tx, &rel, &[picture])?.changed());
                 }
                 return Ok(());
             }
@@ -274,35 +273,7 @@ fn sync_dir(
             changed.insert(path);
         }
     }
-    let mut seen = HashSet::with_capacity(found.pictures.len());
-    for picture in &found.pictures {
-        seen.insert(picture.path.clone());
-        let known: Option<(i64, i64)> = tx
-            .query_row(
-                "SELECT size, mtime FROM attachments WHERE path = ?1",
-                params![picture.path],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .ok();
-        if known == Some((picture.size as i64, picture.mtime)) {
-            continue;
-        }
-        attachments::index(tx, picture)?;
-        changed.insert(picture.path.clone());
-    }
-    let mut stmt = tx.prepare(
-        "SELECT path FROM attachments WHERE path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/'",
-    )?;
-    let indexed: Vec<String> = stmt
-        .query_map(params![rel], |row| row.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
-    drop(stmt);
-    for path in indexed {
-        if !seen.contains(&path) {
-            tx.execute("DELETE FROM attachments WHERE path = ?1", params![path])?;
-            changed.insert(path);
-        }
-    }
+    changed.extend(attachments::sync(tx, &rel, &found.pictures)?.changed());
     Ok(())
 }
 

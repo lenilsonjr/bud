@@ -345,17 +345,8 @@ impl Vault {
                 for row in rows.iter().filter(gone) {
                     tx.execute("DELETE FROM buds WHERE path = ?1", params![row])?;
                 }
-                let pictures: Vec<String> = {
-                    let mut stmt = tx.prepare(
-                        "SELECT path FROM attachments
-                         WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
-                    )?;
-                    let found = stmt.query_map(params![dir], |r| r.get(0))?;
-                    found.collect::<std::result::Result<_, _>>()?
-                };
-                for row in pictures.iter().filter(gone) {
-                    tx.execute("DELETE FROM attachments WHERE path = ?1", params![row])?;
-                }
+                let left = scan::walk_under(&self.root, Path::new(dir))?.pictures;
+                attachments::sync(&tx, dir, &left)?;
             }
             tx.commit()?;
         }

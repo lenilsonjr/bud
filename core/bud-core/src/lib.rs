@@ -274,11 +274,6 @@ impl Vault {
             let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
             rows.collect::<std::result::Result<_, _>>()?
         };
-        let known_pictures: HashMap<String, (i64, i64)> = {
-            let mut stmt = conn.prepare("SELECT path, size, mtime FROM attachments")?;
-            let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
-            rows.collect::<std::result::Result<_, _>>()?
-        };
         let mut report = ScanReport::default();
         let tx = conn.transaction()?;
         let mut seen = std::collections::HashSet::with_capacity(found.buds.len());
@@ -297,24 +292,10 @@ impl Vault {
                 report.removed += 1;
             }
         }
-        let mut seen = std::collections::HashSet::with_capacity(found.pictures.len());
-        for picture in &found.pictures {
-            seen.insert(picture.path.clone());
-            match known_pictures.get(&picture.path) {
-                Some(&(size, mtime)) if size == picture.size as i64 && mtime == picture.mtime => {
-                    continue
-                }
-                Some(_) => report.updated += 1,
-                None => report.added += 1,
-            }
-            attachments::index(&tx, picture)?;
-        }
-        for path in known_pictures.keys() {
-            if !seen.contains(path) {
-                tx.execute("DELETE FROM attachments WHERE path = ?1", params![path])?;
-                report.removed += 1;
-            }
-        }
+        let pictures = attachments::sync(&tx, "", &found.pictures)?;
+        report.added += pictures.added.len();
+        report.updated += pictures.updated.len();
+        report.removed += pictures.removed.len();
         tx.commit()?;
         Ok(report)
     }
