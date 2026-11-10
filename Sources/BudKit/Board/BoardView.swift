@@ -77,7 +77,8 @@ struct BoardView: View {
                         .foregroundStyle(Theme.text3)
                 }
                 .padding(.vertical, 12)
-                .frame(width: 40, maxHeight: .infinity, alignment: .top)
+                .frame(width: 40)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .background(Theme.sidebar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .contentShape(Rectangle())
             }
