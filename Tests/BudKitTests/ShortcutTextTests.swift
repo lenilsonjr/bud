@@ -10,30 +10,30 @@ final class ShortcutTextTests: XCTestCase {
         XCTAssertEqual(Command.Scope.allCases.map(ShortcutText.groupTitle), ["Everywhere", "On the canvas", "In Files", "On a page"])
     }
 
-    func testTheSystemWideKeysComeFirstInTheirOwnGroup() throws {
+    func testTheSystemWideKeysComeLastInTheirOwnGroupMarkedMac() throws {
         let groups = ShortcutText.groups()
-        let first = try XCTUnwrap(groups.first)
-        XCTAssertEqual(first.title, ShortcutText.systemWideTitle)
-        XCTAssertEqual(first.caption, ShortcutText.systemWideCaption)
-        XCTAssertEqual(first.commands.map(\.id), [.capture])
-        XCTAssertEqual(groups.dropFirst().map(\.title), ["Everywhere", "On the canvas", "On a page"], "Files has no rows yet, so no group")
-        XCTAssertTrue(groups.dropFirst().allSatisfy { $0.caption == nil })
+        let last = try XCTUnwrap(groups.last)
+        XCTAssertEqual(last.title, ShortcutText.systemWideTitle)
+        XCTAssertEqual(last.caption, ShortcutText.systemWideCaption)
+        XCTAssertEqual(last.commands.map(\.id), [.capture])
+        XCTAssertEqual(groups.dropLast().map(\.title), ["Everywhere", "On the canvas", "On a page"], "Files has no rows yet, so no group")
+        XCTAssertTrue(groups.dropLast().allSatisfy { $0.caption == nil })
     }
 
     func testEveryRowOfTheTableIsOnTheSheetOnce() {
         let listed = ShortcutText.groups().flatMap(\.commands).map(\.id)
         XCTAssertEqual(listed.count, Set(listed).count)
         XCTAssertEqual(Set(listed), Set(Command.ID.allCases))
-        XCTAssertEqual(ShortcutText.groups()[1].commands.map(\.id).first, .goAnywhere)
-        XCTAssertFalse(ShortcutText.groups()[1].commands.map(\.id).contains(.capture), "A system-wide key is listed in its group alone")
+        XCTAssertEqual(ShortcutText.groups()[0].commands.map(\.id).first, .goAnywhere)
+        XCTAssertFalse(ShortcutText.groups()[0].commands.map(\.id).contains(.capture), "A system-wide key is listed in its group alone")
     }
 
     func testTheHalvesSplitWholeGroupsAroundTheMiddle() {
         let groups = ShortcutText.groups()
         let (left, right) = ShortcutText.halves(groups)
         XCTAssertEqual(left + right, groups)
-        XCTAssertEqual(left.map(\.title), [ShortcutText.systemWideTitle, "Everywhere"])
-        XCTAssertEqual(right.map(\.title), ["On the canvas", "On a page"])
+        XCTAssertEqual(left.map(\.title), ["Everywhere"])
+        XCTAssertEqual(right.map(\.title), ["On the canvas", "On a page", ShortcutText.systemWideTitle])
         let one = [ShortcutText.Group(title: "A", caption: nil, commands: [Command.of(.undo)])]
         XCTAssertEqual(ShortcutText.halves(one).0, one)
         XCTAssertEqual(ShortcutText.halves(one).1, [])

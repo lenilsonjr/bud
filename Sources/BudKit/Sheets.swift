@@ -60,7 +60,7 @@ struct AddSheet: View {
                 }
             }
             HStack(spacing: 8) {
-                Keycap("Esc")
+                Keycap(Keys.key(for: .close))
                 Spacer()
                 Button { close() } label: { BudButtonLabel(title: "Cancel") }
                     .buttonStyle(.budSecondary)
