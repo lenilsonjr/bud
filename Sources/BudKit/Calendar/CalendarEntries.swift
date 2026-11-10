@@ -92,6 +92,40 @@ public struct CalendarEntry: Hashable, Identifiable, Sendable {
     }
 }
 
+/// A bud with two days shown: a bar from the earlier to the later, whichever is which.
+public struct CalendarSpan: Equatable, Sendable {
+    public let entry: CalendarEntry
+    public let start: Date
+    public let end: Date
+
+    /// The spans among `entries` under the state's switches, longer first, then by start and
+    /// title, so the long ones keep the top lanes wherever they are laid.
+    public static func list(in entries: [CalendarEntry], state: CalendarState) -> [CalendarSpan] {
+        entries.compactMap { entry in
+            let dates = state.dates(of: entry)
+            guard let start = dates.min(), let end = dates.max(), start < end else { return nil }
+            return CalendarSpan(entry: entry, start: start, end: end)
+        }.sorted { a, b in
+            let (la, lb) = (a.end.timeIntervalSince(a.start), b.end.timeIntervalSince(b.start))
+            if la != lb { return la > lb }
+            return (a.start, a.entry.title) < (b.start, b.entry.title)
+        }
+    }
+}
+
+/// The lanes of a row, each the column ranges it has taken.
+public enum CalendarLanes {
+    /// The first lane with nothing over `columns`, with the range taken in it; a new lane when
+    /// every one is crossed.
+    public static func take(_ columns: ClosedRange<Int>, in taken: inout [[ClosedRange<Int>]]) -> Int {
+        var lane = 0
+        while taken.indices.contains(lane) && taken[lane].contains(where: { $0.overlaps(columns) }) { lane += 1 }
+        if lane == taken.count { taken.append([]) }
+        taken[lane].append(columns)
+        return lane
+    }
+}
+
 /// The month grid with its buds placed: a bud with two days is a bar from one to the other,
 /// cut at each week's end and continued on the next row; a bud with one day is an item in
 /// that day's cell. Bars stack in lanes so none covers another; items sit below the lanes.
@@ -148,17 +182,9 @@ public struct MonthGrid: Equatable, Sendable {
         var taken: [[[ClosedRange<Int>]]] = Array(repeating: [], count: CalendarMonth.rows)
         var lanes = Array(repeating: 0, count: CalendarMonth.rows)
 
-        // Longer bars first, then by start, so the long ones keep the top lanes across rows. A
-        // span runs from the earlier of the two days to the later, whichever is which.
+        // Longer bars first, so the long ones keep the top lanes across rows.
         let shown = entries.filter(state.shows)
-        let spans: [(entry: CalendarEntry, start: Date, end: Date)] = shown.compactMap { entry in
-            let dates = state.dates(of: entry)
-            guard let start = dates.min(), let end = dates.max(), start < end else { return nil }
-            return (entry, start, end)
-        }.sorted { a, b in
-            if a.end.timeIntervalSince(a.start) != b.end.timeIntervalSince(b.start) { return a.end.timeIntervalSince(a.start) > b.end.timeIntervalSince(b.start) }
-            return (a.start, a.entry.title) < (b.start, b.entry.title)
-        }
+        let spans = CalendarSpan.list(in: shown, state: state)
         for span in spans {
             let first = max(span.start, month.gridStart)
             let last = min(span.end, calendar.date(byAdding: .day, value: -1, to: month.gridEnd) ?? month.gridStart)
@@ -166,10 +192,7 @@ public struct MonthGrid: Equatable, Sendable {
             for row in head.row...tail.row {
                 let from = row == head.row ? head.column : 0
                 let to = row == tail.row ? tail.column : CalendarMonth.columns - 1
-                var lane = 0
-                while taken[row].indices.contains(lane) && taken[row][lane].contains(where: { $0.overlaps(from...to) }) { lane += 1 }
-                if lane == taken[row].count { taken[row].append([]) }
-                taken[row][lane].append(from...to)
+                let lane = CalendarLanes.take(from...to, in: &taken[row])
                 lanes[row] = max(lanes[row], lane + 1)
                 let piece = month.weeks[row][from].date...month.weeks[row][to].date
                 let whenHere = span.entry.when.map(piece.contains) ?? false
