@@ -878,10 +878,10 @@ final class SnapshotTests: XCTestCase {
 
     private let phone = CGSize(width: 393, height: 852)
 
-    /// The view switch with Board and Calendar lit in turn, each over its quiet page with the
-    /// same bud in the breadcrumb; on the phone, and in a Mac window too narrow for four
-    /// segments beside the bar's buttons, the switch folds into one button. The Mac window at
-    /// its minimum width is pictured too, so the fold there is seen rather than assumed.
+    /// The view switch with Calendar lit over its quiet page, with the same bud in the
+    /// breadcrumb; on the phone, and in a Mac window too narrow for four segments beside the
+    /// bar's buttons, the switch folds into one button over the board. The Mac window at its
+    /// minimum width is pictured too, so the fold there is seen rather than assumed.
     func testRendersTheViewSwitchAndTheQuietPages() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
@@ -891,7 +891,7 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.center = newsletter.id
-        for surface in [Surface.board, .calendar] {
+        for surface in [Surface.calendar] {
             store.surface = surface
             for scheme in [ColorScheme.light, .dark] {
                 let data = try render(store: store, scheme: scheme)
@@ -907,6 +907,68 @@ final class SnapshotTests: XCTestCase {
         try render(narrowWindow, scheme: .light).write(to: folder.appendingPathComponent("mac-narrow-board-light.png"))
         let smallestWindow = BudRootView(store: store).frame(width: 900, height: 600)
         try render(smallestWindow, scheme: .light).write(to: folder.appendingPathComponent("mac-smallest-board-light.png"))
+    }
+
+    /// The board of the newsletter thread at the design's size, on a fixed day: Open, the three
+    /// tag columns in the order they are met, Done, and Cancelled folded to its stub. One card
+    /// carries a picture, one a when, two a due, one a tag beyond its column's.
+    func testRendersTheBoard() async throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let now = Date(timeIntervalSince1970: 1_794_000_000)
+        let day: TimeInterval = 86_400
+        var tree = Tree.seed(now: now)
+        let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let kids = tree.children(of: newsletter.id)
+        let name = kids[0], sender = kids[1], design = kids[2]
+        tree.addTag(name.id, "researching")
+        tree.setWhen(name.id, now.addingTimeInterval(2 * day))
+        tree.addTag(sender.id, "waiting")
+        tree.addTag(sender.id, "lawyer")
+        tree.setDue(sender.id, now.addingTimeInterval(4 * day))
+        let senderKids = tree.children(of: sender.id)
+        tree.addTag(senderKids[0].id, "doing")
+        tree.toggle(senderKids[1].id)
+        let board = tree.add("Living room board", todo: false, under: design.id)
+        tree.setBody(board.id, "![[living-room.png]]\n\nThe sofa goes by the window.")
+        let marta = tree.add("Ask the printer about a proof", todo: true, under: design.id)
+        tree.addTag(marta.id, "doing")
+        tree.setWhen(marta.id, now)
+        let sold = tree.add("Sell the old press", todo: true, under: newsletter.id)
+        tree.toggle(sold.id)
+        let quote = tree.add("Printer quote", todo: true, under: design.id)
+        let cancelled = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
+        tree.buds[cancelled].fromState = "cancelled"
+        let vault = MemoryVault(tree: tree)
+        await vault.keepPicture("living-room.png", try picture())
+        let store = BudStore(vault: vault, tree: tree)
+        await store.settle()
+        store.center = newsletter.id
+        store.surface = .board
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store).frame(width: 1440, height: 900).environment(\.stillNow, now)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("board-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
+    /// A small picture drawn here, so the fixtures carry no file: two washes of the kit.
+    private func picture() throws -> Data {
+        let image = NSImage(size: NSSize(width: 240, height: 120), flipped: false) { rect in
+            NSColor(Palette.leafSoft.light).setFill()
+            rect.fill()
+            NSColor(Palette.leaf.light).setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 70, dy: 30)).fill()
+            return true
+        }
+        let tiff = try XCTUnwrap(image.tiffRepresentation)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: tiff))
+        return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
     }
 
     /// The phone layout: Files split with the navigator on top, the canvas, and the palette.

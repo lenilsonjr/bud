@@ -99,7 +99,9 @@ public struct BudRootView: View {
             OrbitCanvas(store: store)
         case .files:
             FilesView(store: store)
-        case .board, .calendar:
+        case .board:
+            BoardView(store: store)
+        case .calendar:
             QuietPage(surface: store.surface)
         }
     }
