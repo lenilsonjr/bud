@@ -496,20 +496,6 @@ final class LayoutTests: XCTestCase {
         }
     }
 
-    func testOutlineUnderABudListsItsChildrenAndOpensOneMoreLevelWhenExpanded() throws {
-        let tree = Tree.seed()
-        let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
-        let name = try XCTUnwrap(tree.children(of: newsletter.id).first { $0.text == "Pick a name" })
-        let closed = tree.outline(under: newsletter.id, expanded: [])
-        XCTAssertEqual(closed.map(\.id), tree.children(of: newsletter.id).map(\.id))
-        XCTAssertTrue(closed.allSatisfy { $0.depth == 0 })
-        let open = tree.outline(under: newsletter.id, expanded: [name.id])
-        XCTAssertEqual(open.count, closed.count + tree.children(of: name.id).count)
-        let inside = open.filter { $0.depth == 1 }
-        XCTAssertEqual(inside.map(\.id), tree.children(of: name.id).map(\.id))
-        XCTAssertEqual(tree.outline(expanded: []).map(\.id), tree.children(of: rootID).map(\.id), "The sidebar's outline is the root's")
-    }
-
     func testTheLedeIsTheFirstParagraphOfTheBody() throws {
         var tree = Tree.seed()
         let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
@@ -519,17 +505,6 @@ final class LayoutTests: XCTestCase {
         tree.setBody(roadmap.id, "\n\nOnly one paragraph here.\n")
         XCTAssertEqual(tree.lede(of: roadmap.id), "Only one paragraph here.")
         XCTAssertEqual(tree.lede(of: UUID()), "")
-    }
-
-    func testTheRestOfTheBodyFollowsTheLede() throws {
-        var tree = Tree.seed()
-        let roadmap = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
-        tree.setBody(roadmap.id, "\n\nWhy this quarter.\n\nFirst the soil.\n\nThen the library.\n")
-        XCTAssertEqual(tree.lede(of: roadmap.id), "Why this quarter.")
-        XCTAssertEqual(tree.afterLede(of: roadmap.id), "First the soil.\n\nThen the library.")
-        tree.setBody(roadmap.id, "Only one paragraph here.")
-        XCTAssertEqual(tree.afterLede(of: roadmap.id), "")
-        XCTAssertEqual(tree.afterLede(of: UUID()), "")
     }
 }
 

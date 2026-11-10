@@ -401,15 +401,17 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(records.filter { $0.from == "mail:M-7" }.count, 1)
     }
 
-    func testAThreadsChildrenStayInTheSidebarTreeWhileItsPageIsOpen() async throws {
+    func testOpeningAThreadAsAFileLandsOnItsPageAndKeepsItsChildrenInTheTree() async throws {
         let (store, _) = await loaded()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first { store.tree.hasChildren($0.id) })
+        let kids = store.tree.children(of: thread.id).map(\.id)
+        store.open(.today)
         store.openAsFile(thread.id)
+        XCTAssertEqual(store.surface, .files)
         XCTAssertEqual(store.center, thread.id)
-        let rows = store.tree.outline(expanded: [thread.id]).map(\.id)
-        for child in store.tree.children(of: thread.id) {
-            XCTAssertTrue(rows.contains(child.id), "\(child.text) is reachable through the sidebar")
-        }
+        XCTAssertNil(store.lens)
+        XCTAssertNil(store.place)
+        XCTAssertEqual(store.tree.children(of: thread.id).map(\.id), kids, "The page shows none of them; the tree beside it still does")
     }
 
     // MARK: the Library

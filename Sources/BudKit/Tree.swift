@@ -247,9 +247,9 @@ public struct Tree: Codable, Equatable, Sendable {
         public let depth: Int
     }
 
-    /// The rows an outline shows: every bud under `root` whose ancestors are all expanded, in
-    /// reading order, with its depth. The root itself is not a row.
-    public func outline(under root: UUID = rootID, expanded: Set<UUID>) -> [OutlineRow] {
+    /// The rows the sidebar's tree shows: every bud whose ancestors are all expanded, in reading
+    /// order, with its depth. The root itself is not a row.
+    public func outline(expanded: Set<UUID>) -> [OutlineRow] {
         var rows: [OutlineRow] = []
         func visit(_ id: UUID, depth: Int) {
             for child in children(of: id) {
@@ -257,26 +257,16 @@ public struct Tree: Codable, Equatable, Sendable {
                 if expanded.contains(child.id) { visit(child.id, depth: depth + 1) }
             }
         }
-        visit(root, depth: 0)
+        visit(rootID, depth: 0)
         return rows
     }
 
-    /// The first paragraph of a bud's body, the lede its page shows; empty when there is none.
+    /// The first paragraph of a bud's body, the lede its rows show; empty when there is none.
     public func lede(of id: UUID) -> String {
         guard let body = bud(id)?.body else { return "" }
         return body.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty } ?? ""
-    }
-
-    /// What a bud's body says after its lede, the paragraphs an outline page shows under it.
-    public func afterLede(of id: UUID) -> String {
-        guard let body = bud(id)?.body else { return "" }
-        var paragraphs = body.components(separatedBy: "\n\n")
-        while let first = paragraphs.first, first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { paragraphs.removeFirst() }
-        guard !paragraphs.isEmpty else { return "" }
-        paragraphs.removeFirst()
-        return paragraphs.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Today: open to-dos due on or before the day (overdue first), and buds scheduled for the
