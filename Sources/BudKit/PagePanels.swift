@@ -145,21 +145,55 @@ public struct PanelLayout: Equatable, Codable, Sendable {
     }
 }
 
-/// How the panels stand: where each sits and which are folded. Whether a sidebar shows at all
-/// is `SidebarVisibility`. The layout is the vault's; folding stays on this device, in memory.
-public struct PanelState: Equatable, Sendable {
-    public var layout: PanelLayout
+extension PanelLayout {
+    /// The panels in the order they stack under the words on a phone: the left sidebar's then
+    /// the right's. Files is left out, since the navigator above the page is the file tree there.
+    public var phoneStack: [PagePanel] { (left + right).filter { $0 != .files } }
+}
+
+/// Which panels are folded from their headers. A sidebar starts with Source alone folded; the
+/// stack under the words on a phone starts with every panel folded.
+public struct PanelFolds: Equatable, Sendable {
     public var collapsed: Set<PagePanel>
 
-    public init(layout: PanelLayout = .standard) {
-        self.layout = layout
-        collapsed = Set(PagePanel.allCases.filter(\.startsCollapsed))
+    public init(collapsed: Set<PagePanel>) {
+        self.collapsed = collapsed
     }
+
+    public static let sidebar = PanelFolds(collapsed: Set(PagePanel.allCases.filter(\.startsCollapsed)))
+    public static let phone = PanelFolds(collapsed: Set(PagePanel.allCases))
 
     public func isCollapsed(_ panel: PagePanel) -> Bool { collapsed.contains(panel) }
 
     public mutating func toggle(_ panel: PagePanel) {
         if collapsed.contains(panel) { collapsed.remove(panel) } else { collapsed.insert(panel) }
+    }
+}
+
+/// How the panels stand: where each sits and which are folded. Whether a sidebar shows at all
+/// is `SidebarVisibility`. The layout is the vault's; folding stays on this device, in memory,
+/// and a phone folds apart from the sidebars, since a desk and a phone want different things
+/// open. `compact` names the phone, where the panels stack under the words.
+public struct PanelState: Equatable, Sendable {
+    public var layout: PanelLayout
+    public var folds = PanelFolds.sidebar
+    public var phoneFolds = PanelFolds.phone
+
+    public init(layout: PanelLayout = .standard) {
+        self.layout = layout
+    }
+
+    public func isCollapsed(_ panel: PagePanel, compact: Bool = false) -> Bool {
+        (compact ? phoneFolds : folds).isCollapsed(panel)
+    }
+
+    public mutating func toggle(_ panel: PagePanel, compact: Bool = false) {
+        if compact { phoneFolds.toggle(panel) } else { folds.toggle(panel) }
+    }
+
+    /// Unfolds a panel so what is added to it can be seen; nothing when it is open.
+    public mutating func show(_ panel: PagePanel, compact: Bool = false) {
+        if isCollapsed(panel, compact: compact) { toggle(panel, compact: compact) }
     }
 }
 

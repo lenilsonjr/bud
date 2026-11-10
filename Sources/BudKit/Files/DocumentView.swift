@@ -39,8 +39,6 @@ struct DocumentView: View {
                         if let from = bud.from, SourceRowText.owns(.title, from: from) {
                             FromMark(from: from)
                         }
-                        // On a phone the tags stay under the title; elsewhere they are a property.
-                        if compact { TagRow(bud: bud, store: store) }
                     }
                     bodyEditor
                     // The words first, then the panels; on a phone there is no sidebar for them.

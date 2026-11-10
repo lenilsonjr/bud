@@ -22,9 +22,8 @@ struct PanelView<Content: View>: View {
     static var headerHeight: CGFloat { 32 }
 
     var body: some View {
-        let collapsed = store.isPanelCollapsed(panel, compact: compact)
-        let line = dragging.drag?.line(on: panel, in: store.panels.layout)
-        VStack(alignment: .leading, spacing: 0) {
+        let collapsed = store.panels.isCollapsed(panel, compact: compact)
+        let column = VStack(alignment: .leading, spacing: 0) {
             header(collapsed: collapsed)
             if !collapsed {
                 content()
@@ -34,12 +33,24 @@ struct PanelView<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
-        .opacity(dragging.drag?.panel == panel ? 0.3 : 1)
-        .overlay(alignment: .top) { if line == .above { PanelDropLine().offset(y: -4) } }
-        .overlay(alignment: .bottom) { if line == .below { PanelDropLine().offset(y: 4) } }
-        .background(probe)
-        .onChange(of: holding) { _, now in if !now { dragging.released() } }
         .accessibilityIdentifier("panel-\(panel.rawValue)")
+        if compact {
+            column
+        } else {
+            lifted(column)
+        }
+    }
+
+    /// The panel as a sidebar lifts it: faded while in hand, the drop line on the edge it would
+    /// land at, its place told to Files as a drag begins, and the grip let go.
+    private func lifted(_ column: some View) -> some View {
+        let line = dragging.drag?.line(on: panel, in: store.panels.layout)
+        return column
+            .opacity(dragging.drag?.panel == panel ? 0.3 : 1)
+            .overlay(alignment: .top) { if line == .above { PanelDropLine().offset(y: -4) } }
+            .overlay(alignment: .bottom) { if line == .below { PanelDropLine().offset(y: 4) } }
+            .background(probe)
+            .onChange(of: holding) { _, now in if !now { dragging.released() } }
     }
 
     /// Tells Files where this panel is as a drag begins, so the drop line can find its gap.
@@ -69,7 +80,7 @@ struct PanelView<Content: View>: View {
     }
 
     private func fold() {
-        withAnimation(.easeOut(duration: 0.15)) { store.togglePanel(panel, compact: compact) }
+        withAnimation(.easeOut(duration: 0.15)) { store.panels.toggle(panel, compact: compact) }
     }
 
     private func headerRow(collapsed: Bool) -> some View {
@@ -116,8 +127,8 @@ struct PanelView<Content: View>: View {
             .accessibilityLabel(collapsed ? "Show \(panel.title)" : "Collapse \(panel.title)")
             .accessibilityIdentifier("panel-\(panel.rawValue)-chevron")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 4)
+        .padding(.leading, PanelInset.text(compact: compact))
+        .padding(.trailing, compact ? 0 : 4)
         .frame(height: Self.headerHeight)
     }
 
@@ -238,16 +249,12 @@ extension EnvironmentValues {
     }
 }
 
-extension BudStore {
-    /// Whether a panel is folded where it is drawn: in the stack under the words on a phone, or
-    /// in its sidebar.
-    func isPanelCollapsed(_ panel: PagePanel, compact: Bool) -> Bool {
-        compact ? phonePanels.isCollapsed(panel) : panels.isCollapsed(panel)
-    }
-
-    func togglePanel(_ panel: PagePanel, compact: Bool) {
-        if compact { phonePanels.toggle(panel) } else { panels.toggle(panel) }
-    }
+/// The space between a panel's edge and its words: the sidebar's gutter, and none on a phone,
+/// where the stack sits in the page column and its words line up with the page's.
+enum PanelInset {
+    static func text(compact: Bool) -> CGFloat { compact ? 0 : 10 }
+    /// Rows carry 6 of their own, for the shape that lights under the pointer.
+    static func rows(compact: Bool) -> CGFloat { compact ? 0 : 4 }
 }
 
 /// The one-off style of a panel row's title: a step under the body text.

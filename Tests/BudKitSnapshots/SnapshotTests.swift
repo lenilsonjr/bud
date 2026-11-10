@@ -850,13 +850,7 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.openAsFile(newsletter.id)
-        for scheme in [ColorScheme.light, .dark] {
-            let view = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
-            let data = try render(view, scheme: scheme)
-            let file = folder.appendingPathComponent("phone-files-\(scheme == .dark ? "dark" : "light").png")
-            try data.write(to: file)
-            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
-        }
+        try phonePictures("phone-files", store: store, in: folder)
         store.surface = .canvas
         store.center = rootID
         let canvas = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
@@ -875,7 +869,8 @@ final class SnapshotTests: XCTestCase {
     }
 
     /// A bud's page on the phone: the words first, then its panels stacked under them, every one
-    /// folded; then Inside opened by a tap on its header.
+    /// folded; then with Inside unfolded, the state flipped as a tap on its header would, since
+    /// a picture has no tap.
     func testRendersThePhonePageWithPanels() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
@@ -887,16 +882,21 @@ final class SnapshotTests: XCTestCase {
         store.setBody(name.id, "Short, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers")
         store.addTag(name.id, "brand")
         store.openAsFile(name.id)
+        try phonePictures("phone-page", store: store, in: folder)
+        store.panels.toggle(.inside, compact: true)
+        let opened = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
+        try render(opened, scheme: .light).write(to: folder.appendingPathComponent("phone-page-inside-light.png"))
+    }
+
+    /// The whole phone as the store stands, in light and dark, named `name-light.png` and so on.
+    private func phonePictures(_ name: String, store: BudStore, in folder: URL) throws {
         for scheme in [ColorScheme.light, .dark] {
             let view = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
             let data = try render(view, scheme: scheme)
-            let file = folder.appendingPathComponent("phone-page-\(scheme == .dark ? "dark" : "light").png")
+            let file = folder.appendingPathComponent("\(name)-\(scheme == .dark ? "dark" : "light").png")
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
         }
-        store.phonePanels.toggle(.inside)
-        let opened = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
-        try render(opened, scheme: .light).write(to: folder.appendingPathComponent("phone-page-inside-light.png"))
     }
 
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
