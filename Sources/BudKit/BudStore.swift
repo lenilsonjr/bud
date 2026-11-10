@@ -136,6 +136,14 @@ public final class BudStore: ObservableObject {
         didSet { UserDefaults.standard.set(soilFolded, forKey: Self.soilFoldedKey) }
     }
     static let soilFoldedKey = "soilFolded"
+    /// The calendar the days are counted in: the system's, or the one a picture sets.
+    public var dateCalendar: Calendar = .current
+    /// The calendar's range, layout, hidden threads and Show switches. Kept on this device only.
+    @Published public var calendar = CalendarState.load(from: .standard) {
+        didSet { if calendar != oldValue { calendar.save(to: .standard) } }
+    }
+    /// The day the calendar is looking at; nil for today.
+    @Published public var calendarDate: Date? = nil
     /// How each planted bud stands with its source, by its `from` key, as the device that keeps
     /// it live last saw it.
     @Published public var marks: [String: SourceMark] = [:]

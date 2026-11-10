@@ -543,9 +543,9 @@ public struct Tree: Codable, Equatable, Sendable {
     /// "tomorrow" and overdue read the same on every run.
     public static let stillNow = Date(timeIntervalSince1970: 1_793_700_000)
 
-    /// A small fictional world: a newsletter being launched, with a few bodies, two due dates,
-    /// one scheduled day and one pinned bud, so every lens and picture has something to show.
-    /// Its days are told from `now`, and its ids and order are the same every time, so two
+    /// A small fictional world: a newsletter being launched, with a few bodies, four due dates,
+    /// three scheduled days, two of them spanning weeks, and one pinned bud, so every lens and
+    /// picture has something to show. Its days are told from `now`, and its ids and order are the same every time, so two
     /// seeds made at the same moment are equal.
     public static func seed(now: Date = Date()) -> Tree {
         var t = Tree()
@@ -583,8 +583,14 @@ public struct Tree: Codable, Equatable, Sendable {
         let design = add("Design notes", todo: false, under: newsletter.id)
         add("Warm, not corporate", todo: false, under: design.id)
         add("First issue outline", todo: false, under: newsletter.id)
+        // Scheduled and due: a bar across the calendar's weeks.
+        let issue = add("Send the first issue", todo: true, under: newsletter.id)
+        t.setWhen(issue.id, now.addingTimeInterval(3 * day))
+        t.setDue(issue.id, now.addingTimeInterval(20 * day))
         let roadmap = add("Q4 roadmap", todo: true, under: rootID)
-        add("Review the onboarding flow", todo: true, under: roadmap.id)
+        let onboarding = add("Review the onboarding flow", todo: true, under: roadmap.id)
+        t.setWhen(onboarding.id, now.addingTimeInterval(1 * day))
+        t.setDue(onboarding.id, now.addingTimeInterval(11 * day))
         add("Launch notes", todo: false, under: roadmap.id)
         let language = add("Learn a language", todo: true, under: rootID)
         add("Ten minutes a day", todo: true, under: language.id)
