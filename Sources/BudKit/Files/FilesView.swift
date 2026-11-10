@@ -37,21 +37,12 @@ struct FilesView: View {
         }
     }
 
-    /// A sidebar shows unless the page bar hid it. The right one is the page's own panels, so
-    /// it goes with a bud's page alone: a lens, a place and Everything have none. The Mac always
-    /// has room; iOS folds both away in a narrow window, and the bar button brings them back.
+    /// A sidebar shows unless a toggle hid it, or the window is too narrow on iOS. The right one
+    /// is the page's own panels, so it goes with a bud's page alone: a lens, a place and
+    /// Everything have none.
     private func sidebarShown(_ side: PanelSide, in size: CGSize) -> Bool {
-        guard store.panels.shows(side) else { return false }
-        if side == .right && !showsBudPage { return false }
-        #if os(iOS)
-        return store.sidebar.isShown(in: size)
-        #else
-        return true
-        #endif
-    }
-
-    private var showsBudPage: Bool {
-        store.lens == nil && store.place == nil && store.tree.bud(store.center) != nil
+        if side == .right && !FilesPage.showsBudPage(store) { return false }
+        return store.sidebar.isShown(side, in: size)
     }
 
     private func sync(_ size: CGSize) {
@@ -61,10 +52,33 @@ struct FilesView: View {
 }
 
 /// The page for where you are: a lens, a place, or the bud's page, the same one for every bud.
+/// A bud's page has its own bar; the others get the sidebar toggle above them.
 struct FilesPage: View {
     @ObservedObject var store: BudStore
+    @Environment(\.compact) private var compact
+
+    /// Whether the center's page is a bud's: a lens, a place and Everything are not.
+    static func showsBudPage(_ store: BudStore) -> Bool {
+        store.lens == nil && store.place == nil && store.tree.bud(store.center) != nil
+    }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if !compact && !Self.showsBudPage(store) {
+                HStack {
+                    SidebarToggle(store: store, side: .left)
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 12)
+            }
+            page
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
+    }
+
+    @ViewBuilder private var page: some View {
         Group {
             if let lens = store.lens {
                 LensPage(store: store, lens: lens)
@@ -85,8 +99,29 @@ struct FilesPage: View {
                     .id(store.center)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas)
+    }
+}
+
+/// Hides a sidebar or brings it back; the same switch as the bar button on iOS. The sidebars
+/// stay put while editing.
+struct SidebarToggle: View {
+    @ObservedObject var store: BudStore
+    let side: PanelSide
+
+    var body: some View {
+        let shown = store.sidebar.isShown(side, in: store.surfaceSize)
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { store.sidebar.toggle(side, in: store.surfaceSize) }
+        } label: {
+            Image(systemName: side == .left ? "sidebar.left" : "sidebar.right")
+                .foregroundStyle(shown ? Theme.text2 : Theme.text3)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
+        .accessibilityLabel(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
+        .accessibilityIdentifier("sidebar-\(side.rawValue)-toggle")
     }
 }
 

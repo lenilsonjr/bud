@@ -38,6 +38,7 @@ final class RustVault: BudKit.Vault {
     }
 
     func setBody(_ path: String, _ text: String) async throws { try core.setBody(path: path, text: text) }
+    func text(_ path: String) async throws -> String { try core.text(path: path) }
 
     func setState(_ path: String, _ state: BudKit.BudState?) async throws {
         try core.setState(path: path, state: state.map(Self.state))

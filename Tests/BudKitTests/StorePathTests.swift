@@ -148,6 +148,7 @@ private actor FolderVault: Vault {
 
     /// Puts records in as they are, for a vault that was there before the app.
     func put(_ records: [BudRecord]) { self.records = records }
+    func text(_ path: String) async throws -> String { try records[index(path)].body }
     func search(_ query: String, limit: Int) async throws -> [HitRecord] { [] }
     func today(_ date: Date) async throws -> [RowRecord] { [] }
     func counts(_ path: String) async throws -> CountsRecord { CountsRecord(inside: 0, openTodos: 0) }

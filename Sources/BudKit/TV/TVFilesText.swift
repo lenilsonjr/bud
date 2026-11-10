@@ -101,16 +101,10 @@ public enum TVFilesText {
         switch tag {
         case .none: return nil
         case let .due(date):
-            return date < calendar.startOfDay(for: now) ? "Overdue · \(short(date))" : "Due \(short(date))"
-        case let .scheduled(date): return short(date)
+            return date < calendar.startOfDay(for: now) ? "Overdue · \(DayText.short(date))" : "Due \(DayText.short(date))"
+        case let .scheduled(date): return DayText.short(date)
         case let .inside(count, open): return "\(count) inside" + (open > 0 ? " · \(open) open" : "")
         }
-    }
-
-    private static func short(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("d MMM")
-        return f.string(from: date)
     }
 
     /// One bud as a row with its trail under the title, for the hits of Go anywhere.

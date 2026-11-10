@@ -689,3 +689,25 @@ fn a_template_in_the_warehouse_stays_out_of_the_lenses_until_it_leaves() {
     vault.move_to(&kept, None).unwrap();
     assert_eq!(vault.lens(Lens::Todos).unwrap().len(), 2);
 }
+
+#[test]
+fn text_is_the_file_as_written_and_a_folder_bud_has_none() {
+    let (mut vault, dir, _index) = vault_with(&[
+        (
+            "Kitchen/Shelf.md",
+            "---\nstate: open\n# kept\n---\nTop shelf.\n",
+        ),
+        ("Garage/Bike.md", "Needs air.\n"),
+    ]);
+    assert_eq!(
+        vault.text("Kitchen/Shelf.md").unwrap(),
+        "---\nstate: open\n# kept\n---\nTop shelf.\n"
+    );
+    assert_eq!(vault.text("Kitchen").unwrap(), "");
+    vault.set_pinned("Garage/Bike.md", true).unwrap();
+    assert_eq!(
+        vault.text("Garage/Bike.md").unwrap(),
+        read(dir.path(), "Garage/Bike.md")
+    );
+    assert!(matches!(vault.text("Nowhere.md"), Err(Error::NoSuchBud(_))));
+}

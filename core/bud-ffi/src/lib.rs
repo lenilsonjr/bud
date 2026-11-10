@@ -647,6 +647,11 @@ impl Vault {
         Ok(self.core().set_body(&path, &text)?)
     }
 
+    /// The bud's file as it is on disk; a bud that is only a folder has none yet.
+    pub fn text(&self, path: String) -> Result<String> {
+        Ok(self.core().text(&path)?)
+    }
+
     /// None removes the state and makes the bud a note.
     pub fn set_state(&self, path: String, state: Option<BudState>) -> Result<()> {
         Ok(self.core().set_state(&path, state.map(Into::into))?)

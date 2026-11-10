@@ -5,44 +5,60 @@ final class SidebarVisibilityTests: XCTestCase {
     private let landscape = CGSize(width: 1024, height: 768)
     private let portrait = CGSize(width: 768, height: 1024)
 
-    func testTheSidebarShowsInLandscapeAndCollapsesInPortrait() {
+    func testTheSidebarsShowInLandscapeAndCollapseInPortrait() {
         let bar = SidebarVisibility()
-        XCTAssertTrue(bar.isShown(in: landscape))
-        XCTAssertFalse(bar.isShown(in: portrait))
+        XCTAssertTrue(bar.isShown(.left, in: landscape))
+        XCTAssertTrue(bar.isShown(.right, in: landscape))
+        XCTAssertFalse(bar.isShown(.left, in: portrait))
+        XCTAssertFalse(bar.isShown(.right, in: portrait))
     }
 
     func testANarrowLandscapeWindowStaysCollapsed() {
-        XCTAssertFalse(SidebarVisibility().isShown(in: CGSize(width: 600, height: 400)))
+        XCTAssertFalse(SidebarVisibility().isShown(.left, in: CGSize(width: 600, height: 400)))
     }
 
-    func testTheToggleFlipsWhatIsShown() {
+    func testAWindowWithRoomShowsBothUntilAToggleHidesOne() {
+        var bar = SidebarVisibility(followsWindow: false)
+        XCTAssertTrue(bar.isShown(.left, in: portrait))
+        XCTAssertTrue(bar.isShown(.right, in: CGSize(width: 600, height: 400)))
+        bar.toggle(.right, in: portrait)
+        XCTAssertFalse(bar.isShown(.right, in: portrait))
+        XCTAssertTrue(bar.isShown(.left, in: portrait))
+    }
+
+    func testTheToggleFlipsOneSideAndLeavesTheOther() {
         var bar = SidebarVisibility()
-        bar.toggle(in: landscape)
-        XCTAssertFalse(bar.isShown(in: landscape))
-        bar.toggle(in: landscape)
-        XCTAssertTrue(bar.isShown(in: landscape))
+        bar.toggle(.left, in: landscape)
+        XCTAssertFalse(bar.isShown(.left, in: landscape))
+        XCTAssertTrue(bar.isShown(.right, in: landscape))
+        bar.toggle(.left, in: landscape)
+        XCTAssertTrue(bar.isShown(.left, in: landscape))
 
         var closed = SidebarVisibility()
-        closed.toggle(in: portrait)
-        XCTAssertTrue(closed.isShown(in: portrait))
+        closed.toggle(.right, in: portrait)
+        XCTAssertTrue(closed.isShown(.right, in: portrait))
+        XCTAssertFalse(closed.isShown(.left, in: portrait))
     }
 
     func testTurningTheDeviceHandsTheChoiceBackToTheLayout() {
         var bar = SidebarVisibility()
-        bar.toggle(in: landscape)
+        bar.toggle(.left, in: landscape)
+        bar.toggle(.right, in: landscape)
         bar.resized(to: landscape)
-        XCTAssertFalse(bar.isShown(in: landscape))
+        XCTAssertFalse(bar.isShown(.left, in: landscape))
         bar.resized(to: portrait)
-        XCTAssertFalse(bar.isShown(in: portrait))
+        XCTAssertFalse(bar.isShown(.left, in: portrait))
+        XCTAssertFalse(bar.isShown(.right, in: portrait))
         bar.resized(to: landscape)
-        XCTAssertTrue(bar.isShown(in: landscape))
+        XCTAssertTrue(bar.isShown(.left, in: landscape))
+        XCTAssertTrue(bar.isShown(.right, in: landscape))
     }
 
     func testResizingWithinOneOrientationKeepsTheChoice() {
         var bar = SidebarVisibility()
         bar.resized(to: portrait)
-        bar.toggle(in: portrait)
+        bar.toggle(.left, in: portrait)
         bar.resized(to: CGSize(width: 700, height: 1000))
-        XCTAssertTrue(bar.isShown(in: CGSize(width: 700, height: 1000)))
+        XCTAssertTrue(bar.isShown(.left, in: CGSize(width: 700, height: 1000)))
     }
 }

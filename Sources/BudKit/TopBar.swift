@@ -111,10 +111,10 @@ struct TopBar: View {
     }
 
     #if os(iOS)
-    /// Shows or collapses the Files sidebar.
+    /// Shows or collapses the Files sidebar: the same switch as the page bar's left toggle.
     private var sidebarToggle: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.2)) { store.sidebar.toggle(in: store.surfaceSize) }
+            withAnimation(.easeOut(duration: 0.2)) { store.sidebar.toggle(.left, in: store.surfaceSize) }
         } label: {
             Image(systemName: "sidebar.left")
                 .foregroundStyle(Theme.text2)

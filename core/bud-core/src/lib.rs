@@ -373,6 +373,17 @@ impl Vault {
         Ok(())
     }
 
+    /// The bud's file as it is on disk, front matter and body. A bud that is only a folder has
+    /// no file yet, and no text.
+    pub fn text(&self, path: &str) -> Result<String> {
+        self.bud(path)?
+            .ok_or_else(|| Error::NoSuchBud(path.to_string()))?;
+        if !path.ends_with(".md") {
+            return Ok(String::new());
+        }
+        Ok(std::fs::read_to_string(self.root.join(path))?)
+    }
+
     /// One bud by its path.
     pub fn bud(&self, path: &str) -> Result<Option<Bud>> {
         let bud = lock(&self.conn)
