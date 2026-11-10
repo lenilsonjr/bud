@@ -91,12 +91,16 @@ public struct CalendarState: Equatable, Codable, Sendable {
     public var hiddenThreads: Set<UUID> = []
     /// The switches that are on.
     public var shown: Set<CalendarShow> = CalendarState.defaultShown
+    /// The first and last month the picker was given; nil until it is, when Custom shows the
+    /// next three months.
+    public var custom: CustomRange? = nil
 
-    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown) {
+    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown, custom: CustomRange? = nil) {
         self.range = range
         self.layout = layout
         self.hiddenThreads = hiddenThreads
         self.shown = shown
+        self.custom = custom
     }
 
     /// A state saved before a field existed still loads: each has its default.
@@ -106,6 +110,7 @@ public struct CalendarState: Equatable, Codable, Sendable {
         layout = try c.decodeIfPresent(CalendarLayout.self, forKey: .layout) ?? .calendar
         hiddenThreads = try c.decodeIfPresent(Set<UUID>.self, forKey: .hiddenThreads) ?? []
         shown = try c.decodeIfPresent(Set<CalendarShow>.self, forKey: .shown) ?? Self.defaultShown
+        custom = try c.decodeIfPresent(CustomRange.self, forKey: .custom)
     }
 
     public func shows(_ show: CalendarShow) -> Bool { shown.contains(show) }
