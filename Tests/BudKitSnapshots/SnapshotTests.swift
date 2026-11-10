@@ -731,11 +731,10 @@ final class SnapshotTests: XCTestCase {
 
     private let phone = CGSize(width: 393, height: 852)
 
-    /// The view switch with Calendar lit over its quiet page, with the same bud in the
-    /// breadcrumb; on the phone, and in a Mac window too narrow for four segments beside the
-    /// bar's buttons, the switch folds into one button over the board. The Mac window at its
+    /// The view switch folded: on the phone, and in a Mac window too narrow for four segments
+    /// beside the bar's buttons, it folds into one button over the board. The Mac window at its
     /// minimum width is pictured too, so the fold there is seen rather than assumed.
-    func testRendersTheViewSwitchAndTheQuietPages() throws {
+    func testRendersTheViewSwitchFolded() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
         }
@@ -744,15 +743,6 @@ final class SnapshotTests: XCTestCase {
         let store = BudStore(fileURL: nil)
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.center = newsletter.id
-        for surface in [Surface.calendar] {
-            store.surface = surface
-            for scheme in [ColorScheme.light, .dark] {
-                let data = try render(store: store, scheme: scheme)
-                let file = folder.appendingPathComponent("\(surface.rawValue.lowercased())-\(scheme == .dark ? "dark" : "light").png")
-                try data.write(to: file)
-                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
-            }
-        }
         store.surface = .board
         let narrow = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
         try render(narrow, scheme: .light).write(to: folder.appendingPathComponent("phone-board-light.png"))
@@ -878,6 +868,43 @@ final class SnapshotTests: XCTestCase {
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
         }
+    }
+
+    /// The Calendar view on its month, 1440 by 900 as the board's frame: the seed on the device
+    /// store's fixed clock and a Monday-first calendar, so the bars and items land where the
+    /// board draws them and the picture is the same on every run. One thread off, so the column
+    /// shows an unticked row; and the week segment, so its quiet line is seen.
+    func testRendersTheMonthCalendar() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = stillStore()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.firstWeekday = 2
+        store.dateCalendar = calendar
+        store.calendar = CalendarState()
+        store.surface = .calendar
+        XCTAssertEqual(store.monthGrid.month.title, "November 2026")
+        XCTAssertFalse(store.monthGrid.bars.isEmpty, "The seed spans weeks")
+        let frame = CGSize(width: 1440, height: 900)
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("calendar-month-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        if let roadmap = store.calendarThreads.first(where: { $0.title == "Q4 roadmap" }) { store.toggleThread(roadmap.id) }
+        let hidden = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+        try render(hidden, scheme: .light).write(to: folder.appendingPathComponent("calendar-month-thread-off-light.png"))
+        store.calendar = CalendarState(range: .week)
+        let week = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+        try render(week, scheme: .light).write(to: folder.appendingPathComponent("calendar-week-coming-light.png"))
+        store.calendar = CalendarState()
     }
 
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
