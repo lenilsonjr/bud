@@ -736,6 +736,15 @@ impl Vault {
         Ok(self.core().set_board(&key, columns.as_deref())?)
     }
 
+    /// The lenses the person named and kept, synced with the vault.
+    pub fn lenses(&self) -> Result<Vec<SharedEntry>> {
+        Ok(entries(self.core().lenses()?))
+    }
+
+    pub fn set_lens(&self, id: String, lens: Option<String>) -> Result<()> {
+        Ok(self.core().set_lens(&id, lens.as_deref())?)
+    }
+
     /// How a planted bud stands with its source; none clears it.
     pub fn set_from_state(&self, path: String, state: Option<String>) -> Result<()> {
         Ok(self.core().set_from_state(&path, state.as_deref())?)
