@@ -37,6 +37,18 @@ private struct CompactKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+/// Whether a still picture shows the page in its editor, since a picture has no click to open it.
+struct StillEditingKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var stillEditing: Bool {
+        get { self[StillEditingKey.self] }
+        set { self[StillEditingKey.self] = newValue }
+    }
+}
+
 extension EnvironmentValues {
     /// Opens Go anywhere from wherever a gesture asks for it; the root view sets it.
     var goAnywhere: () -> Void {
