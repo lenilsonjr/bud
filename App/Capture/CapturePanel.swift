@@ -67,7 +67,7 @@ final class CapturePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Registers ⌥Space at launch and lets it go at quit.
+/// Registers the Capture key from the table at launch and lets it go at quit.
 final class BudAppDelegate: NSObject, NSApplicationDelegate {
     private var panel: CapturePanelController?
     private var hotKey: HotKey?
@@ -75,7 +75,8 @@ final class BudAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let panel = CapturePanelController()
         self.panel = panel
-        let key = HotKey(keyCode: HotKey.captureKeyCode, modifiers: HotKey.captureModifiers) { [weak panel] in
+        guard let carbon = HotKey.carbon(Keys.key(for: .capture)) else { return }
+        let key = HotKey(keyCode: carbon.code, modifiers: carbon.modifiers) { [weak panel] in
             panel?.toggle()
         }
         key.register()

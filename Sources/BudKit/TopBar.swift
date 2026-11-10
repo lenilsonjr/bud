@@ -244,7 +244,7 @@ struct TopBar: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 #if os(macOS)
-                Keycap("⌘K")
+                Keycap(Keys.key(for: .goAnywhere).label)
                 #endif
             }
             .textRole(.label)

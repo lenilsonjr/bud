@@ -126,9 +126,9 @@ struct TagPicker: View {
         .frame(width: 260, alignment: .leading)
         .onAppear { focused = true }
         .onChange(of: query) { _, _ in pick = 0 }
-        .onKeyPress(.upArrow) { pick = max(0, pick - 1); return .handled }
-        .onKeyPress(.downArrow) { pick = max(0, min(rows.count - 1, pick + 1)); return .handled }
-        .onKeyPress(.escape) { dismiss(); return .handled }
+        .onKey(.rowUp) { _ in pick = max(0, pick - 1); return .handled }
+        .onKey(.rowDown) { _ in pick = max(0, min(rows.count - 1, pick + 1)); return .handled }
+        .onKey(.close) { _ in dismiss(); return .handled }
         .accessibilityIdentifier("tag-picker")
     }
 

@@ -121,37 +121,23 @@ public struct OrbitCanvas: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
-        .onKeyPress(.escape) {
+        .onKey(.back) { _ in
             // A card open over the canvas takes Escape for itself.
             guard store.modal == nil else { return .ignored }
-            linkHeld = nil
-            if bar != nil {
-                closeBar()
-            } else if opened != nil {
-                close()
-            } else if store.canvasLens != nil {
-                // Escape clears the whole lens before it steps out.
-                withAnimation(.easeOut(duration: 0.35)) {
-                    store.canvasFacets = []
-                    store.canvasLens = nil
-                }
-            } else {
-                stepOut()
-            }
-            return .handled
+            return store.perform(.back) ? .handled : .ignored
         }
-        .onKeyPress(.space) {
+        .onKey(.open) { _ in
             // While the bar's line is typing it takes every key.
             guard store.modal == nil, !barTyping else { return .ignored }
-            guard let lit = litCard(in: store.layout, viewport: viewport) else { return .ignored }
-            open(lit)
-            return .handled
+            return store.perform(.open) ? .handled : .ignored
         }
-        .onKeyPress(KeyEquivalent("n")) {
+        .onKey(.newUnderThis) { _ in
             // A card already open keeps the window: N does not replace it. The bar types it.
             guard store.modal == nil, !barTyping else { return .ignored }
-            addUnderTheLitCard()
-            return .handled
+            return store.perform(.newUnderThis, on: litCard(in: store.layout, viewport: viewport) ?? store.center) ? .handled : .ignored
+        }
+        .onChange(of: store.lastCommand) { _, now in
+            if let now { follow(now.command) }
         }
         .onChange(of: opened) { _, _ in overDraft = false }
         .onChange(of: store.modal) { _, _ in overDraft = false }
@@ -346,8 +332,8 @@ public struct OrbitCanvas: View {
     /// Under a lens, how many buds match and which one ⌘G went to; ⌘G and ⇧⌘G step through
     /// them, bringing each onto the canvas.
     @ViewBuilder private var matchPill: some View {
-        if let lens = store.canvasLens {
-            let hits = lens.hits(store.tree).map(\.id)
+        if store.canvasLens != nil {
+            let hits = matches
             let shape = Capsule()
             HStack(spacing: 8) {
                 Text(pillText(hits))
@@ -355,14 +341,14 @@ public struct OrbitCanvas: View {
                     .monospacedDigit()
                     .foregroundStyle(Theme.text)
                 if !hits.isEmpty {
-                    Button { step(-1, in: hits) } label: { Image(systemName: "chevron.left") }
-                        .keyboardShortcut("g", modifiers: [.command, .shift])
+                    Button { store.perform(.previousMatch) } label: { Image(systemName: "chevron.left") }
+                        .keyboardShortcut(Keys.shortcut(.previousMatch))
                         .accessibilityLabel("Previous match")
-                    Button { step(1, in: hits) } label: { Image(systemName: "chevron.right") }
-                        .keyboardShortcut("g", modifiers: .command)
+                    Button { store.perform(.nextMatch) } label: { Image(systemName: "chevron.right") }
+                        .keyboardShortcut(Keys.shortcut(.nextMatch))
                         .accessibilityLabel("Next match")
                     #if os(macOS)
-                    Keycap("⌘G").accessibilityHidden(true)
+                    Keycap(Keys.key(for: .nextMatch).label).accessibilityHidden(true)
                     #endif
                 }
             }
@@ -389,6 +375,11 @@ public struct OrbitCanvas: View {
         let total = count == 1 ? "1 match" : count == 0 ? "No matches" : "\(count) matches"
         guard let at = matchAt.flatMap({ hits.firstIndex(of: $0) }) else { return total }
         return "\(total) · \(at + 1) of \(count)"
+    }
+
+    /// The buds the lens lights, in the canvas's order.
+    private var matches: [UUID] {
+        store.canvasLens?.hits(store.tree).map(\.id) ?? []
     }
 
     private func step(_ by: Int, in hits: [UUID]) {
@@ -650,14 +641,43 @@ public struct OrbitCanvas: View {
         withAnimation(.easeOut(duration: 0.2)) { opened = nil }
     }
 
-    /// N: a new bud under the lit card, or under the center when nothing is lit; on the hub it
-    /// plants at the top level.
-    private func addUnderTheLitCard() {
-        store.modal = .adding(under: litCard(in: store.layout, viewport: viewport) ?? store.center)
-    }
-
     private func stepOut() {
         withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.back() }
+    }
+
+    /// Escape: close what is open, from the inside out, and step out of the center when nothing
+    /// is. The lens clears whole before the center moves.
+    private func stepBack() {
+        linkHeld = nil
+        if bar != nil {
+            closeBar()
+        } else if opened != nil {
+            close()
+        } else if store.canvasLens != nil {
+            withAnimation(.easeOut(duration: 0.35)) {
+                store.canvasFacets = []
+                store.canvasLens = nil
+            }
+        } else {
+            stepOut()
+        }
+    }
+
+    /// The commands the canvas finishes once the store has let them through: from its own keys,
+    /// the match pill, or the menu bar.
+    private func follow(_ command: Command.ID) {
+        switch command {
+        case .open:
+            if let lit = litCard(in: store.layout, viewport: viewport) { open(lit) }
+        case .back:
+            stepBack()
+        case .nextMatch:
+            step(1, in: matches)
+        case .previousMatch:
+            step(-1, in: matches)
+        default:
+            break
+        }
     }
 }
 

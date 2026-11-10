@@ -51,7 +51,7 @@ struct CommandPalette: View {
                     Button("Cancel", action: onClose)
                         .buttonStyle(.budGhost)
                 } else {
-                    Keycap("esc")
+                    Keycap(Keys.key(for: .close).label)
                 }
             }
             .padding(.horizontal, 16)
@@ -101,7 +101,7 @@ struct CommandPalette: View {
             }
             if !compact {
                 Theme.line.frame(height: 1)
-                Text("↵ center on canvas · ⌘↵ open in Files · ↑↓ move · esc back")
+                Text(Self.footer)
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
                     .padding(.horizontal, 16)
@@ -114,13 +114,19 @@ struct CommandPalette: View {
         .shadow(color: inSheet ? .clear : Theme.shadowStrong, radius: inSheet ? 0 : 24, y: inSheet ? 0 : 12)
         .onAppear { typing = true; picked = firstPick(in: rows) }
         .onChange(of: query) { _, _ in picked = firstPick(in: self.rows) }
-        .onKeyPress(.downArrow) { move(1, in: rows.count); return .handled }
-        .onKeyPress(.upArrow) { move(-1, in: rows.count); return .handled }
-        .onKeyPress(.escape) { onClose(); return .handled }
-        .onKeyPress(.return, phases: .down) { press in
-            go(rows, inFiles: press.modifiers.contains(.command))
+        .onKey(.rowDown) { _ in move(1, in: rows.count); return .handled }
+        .onKey(.rowUp) { _ in move(-1, in: rows.count); return .handled }
+        .onKey(.close) { _ in onClose(); return .handled }
+        .onKey(.choose, phases: .down) { press in
+            go(rows, inFiles: press.modifiers.isSuperset(of: Keys.modifiers(.openInFiles)))
             return .handled
         }
+    }
+
+    /// The keys in the footer, read off the table.
+    static var footer: String {
+        let key = { (id: Command.ID) in Keys.key(for: id).label }
+        return "\(key(.choose)) center on canvas · \(key(.openInFiles)) open in Files · \(key(.rowUp))\(key(.rowDown)) move · \(key(.close)) back"
     }
 
     private func heading(_ row: Row) -> String {

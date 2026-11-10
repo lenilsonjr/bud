@@ -31,6 +31,11 @@ struct FilesView: View {
                 }
                 .animation(.easeOut(duration: 0.2), value: sidebarShown(.left, in: geo.size))
                 .animation(.easeOut(duration: 0.2), value: sidebarShown(.right, in: geo.size))
+                .onKey(.newUnderThis) { _ in
+                    // N under the page, as under the lit card: a line being typed keeps its letter.
+                    guard store.modal == nil, !Keys.typing else { return .ignored }
+                    return store.perform(.newUnderThis) ? .handled : .ignored
+                }
                 .onAppear { sync(geo.size) }
                 .onChange(of: geo.size) { _, now in sync(now) }
             }

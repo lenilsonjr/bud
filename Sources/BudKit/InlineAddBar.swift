@@ -27,6 +27,7 @@ struct InlineAddDraft: View {
 /// Tab goes down into the bud just planted, Shift-Tab comes back up, Escape closes.
 struct InlineAddBar: View {
     static let width: CGFloat = 320
+    private static let backtab = KeyEquivalent("\u{19}")
 
     @Binding var bar: InlineAdd
     var typing: FocusState<Bool>.Binding
@@ -62,11 +63,12 @@ struct InlineAddBar: View {
                     // On iPhone Return lets the keyboard go; the line asks for it back next turn.
                     DispatchQueue.main.async { typing.wrappedValue = true }
                 }
-                .onKeyPress(keys: [.tab, KeyEquivalent("\u{19}")]) { press in
-                    if press.modifiers.contains(.shift) || press.key == KeyEquivalent("\u{19}") { onRise() } else { onNest() }
+                // Shift-Tab arrives as a backtab on some keyboards, so the bar listens for both.
+                .onKeyPress(keys: [Keys.equivalent(.nest), Self.backtab]) { press in
+                    if press.modifiers.isSuperset(of: Keys.modifiers(.rise)) || press.key == Self.backtab { onRise() } else { onNest() }
                     return .handled
                 }
-                .onKeyPress(.escape) {
+                .onKey(.close) { _ in
                     onClose()
                     return .handled
                 }

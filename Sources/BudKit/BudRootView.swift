@@ -7,7 +7,6 @@ public struct BudRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: BudStore
     @ObservedObject private var flags = Flags.shared
-    @State private var searching = false
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
@@ -26,11 +25,11 @@ public struct BudRootView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            TopBar(store: store, onAdd: { store.modal = .capture }, onSearch: { searching = true })
+            TopBar(store: store, onAdd: { store.perform(.capture) }, onSearch: { store.perform(.goAnywhere) })
             surface
         }
-        .overlay { if searching && !compact { palette } }
-        .sheet(isPresented: Binding(get: { searching && compact }, set: { searching = $0 })) { paletteSheet }
+        .overlay { if store.searching && !compact { palette } }
+        .sheet(isPresented: Binding(get: { store.searching && compact }, set: { store.searching = $0 })) { paletteSheet }
         .overlay { ModalHost(store: store) }
         // Above the modal too, so a toast from a dialog shows while Settings still covers the window.
         .overlay(alignment: .bottom) {
@@ -40,10 +39,16 @@ public struct BudRootView: View {
         }
         .background(Theme.window.ignoresSafeArea())
         .background {
-            // ⌘K from anywhere in the window, drawn nowhere.
-            Button("") { searching = true }
-                .keyboardShortcut("k", modifiers: .command)
-                .opacity(0)
+            // The window's keys, drawn nowhere: Go anywhere, and the switch between the surfaces.
+            Group {
+                Button("") { store.perform(.goAnywhere) }
+                    .keyboardShortcut(Keys.shortcut(.goAnywhere))
+                Button("") { store.perform(.canvas) }
+                    .keyboardShortcut(Keys.shortcut(.canvas))
+                Button("") { store.perform(.files) }
+                    .keyboardShortcut(Keys.shortcut(.files))
+            }
+            .opacity(0)
         }
         .textRole(.body)
         .foregroundStyle(Theme.text)
@@ -51,7 +56,7 @@ public struct BudRootView: View {
         .preferredColorScheme(flags.appearance.colorScheme)
         .environmentObject(flags)
         .environment(\.compact, compact)
-        .environment(\.goAnywhere, { searching = true })
+        .environment(\.goAnywhere, { store.perform(.goAnywhere) })
         .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
         .onDisappear { CaptureRelay.shared.stopListening() }
         .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
@@ -78,7 +83,7 @@ public struct BudRootView: View {
     /// Go anywhere on a phone: a sheet from the bottom with the keyboard up, half the screen or
     /// the whole of it, as the third iPhone frame; a pull down dismisses it.
     private var paletteSheet: some View {
-        CommandPalette(store: store, inSheet: true) { searching = false }
+        CommandPalette(store: store, inSheet: true) { store.searching = false }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .presentationBackground(Theme.raised)
@@ -90,8 +95,8 @@ public struct BudRootView: View {
             Theme.shadowStrong
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture { searching = false }
-            CommandPalette(store: store) { searching = false }
+                .onTapGesture { store.searching = false }
+            CommandPalette(store: store) { store.searching = false }
                 .padding(.horizontal, compact ? 12 : 0)
                 .padding(.top, compact ? 8 : 72)
         }
