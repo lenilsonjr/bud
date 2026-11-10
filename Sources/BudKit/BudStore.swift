@@ -1368,4 +1368,28 @@ extension BudStore {
     }
 }
 
+// MARK: dropping a card on a column
+
+extension BudStore {
+    /// Drops a card on a column of the center bud's board and offers to take it back. Only the
+    /// bud's front matter changes, as `BoardDrop` spells out: its tags, its state, its cancelled
+    /// mark. Returns false when the card sits in that column already.
+    @discardableResult
+    public func drop(_ id: UUID, on column: BoardColumn.Kind) -> Bool {
+        guard let before = tree.bud(id), let drop = BoardDrop.of(before, on: column, columns: board.columnTags) else { return false }
+        commit { $0.apply(drop, to: id) }
+        write { [self] _ in try await edit(id) { try await drop.write(to: $0, at: $1) } }
+        toasts.show(Undoable(message: BoardDrop.message(on: column, title: before.text)) { [weak self] in
+            Task { @MainActor in self?.undoDrop(id, drop, before: before) }
+        })
+        return true
+    }
+
+    /// Puts the bud back as it was before the drop, here and in the vault.
+    private func undoDrop(_ id: UUID, _ drop: BoardDrop, before: Bud) {
+        commit { $0.restoreFront(of: id, to: before) }
+        write { [self] _ in try await edit(id) { try await drop.undo(to: $0, at: $1, before: before) } }
+    }
+}
+
 #endif
