@@ -10,20 +10,9 @@ import SwiftUI
 @MainActor
 final class SnapshotTests: XCTestCase {
     private let size = CGSize(width: 1400, height: 900)
-    /// The one moment every picture is taken at, so two runs draw the same days and counts.
-    private let clock: @Sendable () -> Date = { Tree.stillNow }
-
-    /// The seed world on the fixed clock, which the store reads from its device store.
-    private func stillStore(devices: DeviceStore? = nil) -> BudStore {
-        BudStore(fileURL: nil, devices: devices ?? DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock))
-    }
 
     func testRendersTheCanvasInBothAppearances() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
 
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
@@ -43,11 +32,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheLinkLayer() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         let ring = store.tree.children(of: newsletter.id)
@@ -70,11 +55,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheCanvasUnderALens() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         // Two ticked rows: open to-dos that carry #home. The chips follow the breadcrumb.
         for bud in store.tree.walk(under: rootID).filter({ $0.state == .open }).prefix(3) { store.addTag(bud.id, "home") }
@@ -106,11 +87,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheFilesView() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.openAsFile(newsletter.id)
@@ -124,11 +101,7 @@ final class SnapshotTests: XCTestCase {
 
     /// A thread with children opens the same page as a leaf: its body, nothing of its children.
     func testRendersAThreadsBodyOnItsPage() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.setBody(newsletter.id, store.tree.lede(of: newsletter.id) + "\n\nThe first issue goes out before the spring fair.\n\nKeep each issue short enough to read over coffee.")
@@ -142,11 +115,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheWarehouse() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
         let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
@@ -164,11 +133,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheTriggers() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
         let template = try XCTUnwrap(store.add("Weekly review", todo: true, under: thread.id))
@@ -190,11 +155,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheDocument() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let short = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
         store.setBody(short.id, "# First issue\n\n- one story, **one tip**, one date\n- a link to [the club](https://example.org)")
@@ -211,11 +172,7 @@ final class SnapshotTests: XCTestCase {
     /// lives, Linked from and Source (folded) on the right, reading and then editing, where both
     /// stay. Then the right sidebar hidden from the page bar and Inside folded.
     func testRendersThePageWithPanels() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
@@ -248,11 +205,7 @@ final class SnapshotTests: XCTestCase {
     /// Files where it would land; then the ⋯ menu of a panel, and the layout arranged with the
     /// file tree on the right and Inside hidden.
     func testRendersAPanelOnTheMoveItsMenuAndAnArrangedLayout() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = BudStore(fileURL: nil)
         let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
@@ -279,11 +232,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersPlantedBuds() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let now = store.now
         let mail = SourceAccount(id: "mail", kind: .mail)
@@ -320,11 +269,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersLinksOnAPage() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let target = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Short names read better in the inbox" })
         store.setBody(target.id, target.body + "\n\n- Settle it in [[Pick a name]] first\n- Go through the [[Lease checklist]] before signing\n- Nothing is called [[The spring fair]] yet")
@@ -338,11 +283,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheTodayLens() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         store.open(.today)
         for scheme in [ColorScheme.light, .dark] {
@@ -354,11 +295,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersThePalette() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             let palette = CommandPalette(store: store, onClose: {}).padding(32)
@@ -370,11 +307,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheToastAfterPlanting() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         store.add("Write the welcome note", todo: true, under: rootID)
         for scheme in [ColorScheme.light, .dark] {
@@ -386,11 +319,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheSoil() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         store.sources = SourceAccount.samples(now: store.now)
         for (name, folded) in [("open", false), ("folded", true)] {
@@ -412,11 +341,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersThePhoneSoilSheet() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         store.sources = SourceAccount.samples(now: store.now)
         for scheme in [ColorScheme.light, .dark] {
@@ -429,11 +354,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheQuickAddSheet() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
@@ -446,11 +367,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheCloseBranchDialog() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
@@ -463,11 +380,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheShortcutSheet() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = BudStore(fileURL: nil)
         for scheme in [ColorScheme.light, .dark] {
             store.modal = nil
@@ -481,11 +394,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersSettings() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .settings
@@ -497,15 +406,11 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersSettingsWithDevices() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let missed = MemoryPeers.fixtures()[3].id
         for (name, missing) in [("settings-devices", Set<String>()), ("settings-missed", [missed])] {
-            let peers = MemoryPeers(missing: missing, now: clock)
-            let devices = DeviceStore(peers: peers, now: clock)
+            let peers = MemoryPeers(missing: missing, now: stillClock)
+            let devices = DeviceStore(peers: peers, now: stillClock)
             await devices.start()
             if !missing.isEmpty { await devices.remove(MemoryPeers.fixtures()[4].id, rotate: true) }
             let store = stillStore(devices: devices)
@@ -520,22 +425,18 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheSyncIndicator() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let alone = [Device(id: "a91cp4x8d2n6w0j3h5v9b1m7r2ks7t0e", isThisDevice: true, reach: .local)]
         let states: [(String, MemoryPeers, Int, Bool)] = [
-            ("sync-connected", MemoryPeers(now: clock), 0, false),
-            ("sync-pending", MemoryPeers(now: clock), 3, false),
-            ("sync-apart", MemoryPeers(devices: alone, now: clock), 3, false),
-            ("sync-syncing", MemoryPeers(now: clock), 0, true),
+            ("sync-connected", MemoryPeers(now: stillClock), 0, false),
+            ("sync-pending", MemoryPeers(now: stillClock), 3, false),
+            ("sync-apart", MemoryPeers(devices: alone, now: stillClock), 3, false),
+            ("sync-syncing", MemoryPeers(now: stillClock), 0, true),
         ]
         for (name, peers, pending, syncing) in states {
             await peers.setPendingChanges(pending)
             await peers.setSyncing(syncing)
-            let devices = DeviceStore(peers: peers, now: clock)
+            let devices = DeviceStore(peers: peers, now: stillClock)
             await devices.refresh()
             let store = stillStore(devices: devices)
             for scheme in [ColorScheme.light, .dark] {
@@ -549,11 +450,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheTicketSheet() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let made = Date(timeIntervalSince1970: 1_800_000_000)
         let peers = MemoryPeers(now: { made })
         let ticket = try await peers.ticket(withAddresses: false)
@@ -578,13 +475,9 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheDeviceDialogs() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let fixtures = MemoryPeers.fixtures()
-        let devices = DeviceStore(peers: MemoryPeers(now: clock), now: clock)
+        let devices = DeviceStore(peers: MemoryPeers(now: stillClock), now: stillClock)
         await devices.refresh()
         let remove = RemoveDeviceDialog(devices: devices, id: fixtures[4].id, close: {}, present: { _ in })
         let midway = RotationProgress(total: 2, done: 1, reports: [fixtures[1].id: true])
@@ -611,12 +504,8 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheJoinSheet() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let peers = MemoryPeers(now: clock)
+        let folder = try pictureFolder()
+        let peers = MemoryPeers(now: stillClock)
         let ticket = try await peers.ticket(withAddresses: false)
         let full = PeerText.grouped(ticket.text)
         let partial = String(full.prefix(44))
@@ -651,11 +540,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheNearbySheet() async throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let words = ["amber", "cedar", "harbor", "lantern", "otter", "quartz"]
         let tv = Device(id: "t6vbr9e5w1q7y3u8i2o6p0a4s1dh2kxe", reach: .local, name: "Den", kind: .tv)
         let states: [(String, RequestPhase, Bool)] = [
@@ -682,11 +567,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheFourButtons() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         for scheme in [ColorScheme.light, .dark] {
             let row = HStack(spacing: 12) {
                 Button { } label: { BudButtonLabel(title: "Add", systemImage: "plus") }.buttonStyle(.budPrimary)
@@ -704,11 +585,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheLinkPicker() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let tree = Tree.seed()
         let here = try XCTUnwrap(tree.buds.first { $0.text == "Pick a name" })
         let picker = try XCTUnwrap(LinkPicker(typing: "Keep it under [[s"))
@@ -726,11 +603,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTagsOnAPageAndTheTagPicker() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let all = store.tree.walk(under: rootID)
         let target = try XCTUnwrap(all.first { $0.text == "Short names read better in the inbox" })
@@ -759,11 +632,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheCaptureSheet() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             store.modal = .capture
@@ -775,11 +644,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheInbox() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         store.openInbox()
         for scheme in [ColorScheme.light, .dark] {
@@ -791,11 +656,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheTrash() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
         store.trash(roadmap.id)
@@ -810,11 +671,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheArchive() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
         store.close(roadmap.id, cascade: true)
@@ -829,11 +686,7 @@ final class SnapshotTests: XCTestCase {
     }
 
     func testRendersTheOpenedCard() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         for scheme in [ColorScheme.light, .dark] {
@@ -849,11 +702,7 @@ final class SnapshotTests: XCTestCase {
 
     /// The phone layout: Files split with the navigator on top, the canvas, and the palette.
     func testRendersThePhone() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = stillStore()
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         store.openAsFile(newsletter.id)
@@ -879,11 +728,7 @@ final class SnapshotTests: XCTestCase {
     /// folded; then with Inside unfolded, the state flipped as a tap on its header would, since
     /// a picture has no tap.
     func testRendersThePhonePageWithPanels() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let folder = try pictureFolder()
         let store = BudStore(fileURL: nil)
         let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
         store.setBody(name.id, "Short, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers")
@@ -910,21 +755,9 @@ final class SnapshotTests: XCTestCase {
         try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
     }
 
-    /// One frame, with no animation in flight, so a picture never lands mid-transition.
+    /// One frame at two pixels per point, as PNG data.
     private func render(_ content: some View, scheme: ColorScheme) throws -> Data {
-        let view = content
-            .environment(\.colorScheme, scheme)
-            .environment(\.stillPicture, true)
-            .transaction { $0.animation = nil }
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        let appearance = try XCTUnwrap(NSAppearance(named: scheme == .dark ? .darkAqua : .aqua))
-        var image: NSImage?
-        appearance.performAsCurrentDrawingAppearance { image = renderer.nsImage }
-        let nsImage = try XCTUnwrap(image, "ImageRenderer produced no image")
-        let tiff = try XCTUnwrap(nsImage.tiffRepresentation)
-        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: tiff))
-        return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        try png(stillImage(content, scheme: scheme, scale: 2))
     }
 }
 #endif
