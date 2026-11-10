@@ -20,12 +20,6 @@ public enum DayText {
         return formatter.string(from: date)
     }
 
-    /// "14 Nov" with its format written out, for a line that must read the same on every
-    /// platform: a toast a test checks the words of.
-    public static func day(_ date: Date, calendar: Calendar = .current) -> String {
-        formatter(format: "d MMM", calendar: calendar).string(from: date)
-    }
-
     /// One formatter per template, calendar, time zone and locale, kept: a board of cards asks
     /// for the same few on every render, and a formatter is slow to make.
     static func formatter(template: String, calendar: Calendar) -> DateFormatter {

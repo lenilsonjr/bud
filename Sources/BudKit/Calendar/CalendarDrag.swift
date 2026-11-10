@@ -1,7 +1,7 @@
 import Foundation
 
 /// One of a bud's two days, by its front matter key: what a drag on the calendar moves.
-public enum DateKey: String, CaseIterable, Codable, Sendable {
+public enum DateKey: String, CaseIterable, Sendable {
     /// The day the bud is scheduled for: a bar's leading edge, the arrow.
     case when
     /// The day it is due: a bar's trailing edge, the flag.
@@ -24,13 +24,13 @@ public enum DateKey: String, CaseIterable, Codable, Sendable {
 /// grid, and the day under it, nil off the grid. A still picture sets one to show the move.
 public struct CalendarDrag: Equatable, Sendable {
     public var entry: UUID
-    public var field: DateKey
+    public var key: DateKey
     public var point: CGPoint
     public var over: Date?
 
-    public init(entry: UUID, field: DateKey, point: CGPoint, over: Date? = nil) {
+    public init(entry: UUID, key: DateKey, point: CGPoint, over: Date? = nil) {
         self.entry = entry
-        self.field = field
+        self.key = key
         self.point = point
         self.over = over
     }
@@ -39,18 +39,13 @@ public struct CalendarDrag: Equatable, Sendable {
 extension CalendarEntry {
     /// The entry with one of its days moved onto `day`, at midnight as the grid holds its days;
     /// the other day as it was. What the grid draws while the end is in hand.
-    public func moved(_ field: DateKey, toDay day: Date, calendar: Calendar) -> CalendarEntry {
+    public func moved(_ key: DateKey, toDay day: Date, calendar: Calendar) -> CalendarEntry {
         let midnight = calendar.startOfDay(for: day)
         return CalendarEntry(
             id: id, title: title, thread: thread, tone: tone,
-            when: field == .when ? midnight : when, due: field == .due ? midnight : due,
+            when: key == .when ? midnight : when, due: key == .due ? midnight : due,
             isDone: isDone, isRoutine: isRoutine
         )
-    }
-
-    /// The day the field holds, if any.
-    public func day(_ field: DateKey) -> Date? {
-        field == .when ? when : due
     }
 }
 
@@ -71,6 +66,6 @@ extension Array where Element == CalendarEntry {
     /// under the pointer, or nothing moves while the pointer is off the grid.
     public func moving(_ drag: CalendarDrag?, calendar: Calendar) -> [CalendarEntry] {
         guard let drag, let over = drag.over else { return self }
-        return map { $0.id == drag.entry ? $0.moved(drag.field, toDay: over, calendar: calendar) : $0 }
+        return map { $0.id == drag.entry ? $0.moved(drag.key, toDay: over, calendar: calendar) : $0 }
     }
 }

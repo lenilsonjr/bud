@@ -146,10 +146,27 @@ public struct MonthGrid: Equatable, Sendable {
         /// The due day, when it falls in this piece: the piece draws a flag and says "due 4 Dec".
         public let dueLabel: String?
         public let isDone: Bool
+        /// The end of this piece the scheduled day sits at, when it is in this piece: the handle
+        /// there drags `when`. Nil where the piece's ends are only the week's edges.
+        public let whenEnd: End?
+        /// The end the due day sits at, when it is in this piece: the handle there drags `due`.
+        public let dueEnd: End?
+
+        /// Which end of a piece a day sits at. A bar runs from the earlier day to the later, so
+        /// a due before its when sits at the leading end.
+        public enum End: Hashable, Sendable { case leading, trailing }
 
         public var id: String { "\(entry)-\(row)" }
         public var columns: Int { to - from + 1 }
         public func covers(_ column: Int) -> Bool { column >= from && column <= to }
+
+        /// The day at one end of the piece, when or due, whichever sits there; nil for an end
+        /// that is only the week's edge, which drags nothing.
+        public func key(at end: End) -> DateKey? {
+            if whenEnd == end { return .when }
+            if dueEnd == end { return .due }
+            return nil
+        }
     }
 
     /// A bud on one day.
@@ -171,10 +188,23 @@ public struct MonthGrid: Equatable, Sendable {
     public let items: [Item]
     /// How many lanes each row's bars take, so the cells leave room above their items.
     public let lanes: [Int]
+    /// What was placed and under which switches, kept so a drag's preview is built from them
+    /// without another walk of the tree.
+    public let entries: [CalendarEntry]
+    public let state: CalendarState
+
+    /// The month as it would stand with a drag dropped where it is: the bud in hand placed with
+    /// its day on the one under the pointer. Itself while the pointer is off the grid.
+    public func moving(_ drag: CalendarDrag) -> MonthGrid {
+        guard drag.over != nil else { return self }
+        return MonthGrid(month: month, entries: entries.moving(drag, calendar: month.calendar), state: state)
+    }
 
     /// Places the entries the state shows on the month.
     public init(month: CalendarMonth, entries: [CalendarEntry], state: CalendarState) {
         self.month = month
+        self.entries = entries
+        self.state = state
         let calendar = month.calendar
         var bars: [Bar] = []
         var items: [Item] = []
@@ -201,7 +231,9 @@ public struct MonthGrid: Equatable, Sendable {
                     entry: span.entry.id, title: span.entry.title, tone: span.entry.tone, row: row, from: from, to: to, lane: lane,
                     starts: whenHere,
                     dueLabel: dueHere ? "due \(DayText.short(span.entry.due!, calendar: calendar))" : nil,
-                    isDone: span.entry.isDone
+                    isDone: span.entry.isDone,
+                    whenEnd: whenHere ? (span.entry.when == span.start ? .leading : .trailing) : nil,
+                    dueEnd: dueHere ? (span.entry.due == span.end ? .trailing : .leading) : nil
                 ))
             }
         }
