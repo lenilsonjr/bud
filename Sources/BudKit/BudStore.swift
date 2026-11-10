@@ -956,20 +956,28 @@ public final class BudStore: ObservableObject {
 
     public struct Performed: Equatable, Sendable {
         public let command: Command.ID
+        /// The bud the command was given, when the key was pressed over one.
+        public let bud: UUID?
         /// Counts up, so the same command twice is two changes.
         public let serial: Int
     }
 
     /// The bud whose page Files shows; nil on the canvas, a lens, a place or Everything.
-    private var page: UUID? {
+    public var page: UUID? {
         guard surface == .files, lens == nil, place == nil, center != rootID, tree.bud(center) != nil else { return nil }
         return center
     }
 
-    /// Whether a command's scope holds on what the window shows. New under this needs a target
-    /// as well: the canvas always has one, Files only on a bud's page.
+    /// Whether a command can run now: a card over the window takes every key, then the scope
+    /// must hold on what the window shows. New under this needs a target as well, which the
+    /// canvas always has and Files only on a bud's page; Close or reopen needs a to-do's page.
     public func allows(_ id: Command.ID) -> Bool {
-        if id == .newUnderThis { return surface == .canvas || page != nil }
+        guard modal == nil else { return false }
+        switch id {
+        case .newUnderThis: return surface == .canvas || page != nil
+        case .closeOrReopen: return page.flatMap { tree.bud($0) }?.isTodo == true
+        default: break
+        }
         switch Command.of(id).scope {
         case .everywhere: return true
         case .canvas: return surface == .canvas
@@ -978,30 +986,30 @@ public final class BudStore: ObservableObject {
         }
     }
 
-    /// The one way a command runs, from its key or the menu bar: nothing fires outside its scope.
-    /// The store does its part (a modal, a surface, a tick) and notes the command, so the surface
-    /// finishes what only it can: open the lit card, step through the matches, read instead of
-    /// edit. `bud` is the one the key was pressed over, when the view knows: the lit card on the
-    /// canvas, where the center stands in when nothing is lit; the page in Files. Returns whether
-    /// the command fired.
+    /// The one way a command runs, from its key or the menu bar: nothing fires outside its scope,
+    /// and a row that acts in place is not the store's to run. The store does its part (a modal,
+    /// a surface, a tick) and notes the command, so the surface finishes what only it can: open
+    /// the lit card, step through the matches, read instead of edit. `bud` is the one the key was
+    /// pressed over, when the view knows: the lit card on the canvas, the page in Files. Open
+    /// needs one; New under this takes the center when nothing is lit. Returns whether the
+    /// command fired.
     @discardableResult
     public func perform(_ id: Command.ID, on bud: UUID? = nil) -> Bool {
-        guard allows(id) else { return false }
+        guard allows(id), !Command.of(id).inPlace else { return false }
         switch id {
         case .goAnywhere: searching = true
         case .capture: modal = .capture
-        case .undo: toasts.undo()
         case .canvas: surface = .canvas
         case .files: surface = .files
         case .newUnderThis: modal = .adding(under: bud ?? page ?? center)
+        case .open: guard bud != nil else { return false }
         case .soil: soilFolded.toggle()
         case .closeOrReopen: tick(bud ?? center)
-        case .rowDown, .rowUp, .choose, .openInFiles, .close, .open, .back, .nextMatch, .previousMatch, .nest, .rise,
-             .read, .linkAsTyped:
-            break
+        case .back, .nextMatch, .previousMatch, .read: break
+        case .undo, .rowDown, .rowUp, .choose, .openInFiles, .close, .nest, .rise, .linkAsTyped: return false
         }
         performed += 1
-        lastCommand = Performed(command: id, serial: performed)
+        lastCommand = Performed(command: id, bud: bud, serial: performed)
         return true
     }
 

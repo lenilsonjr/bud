@@ -12,7 +12,7 @@ struct BudCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Commands") {
-            ForEach(Command.Scope.allCases, id: \.self) { scope in
+            ForEach(Command.menuScopes, id: \.self) { scope in
                 Section(scope.rawValue) {
                     ForEach(Command.menu(in: scope)) { command in
                         item(command)

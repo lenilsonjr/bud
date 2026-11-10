@@ -44,21 +44,25 @@ extension Keys {
         #if os(macOS)
         return NSApp.keyWindow?.firstResponder is NSTextView
         #else
-        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
-        return windows.contains { firstResponder(in: $0) is UITextInput }
+        return UIResponder.first is UITextInput
         #endif
     }
-
-    #if !os(macOS)
-    private static func firstResponder(in view: UIView) -> UIResponder? {
-        if view.isFirstResponder { return view }
-        for child in view.subviews {
-            if let found = firstResponder(in: child) { return found }
-        }
-        return nil
-    }
-    #endif
 }
+
+#if !os(macOS)
+extension UIResponder {
+    private static weak var noted: UIResponder?
+
+    @objc private func noteFirstResponder() { UIResponder.noted = self }
+
+    /// The first responder, asked for in one step: an action sent to nil lands on it.
+    @MainActor static var first: UIResponder? {
+        noted = nil
+        UIApplication.shared.sendAction(#selector(noteFirstResponder), to: nil, from: nil, for: nil)
+        return noted
+    }
+}
+#endif
 
 extension View {
     /// Runs `action` on a command's key while this view or one inside it has focus; the key's

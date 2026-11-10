@@ -8,6 +8,8 @@ import SwiftUI
 struct FilesView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
+    /// Files holds the keyboard itself when no field in it does, so its keys reach it.
+    @FocusState private var focused: Bool
 
     var body: some View {
         if compact {
@@ -31,12 +33,18 @@ struct FilesView: View {
                 }
                 .animation(.easeOut(duration: 0.2), value: sidebarShown(.left, in: geo.size))
                 .animation(.easeOut(duration: 0.2), value: sidebarShown(.right, in: geo.size))
+                .focusable()
+                .focusEffectDisabled()
+                .focused($focused)
                 .onKey(.newUnderThis) { _ in
                     // N under the page, as under the lit card: a line being typed keeps its letter.
-                    guard store.modal == nil, !Keys.typing else { return .ignored }
+                    guard !Keys.typing else { return .ignored }
                     return store.perform(.newUnderThis) ? .handled : .ignored
                 }
-                .onAppear { sync(geo.size) }
+                .onAppear {
+                    focused = true
+                    sync(geo.size)
+                }
                 .onChange(of: geo.size) { _, now in sync(now) }
             }
         }
@@ -46,7 +54,7 @@ struct FilesView: View {
     /// is the page's own panels, so it goes with a bud's page alone: a lens, a place and
     /// Everything have none.
     private func sidebarShown(_ side: PanelSide, in size: CGSize) -> Bool {
-        if side == .right && !FilesPage.showsBudPage(store) { return false }
+        if side == .right && store.page == nil { return false }
         return store.sidebar.isShown(side, in: size)
     }
 
@@ -62,14 +70,9 @@ struct FilesPage: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
 
-    /// Whether the center's page is a bud's: a lens, a place and Everything are not.
-    static func showsBudPage(_ store: BudStore) -> Bool {
-        store.lens == nil && store.place == nil && store.tree.bud(store.center) != nil
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            if !compact && !Self.showsBudPage(store) {
+            if !compact && store.page == nil {
                 HStack {
                     SidebarToggle(store: store, side: .left)
                     Spacer()
