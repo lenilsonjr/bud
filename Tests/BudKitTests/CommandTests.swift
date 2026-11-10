@@ -244,12 +244,15 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.allows(.shortcuts))
         XCTAssertTrue(store.perform(.shortcuts))
         XCTAssertEqual(store.modal, .shortcuts)
+        XCTAssertTrue(store.allows(.shortcuts), "The sheet's own key closes it, the one key a card lets through")
+        XCTAssertFalse(store.allows(.goAnywhere))
         XCTAssertTrue(store.perform(.shortcuts))
         XCTAssertNil(store.modal)
         store.surface = .files
+        XCTAssertTrue(store.perform(.shortcuts), "Files has the key too")
         store.modal = .settings
-        XCTAssertTrue(store.perform(.shortcuts), "The sheet opens over another modal and from Files")
-        XCTAssertEqual(store.modal, .shortcuts)
+        XCTAssertFalse(store.perform(.shortcuts), "Another card keeps every key")
+        XCTAssertEqual(store.modal, .settings)
     }
 
     func testCloseOrReopenTicksThePage() throws {

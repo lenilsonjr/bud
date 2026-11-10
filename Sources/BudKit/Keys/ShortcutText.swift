@@ -40,7 +40,8 @@ public enum ShortcutText {
             let commands = Command.all(in: scope).filter { !Command.systemWide.contains($0.id) }
             if !commands.isEmpty { groups.append(Group(title: groupTitle(scope), caption: nil, commands: commands)) }
         }
-        groups.append(Group(title: systemWideTitle, caption: systemWideCaption, commands: Command.systemWide.map(Command.of)))
+        let systemWide = Command.systemWide.map(Command.of)
+        if !systemWide.isEmpty { groups.append(Group(title: systemWideTitle, caption: systemWideCaption, commands: systemWide)) }
         return groups
     }
 

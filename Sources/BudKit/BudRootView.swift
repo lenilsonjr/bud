@@ -76,11 +76,14 @@ public struct BudRootView: View {
     }
 
     /// The help button at the bottom right of the window, on the Mac only: the sheet under it
-    /// still opens on its key anywhere a keyboard is.
+    /// still opens on its key anywhere a keyboard is. It goes while Go anywhere is up, since the
+    /// palette's dim would leave it clickable.
     @ViewBuilder private var helpButton: some View {
         #if os(macOS)
-        HelpButton { store.perform(.shortcuts) }
-            .padding(16)
+        if !store.searching {
+            HelpButton { store.perform(.shortcuts) }
+                .padding(16)
+        }
         #endif
     }
 

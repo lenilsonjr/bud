@@ -8,14 +8,12 @@ struct ShortcutSheet: View {
     let close: () -> Void
     @Environment(\.compact) private var compact
 
-    private let groups = ShortcutText.groups()
-    private var halves: ([ShortcutText.Group], [ShortcutText.Group]) { ShortcutText.halves(groups) }
-
-    init(close: @escaping () -> Void) {
-        self.close = close
-    }
+    /// How tall the list may grow before it scrolls.
+    private static let listHeight: CGFloat = 480
 
     var body: some View {
+        let groups = ShortcutText.groups()
+        let halves = ShortcutText.halves(groups)
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -32,20 +30,26 @@ struct ShortcutSheet: View {
                 #endif
             }
             Theme.line.frame(height: 1)
-            if compact {
-                column(groups)
-            } else {
-                HStack(alignment: .top, spacing: 20) {
-                    column(halves.0)
-                    column(halves.1)
+            // Sized to its rows up to the cap, so the card stays short where the rows are few.
+            MaybeScroll {
+                if compact {
+                    column(groups)
+                } else {
+                    HStack(alignment: .top, spacing: 20) {
+                        column(halves.0)
+                        column(halves.1)
+                    }
                 }
             }
+            .frame(maxHeight: Self.listHeight)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .textRole(.body)
         .tint(Theme.leaf)
         .background {
+            // The cap in the head and this binding read the same row of the table.
             Button("", action: close)
-                .keyboardShortcut(.cancelAction)
+                .keyboardShortcut(Keys.shortcut(.close))
                 .opacity(0)
         }
     }
