@@ -925,22 +925,17 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
-    /// The Calendar view on its month, 1440 by 900 as the board's frame: the seed on the device
-    /// store's fixed clock, two buds given a span, and a Monday-first calendar, so the bars and
-    /// items land where the board draws them and the picture is the same on every run. One
-    /// thread off, so the column shows an unticked row; and the quarter segment, so its quiet
-    /// line is seen.
-    func testRendersTheMonthCalendar() throws {
-        let folder = try pictureFolder()
+    /// A fresh store for a calendar picture: the seed on the still clock with a Monday-first
+    /// calendar, on the Calendar surface, with two buds scheduled and due so the grids have bars
+    /// across their weeks: one under the newsletter over four rows, one under the roadmap over
+    /// two. Each picture builds its own, so what one adds never reaches another.
+    @MainActor
+    private func calendarStore() throws -> BudStore {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         calendar.locale = Locale(identifier: "en_GB")
         calendar.firstWeekday = 2
         let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
-        // The switches are kept on this device: back to the defaults whatever the test did.
-        defer { store.calendarState = CalendarState() }
-        // Two buds scheduled and due, so the month has bars across its weeks: one under the
-        // newsletter over four rows, one under the roadmap over two.
         let day: TimeInterval = 86_400
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
         let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
@@ -951,6 +946,19 @@ final class SnapshotTests: XCTestCase {
         store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
         store.calendarState = CalendarState()
         store.surface = .calendar
+        return store
+    }
+
+    /// The Calendar view on its month, 1440 by 900 as the board's frame: the seed on the device
+    /// store's fixed clock, two buds given a span, and a Monday-first calendar, so the bars and
+    /// items land where the board draws them and the picture is the same on every run. One
+    /// thread off, so the column shows an unticked row; and the quarter segment, so its quiet
+    /// line is seen.
+    func testRendersTheMonthCalendar() throws {
+        let folder = try pictureFolder()
+        let store = try calendarStore()
+        // The switches are kept on this device: back to the defaults whatever the test did.
+        defer { store.calendarState = CalendarState() }
         XCTAssertEqual(store.monthGrid.month.title, "November 2026")
         XCTAssertFalse(store.monthGrid.bars.isEmpty, "The seed spans weeks")
         let frame = CGSize(width: 1440, height: 900)
@@ -1052,22 +1060,10 @@ final class SnapshotTests: XCTestCase {
     /// under the segments where the board places it.
     func testRendersTheYearAndTheRangePicker() throws {
         let folder = try pictureFolder()
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.locale = Locale(identifier: "en_GB")
-        calendar.firstWeekday = 2
-        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        let store = try calendarStore()
         defer { store.calendarState = CalendarState() }
-        let day: TimeInterval = 86_400
         let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
-        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
-        store.setWhen(issue.id, store.now.addingTimeInterval(3 * day))
-        store.setDue(issue.id, store.now.addingTimeInterval(20 * day))
-        let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
-        store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
-        store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
-        store.setDue(newsletter.id, store.now.addingTimeInterval(99 * day))
-        store.surface = .calendar
+        store.setDue(newsletter.id, store.now.addingTimeInterval(99 * 86_400))
         store.calendarState = CalendarState(range: .year)
         XCTAssertEqual(store.calendarTitle, "2026")
         XCTAssertEqual(store.yearGrid.months.count, 12)
@@ -1080,8 +1076,7 @@ final class SnapshotTests: XCTestCase {
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
         }
-        let range = CustomRange(first: YearMonth(year: 2026, month: 11), last: YearMonth(year: 2027, month: 2))
-        store.calendarState = CalendarState(range: .custom, custom: range)
+        store.pickRange(CustomRange(first: YearMonth(year: 2026, month: 11), last: YearMonth(year: 2027, month: 2)))
         XCTAssertEqual(store.calendarTitle, "Nov 2026 – Feb 2027")
         XCTAssertEqual(store.yearGrid.months.map(\.title), ["November", "December", "January", "February"])
         XCTAssertEqual(store.rangePresets.map(\.title), ["Next 3 months", "This half", "Until Launch the newsletter is due"])
