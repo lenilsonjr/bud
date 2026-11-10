@@ -161,11 +161,20 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(layout.left, [.files])
         XCTAssertEqual(layout.right, [.inside, .properties], "The known ones keep their order")
         XCTAssertEqual(layout.hidden, [.whereItLives, .linkedFrom, .source, .agent], "On neither side is hidden")
+        XCTAssertEqual(layout.unknown, [.left: ["calendar"], .right: ["weather"]])
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let written = try encoder.encode(layout)
-        XCTAssertEqual(String(decoding: written, as: UTF8.self), "{\"left\":[\"files\"],\"right\":[\"inside\",\"properties\"]}")
+        XCTAssertEqual(
+            String(decoding: written, as: UTF8.self), "{\"left\":[\"files\",\"calendar\"],\"right\":[\"inside\",\"properties\",\"weather\"]}",
+            "The other build's panels go back at the end of their side, so a save here does not hide them"
+        )
         XCTAssertEqual(try JSONDecoder().decode(PanelLayout.self, from: written), layout)
+        var moved = layout
+        moved.move(.inside, to: .left, at: 0)
+        XCTAssertEqual(moved.unknown, layout.unknown, "A move here leaves them where they were")
+        XCTAssertEqual(String(decoding: try encoder.encode(PanelLayout.standard), as: UTF8.self), "{\"left\":[\"files\"],\"right\":[\"properties\",\"inside\",\"whereItLives\",\"linkedFrom\",\"source\"]}")
+        XCTAssertNotEqual(layout, PanelLayout(left: layout.left, right: layout.right), "Reset layout lets them go")
     }
 
     func testTheLastPanelThePageShowsCannotHide() {
