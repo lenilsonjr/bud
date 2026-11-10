@@ -5,7 +5,7 @@
 //! `.trash/` at the root are places, not buds; other dot folders are skipped. A picture file is
 //! an attachment, found by its extension; any other file is skipped.
 
-use crate::Place;
+use crate::{Attachment, Place};
 use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
@@ -23,22 +23,11 @@ pub struct Found {
     pub mtime: i64,
 }
 
-/// A picture the walk found: an attachment, before any bud is read for an embed of it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Picture {
-    /// Relative to the vault root, `/`-separated.
-    pub path: String,
-    /// The file name alone, as an embed names it.
-    pub name: String,
-    pub size: u64,
-    pub mtime: i64,
-}
-
 /// What a walk found: the buds, and the pictures beside them.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Walked {
     pub buds: Vec<Found>,
-    pub pictures: Vec<Picture>,
+    pub pictures: Vec<Attachment>,
 }
 
 pub(crate) const RESERVED: [&str; 4] = ["Inbox", "Archive", "Warehouse", ".trash"];
@@ -107,7 +96,7 @@ pub fn probe(root: &Path, relative: &Path) -> Option<Found> {
 
 /// The picture at `relative` right now, by the same rules as the walk: none when it is missing,
 /// ignored or not a picture.
-pub fn probe_picture(root: &Path, relative: &Path) -> Option<Picture> {
+pub fn probe_picture(root: &Path, relative: &Path) -> Option<Attachment> {
     if is_ignored(relative) {
         return None;
     }
@@ -189,9 +178,9 @@ fn classify(
     }
 }
 
-fn classify_picture(relative: &Path, size: u64, mtime: i64) -> Option<Picture> {
+fn classify_picture(relative: &Path, size: u64, mtime: i64) -> Option<Attachment> {
     let name = relative.file_name()?.to_string_lossy().to_string();
-    is_picture(&name).then(|| Picture {
+    is_picture(&name).then(|| Attachment {
         path: relative_string(relative),
         name,
         size,
