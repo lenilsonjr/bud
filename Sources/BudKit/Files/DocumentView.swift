@@ -68,10 +68,16 @@ struct DocumentView: View {
             }
             #endif
             .background {
-                // ⌘↩ closes or reopens this bud, drawn nowhere.
-                Button("") { store.tick(id) }
-                    .keyboardShortcut(.return, modifiers: .command)
+                // Close or reopen this bud from its key, drawn nowhere.
+                Button("") { store.perform(.closeOrReopen, on: id) }
+                    .keyboardShortcut(Keys.shortcut(.closeOrReopen))
                     .opacity(0)
+            }
+            .onChange(of: store.lastCommand) { _, now in
+                // Read, from its key or the menu bar: the editor closes and keeps what it has.
+                guard now?.command == .read, editing else { return }
+                editing = false
+                flush()
             }
             .onAppear { draft = bud.body }
             .onChange(of: bud.body) { _, now in if !dirty { draft = now } }
@@ -143,13 +149,11 @@ struct DocumentView: View {
                     #if os(iOS)
                     .scrollDismissesKeyboard(.never)
                     #endif
-                    .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
+                    .onKeyPress(keys: Self.editorKeys) { press in
                         guard press.modifiers.isEmpty else { return .ignored }
                         if pickerKey(press.key) { return .handled }
-                        guard press.key == .escape else { return .ignored }
-                        editing = false
-                        flush()
-                        return .handled
+                        guard press.key == Keys.equivalent(.read) else { return .ignored }
+                        return store.perform(.read) ? .handled : .ignored
                     }
                 #if !os(iOS)
                 if let picker = linkPicker { pickerList(picker) }
@@ -204,17 +208,24 @@ struct DocumentView: View {
         return found.map { .bud($0) } + (plant ? [.plant(query)] : [])
     }
 
+    /// The keys the editor answers to: the link picker's rows, Choose, Link as typed, Close, and
+    /// Read, which Close shares Esc with; the picker takes it while it is open.
+    private static let editorKeys: Set<KeyEquivalent> = [
+        Keys.equivalent(.rowUp), Keys.equivalent(.rowDown), Keys.equivalent(.choose), Keys.equivalent(.linkAsTyped),
+        Keys.equivalent(.close), Keys.equivalent(.read),
+    ]
+
     /// ↑↓ move the pick, ↩ links, ⇥ links with the typed text as its label, Esc closes.
     private func pickerKey(_ key: KeyEquivalent) -> Bool {
         guard armed, let picker = linkPicker else { return false }
         let rows = pickerRows(picker)
         switch key {
-        case .escape: closedAt = picker.range.lowerBound
-        case .upArrow: pick = max(0, pick - 1)
-        case .downArrow: pick = max(0, min(rows.count - 1, pick + 1))
+        case Keys.equivalent(.close): closedAt = picker.range.lowerBound
+        case Keys.equivalent(.rowUp): pick = max(0, pick - 1)
+        case Keys.equivalent(.rowDown): pick = max(0, min(rows.count - 1, pick + 1))
         default:
             guard rows.indices.contains(pick) else { return false }
-            choose(rows[pick], labelled: key == .tab)
+            choose(rows[pick], labelled: key == Keys.equivalent(.linkAsTyped))
         }
         return true
     }

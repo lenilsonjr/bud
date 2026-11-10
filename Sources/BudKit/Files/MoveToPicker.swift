@@ -111,8 +111,8 @@ struct MoveToPicker: View {
         .tint(Theme.leaf)
         .onAppear { typing = true }
         .onChange(of: query) { _, _ in picked = 0 }
-        .onKeyPress(.downArrow) { step(1, in: targets.count); return .handled }
-        .onKeyPress(.upArrow) { step(-1, in: targets.count); return .handled }
+        .onKey(.rowDown) { _ in step(1, in: targets.count); return .handled }
+        .onKey(.rowUp) { _ in step(-1, in: targets.count); return .handled }
     }
 
     private func line(_ hit: SearchHit, picked: Bool) -> some View {

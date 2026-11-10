@@ -24,6 +24,7 @@ struct BudApp: App {
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 760)
+        .commands { BudCommands(store: store) }
         #endif
         #if os(macOS)
         Settings {

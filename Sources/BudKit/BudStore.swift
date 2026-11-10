@@ -58,6 +58,8 @@ public final class BudStore: ObservableObject {
         set { place = newValue ? .inbox : nil }
     }
     @Published public var surface: Surface = .canvas
+    /// Whether Go anywhere is open over the window.
+    @Published public var searching = false
     /// The lens Files shows instead of the center's page; a change of center clears it.
     @Published public var lens: Lens? = nil {
         didSet { if lens != nil { place = nil } }
@@ -944,6 +946,54 @@ public final class BudStore: ObservableObject {
     public func back() {
         guard center != rootID else { return }
         center = tree.parent(of: center) ?? rootID
+    }
+
+    // MARK: commands
+
+    /// The command run last, so the surface that owns the rest of its work can follow it.
+    @Published public private(set) var lastCommand: Performed? = nil
+    private var performed = 0
+
+    public struct Performed: Equatable, Sendable {
+        public let command: Command.ID
+        /// Counts up, so the same command twice is two changes.
+        public let serial: Int
+    }
+
+    /// Whether a command's scope holds on what the window shows.
+    public func allows(_ id: Command.ID) -> Bool {
+        switch Command.of(id).scope {
+        case .everywhere: return true
+        case .canvas: return surface == .canvas
+        case .files: return surface == .files
+        case .document: return surface == .files && lens == nil && place == nil && center != rootID && tree.bud(center) != nil
+        }
+    }
+
+    /// The one way a command runs, from its key or the menu bar: nothing fires outside its scope.
+    /// The store does its part (a modal, a surface, a tick) and notes the command, so the surface
+    /// finishes what only it can: open the lit card, step through the matches, read instead of
+    /// edit. `bud` is the one the key was pressed over, when the view knows; the center otherwise.
+    /// Returns whether the command fired.
+    @discardableResult
+    public func perform(_ id: Command.ID, on bud: UUID? = nil) -> Bool {
+        guard allows(id) else { return false }
+        switch id {
+        case .goAnywhere: searching = true
+        case .capture: modal = .capture
+        case .undo: toasts.undo()
+        case .canvas: surface = .canvas
+        case .files: surface = .files
+        case .newUnderThis: modal = .adding(under: bud ?? center)
+        case .soil: soilFolded.toggle()
+        case .closeOrReopen: tick(bud ?? center)
+        case .rowDown, .rowUp, .choose, .openInFiles, .close, .open, .back, .nextMatch, .previousMatch, .nest, .rise,
+             .read, .linkAsTyped:
+            break
+        }
+        performed += 1
+        lastCommand = Performed(command: id, serial: performed)
+        return true
     }
 
     private func commit(_ change: (inout Tree) -> Void) {

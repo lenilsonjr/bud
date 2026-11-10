@@ -73,7 +73,7 @@ struct ToastView: View {
                         .buttonStyle(.plain)
                         .textRole(.label)
                         .foregroundStyle(Theme.hubAccent)
-                        .keyboardShortcut("z", modifiers: .command)
+                        .keyboardShortcut(Keys.shortcut(.undo))
                 }
             }
             .padding(.horizontal, 16)

@@ -46,7 +46,7 @@ struct SoilView: View {
                     Text("Soil").textRole(.label)
                     Image(systemName: folded ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold))
                     #if os(macOS)
-                    Keycap("⌘J").accessibilityHidden(true)
+                    Keycap(Keys.key(for: .soil).label).accessibilityHidden(true)
                     #endif
                 }
                 .foregroundStyle(Theme.text2)
@@ -56,7 +56,7 @@ struct SoilView: View {
                 .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
-            .keyboardShortcut("j", modifiers: .command)
+            .keyboardShortcut(Keys.shortcut(.soil))
             .accessibilityLabel(folded ? "Open the soil" : "Fold the soil")
             .accessibilityIdentifier("soil-handle")
         }
