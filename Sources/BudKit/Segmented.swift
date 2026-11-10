@@ -5,9 +5,9 @@ import SwiftUI
 struct Segmented<Option: Hashable>: View {
     @Binding var selection: Option
     let options: [Option]
+    let label: (Option) -> String
     /// A small symbol before a segment's word, for the few that carry one; nil for none.
     var icon: (Option) -> String? = { _ in nil }
-    let label: (Option) -> String
 
     var body: some View {
         HStack(spacing: 2) {

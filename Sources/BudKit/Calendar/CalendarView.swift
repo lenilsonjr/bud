@@ -71,9 +71,9 @@ struct CalendarView: View {
 
     private var switches: some View {
         HStack(spacing: 10) {
-            Segmented(selection: $store.calendar.range, options: CalendarRange.allCases, icon: { $0 == .custom ? "calendar.badge.clock" : nil }) { $0.rawValue }
+            Segmented(selection: $store.calendar.range, options: CalendarRange.allCases, label: { $0.rawValue }, icon: { $0 == .custom ? "calendar.badge.clock" : nil })
                 .accessibilityIdentifier("calendar-range")
-            Segmented(selection: $store.calendar.layout, options: CalendarLayout.allCases, icon: { $0 == .calendar ? "calendar" : "calendar.day.timeline.left" }) { $0.rawValue }
+            Segmented(selection: $store.calendar.layout, options: CalendarLayout.allCases, label: { $0.rawValue }, icon: { $0 == .calendar ? "calendar" : "calendar.day.timeline.left" })
                 .accessibilityIdentifier("calendar-layout")
         }
     }
