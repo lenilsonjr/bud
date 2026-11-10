@@ -101,6 +101,16 @@ final class CalendarMonthTests: XCTestCase {
         XCTAssertEqual(CalendarRange.custom.title(for: now, calendar: calendar), "November 2026")
     }
 
+    func testEachRangeStepsByItsOwnUnit() {
+        XCTAssertEqual(CalendarRange.day.shift(now, by: 1, calendar: calendar), now.addingTimeInterval(day))
+        XCTAssertEqual(CalendarRange.week.shift(now, by: -1, calendar: calendar), now.addingTimeInterval(-7 * day))
+        XCTAssertEqual(CalendarRange.month.shift(now, by: 1, calendar: calendar), date(2026, 12, 3).addingTimeInterval(10 * 3600))
+        XCTAssertEqual(CalendarRange.quarter.shift(now, by: 1, calendar: calendar), date(2027, 2, 3).addingTimeInterval(10 * 3600))
+        XCTAssertEqual(CalendarRange.year.shift(now, by: -1, calendar: calendar), date(2025, 11, 3).addingTimeInterval(10 * 3600))
+        XCTAssertEqual(CalendarRange.custom.shift(now, by: 1, calendar: calendar), CalendarRange.month.shift(now, by: 1, calendar: calendar), "Until a custom range has a length, a month")
+        XCTAssertEqual(CalendarRange.allCases.map(\.stepName), ["day", "week", "month", "quarter", "year", "range"])
+    }
+
     func testTheSegmentsAndSwitchesAreTheBoardsInItsOrder() {
         XCTAssertEqual(CalendarRange.allCases.map(\.rawValue), ["Day", "Week", "Month", "Quarter", "Year", "Custom"])
         XCTAssertEqual(CalendarLayout.allCases.map(\.rawValue), ["Calendar", "Timeline"])
@@ -151,7 +161,16 @@ final class CalendarMonthTests: XCTestCase {
         let entry = try XCTUnwrap(CalendarEntry.all(in: tree, calendar: calendar).first)
         XCTAssertTrue(entry.isRoutine)
         XCTAssertEqual(entry.when, date(2026, 11, 16))
-        XCTAssertNil(CalendarEntry.occurrence(of: "mail:M1234"))
+        XCTAssertNil(Tree.stampOccurrence(of: "mail:M1234"))
+    }
+
+    func testAStampKeyReadsBackTheMinuteItWasWrittenFor() throws {
+        let minute = date(2026, 11, 16).addingTimeInterval(9 * 3600 + 30 * 60)
+        let key = Tree.stampKey("Weekly review", at: minute.addingTimeInterval(20))
+        XCTAssertEqual(key, "tpl/Weekly review/2026-11-16T09:30Z")
+        XCTAssertEqual(Tree.stampOccurrence(of: key), minute, "To the minute, the seconds dropped")
+        XCTAssertNil(Tree.stampOccurrence(of: "tpl/Weekly review/yesterday"))
+        XCTAssertNil(Tree.stampOccurrence(of: "2026-11-16T09:30Z"), "Not a stamp key")
     }
 
     // MARK: The grid
@@ -206,6 +225,55 @@ final class CalendarMonthTests: XCTestCase {
         XCTAssertTrue(grid.bars.allSatisfy { $0.from == 0 && $0.to == 6 })
         XCTAssertFalse(grid.bars[0].starts, "It started before the grid")
         XCTAssertTrue(grid.bars.allSatisfy { $0.dueLabel == nil }, "And is due after it")
+    }
+
+    func testAWhenAfterItsDueStillRunsFromTheEarlierDayWithTheArrowAtWhen() throws {
+        var tree = Tree()
+        let thread = tree.add("Moving", todo: true, under: rootID)
+        let late = tree.add("Pack and ship", todo: true, under: thread.id)
+        tree.setDue(late.id, date(2026, 11, 4))
+        tree.setWhen(late.id, date(2026, 11, 18))
+        let grid = MonthGrid(month: CalendarMonth(containing: now, now: now, calendar: calendar), entries: CalendarEntry.all(in: tree, calendar: calendar), state: CalendarState())
+        XCTAssertEqual(grid.bars.map(\.row), [1, 2, 3], "Wednesday 4 to Wednesday 18")
+        XCTAssertEqual(grid.bars.map { $0.from...$0.to }, [2...6, 0...6, 0...2])
+        XCTAssertEqual(grid.bars.map(\.dueLabel), ["due 4 Nov", nil, nil], "The flag where it is due, on the first piece")
+        XCTAssertEqual(grid.bars.map(\.starts), [false, false, true], "The arrow where it is scheduled, on the last")
+        XCTAssertTrue(grid.items.isEmpty)
+    }
+
+    func testABarWithinOneWeekHoldsBothTheArrowAndTheFlag() throws {
+        var tree = Tree()
+        let thread = tree.add("Moving", todo: true, under: rootID)
+        let short = tree.add("Viewings", todo: true, under: thread.id)
+        tree.setWhen(short.id, date(2026, 11, 10))
+        tree.setDue(short.id, date(2026, 11, 12))
+        let grid = MonthGrid(month: CalendarMonth(containing: now, now: now, calendar: calendar), entries: CalendarEntry.all(in: tree, calendar: calendar), state: CalendarState())
+        XCTAssertEqual(grid.bars.count, 1)
+        XCTAssertTrue(grid.bars[0].starts)
+        XCTAssertEqual(grid.bars[0].dueLabel, "due 12 Nov")
+        XCTAssertTrue(grid.bars[0].covers(3))
+        XCTAssertFalse(grid.bars[0].covers(0))
+    }
+
+    // MARK: Room
+
+    func testBarsBeyondTheLanesARowHoldsBecomeAMoreCount() throws {
+        var tree = Tree()
+        let thread = tree.add("Moving", todo: true, under: rootID)
+        for (index, title) in ["One", "Two", "Three", "Four"].enumerated() {
+            let bud = tree.add(title, todo: true, under: thread.id)
+            tree.setWhen(bud.id, date(2026, 11, 9 + index))
+            tree.setDue(bud.id, date(2026, 11, 20))
+        }
+        let grid = MonthGrid(month: CalendarMonth(containing: now, now: now, calendar: calendar), entries: CalendarEntry.all(in: tree, calendar: calendar), state: CalendarState())
+        XCTAssertEqual(grid.lanes[2], 4, "Four bars share the third row")
+        XCTAssertEqual(grid.bars(inRow: 2, fitting: 2).map(\.lane), [0, 1], "Two lanes of room: the top two draw")
+        XCTAssertEqual(grid.overflow(row: 2, column: 0, fitting: 2), 0, "Monday 9: only the first bar has begun")
+        XCTAssertEqual(grid.overflow(row: 2, column: 2, fitting: 2), 1, "Wednesday 11: the third bar is below the room")
+        XCTAssertEqual(grid.overflow(row: 2, column: 6, fitting: 2), 2, "By Sunday, two")
+        XCTAssertEqual(grid.overflow(row: 3, column: 0, fitting: 2), 2, "And on the next row's Monday")
+        XCTAssertEqual(grid.overflow(row: 2, column: 6, fitting: 4), 0, "Room for all: nothing more")
+        XCTAssertEqual(grid.bars(inRow: 2, fitting: 0).count, 0)
     }
 
     func testBothDatesOnOneDayMakeAnItemWithTheFlag() throws {
@@ -307,7 +375,8 @@ final class CalendarMonthTests: XCTestCase {
         XCTAssertTrue(CalendarState.load(from: defaults).shows(.done))
         let old = try JSONDecoder().decode(CalendarState.self, from: Data(#"{"range":"Year"}"#.utf8))
         XCTAssertEqual(old.range, .year)
-        XCTAssertEqual(old.shown, [.when, .due, .routines], "A field saved before it existed keeps its default")
+        XCTAssertEqual(old.shown, CalendarState.defaultShown, "A field saved before it existed keeps its default")
+        XCTAssertEqual(CalendarState.defaultShown, [.when, .due, .routines])
         defaults.removePersistentDomain(forName: "calendar-state-tests")
     }
 }
@@ -328,45 +397,52 @@ final class CalendarStoreTests: XCTestCase {
     private func makeStore() -> BudStore {
         let clock: @Sendable () -> Date = { Tree.stillNow }
         let tree = CalendarMonthTests.world()
-        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock)
+        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock, calendar: calendar)
         let store = BudStore(vault: MemoryVault(tree: tree), tree: tree, devices: devices)
         XCTAssertEqual(store.now, Tree.stillNow, "The device store's clock is the one clock")
-        store.dateCalendar = calendar
-        store.calendar = CalendarState()
+        XCTAssertEqual(store.calendar, calendar, "And its calendar the one calendar")
+        store.calendarState = CalendarState()
         return store
     }
 
     func testTogglingAThreadOrASwitchHidesItsBudsAtOnce() throws {
         let store = makeStore()
-        defer { store.calendar = CalendarState() }
+        defer { store.calendarState = CalendarState() }
         XCTAssertEqual(store.monthGrid.month.title, "November 2026")
         XCTAssertEqual(store.calendarThreads.map(\.title).prefix(2), ["Launch the newsletter", "Q4 roadmap"])
         let newsletter = try XCTUnwrap(store.calendarThreads.first)
         XCTAssertTrue(store.monthGrid.bars.contains { $0.title == "Send the first issue" })
         store.toggleThread(newsletter.id)
-        XCTAssertFalse(store.calendar.shows(thread: newsletter.id))
+        XCTAssertFalse(store.calendarState.shows(thread: newsletter.id))
         XCTAssertFalse(store.monthGrid.bars.contains { $0.title == "Send the first issue" })
         XCTAssertFalse(store.monthGrid.items.contains { $0.title == "Pick a name" })
         store.toggleThread(newsletter.id)
         XCTAssertTrue(store.monthGrid.bars.contains { $0.title == "Send the first issue" })
         store.toggle(.when)
-        XCTAssertFalse(store.calendar.shows(.when))
+        XCTAssertFalse(store.calendarState.shows(.when))
         XCTAssertFalse(store.monthGrid.items.contains { $0.title == "A walk before the first meeting" })
         XCTAssertTrue(store.monthGrid.bars.isEmpty)
         store.toggle(.when)
         XCTAssertTrue(store.monthGrid.items.contains { $0.title == "A walk before the first meeting" })
-        XCTAssertEqual(CalendarState.load(from: .standard), store.calendar, "The choice is kept on this device")
+        XCTAssertEqual(CalendarState.load(from: .standard), store.calendarState, "The choice is kept on this device")
     }
 
-    func testTheCalendarMovesByMonthsAndComesBackToToday() {
+    func testTheCalendarMovesByItsRangeAndComesBackToToday() {
         let store = makeStore()
+        defer { store.calendarState = CalendarState() }
         XCTAssertNil(store.calendarDate)
-        store.shiftCalendar(months: 1)
+        store.shiftCalendar(by: 1)
         XCTAssertEqual(store.monthGrid.month.title, "December 2026")
-        store.shiftCalendar(months: 1)
+        store.shiftCalendar(by: 1)
         XCTAssertEqual(store.monthGrid.month.title, "January 2027")
-        store.shiftCalendar(months: -3)
+        store.shiftCalendar(by: -3)
         XCTAssertEqual(store.monthGrid.month.title, "October 2026")
+        store.calendarState.range = .week
+        store.shiftCalendar(by: 5)
+        XCTAssertEqual(store.monthGrid.month.title, "November 2026", "Five weeks on from 3 October")
+        store.calendarState.range = .year
+        store.shiftCalendar(by: 1)
+        XCTAssertEqual(store.monthGrid.month.title, "November 2027")
         store.calendarToday()
         XCTAssertNil(store.calendarDate)
         XCTAssertEqual(store.monthGrid.month.title, "November 2026")
