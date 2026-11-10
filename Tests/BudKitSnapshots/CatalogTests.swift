@@ -12,6 +12,11 @@ import SwiftUI
 /// no longer matches fails with the new picture, the reference and a difference image written to
 /// `catalog` inside `BUD_SNAPSHOT_DIR`, so the run's artifact carries what changed. Like the
 /// other pictures, the catalog only runs when `BUD_SNAPSHOT_DIR` is set.
+///
+/// `BUD_CATALOG_REFERENCES` points the run at another folder of references, which is how
+/// `scripts/compare-screens.sh` holds the working tree against the pictures of an older ref.
+/// A run like that also keeps every picture it took in `catalog`, matched or not, so the script
+/// can tell a screen that left the catalog from one that still matches.
 @MainActor
 final class CatalogTests: XCTestCase {
     /// A window the catalog renders in: its name in the file, its size in points, whether it is
@@ -69,11 +74,21 @@ final class CatalogTests: XCTestCase {
     /// pixels of edge that moves by a pixel still fails.
     private let strategy = Snapshotting<NSImage, NSImage>.image(precision: 0.99995, perceptualPrecision: 0.98)
 
-    /// The reference pictures: the library's folder beside this file, one file per screen.
-    private static let references = URL(fileURLWithPath: #filePath, isDirectory: false)
+    /// Another folder of references to compare against, when `BUD_CATALOG_REFERENCES` names one.
+    private static let otherReferences: URL? = {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_CATALOG_REFERENCES"], !dir.isEmpty else { return nil }
+        return URL(fileURLWithPath: dir, isDirectory: true)
+    }()
+
+    /// The reference pictures: the other folder when there is one, else the library's folder
+    /// beside this file, one file per screen.
+    private static let references = otherReferences ?? URL(fileURLWithPath: #filePath, isDirectory: false)
         .deletingLastPathComponent()
         .appendingPathComponent("__Snapshots__", isDirectory: true)
         .appendingPathComponent("CatalogTests", isDirectory: true)
+
+    /// Whether the run compares against another ref's references and so keeps every picture.
+    private static var comparing: Bool { otherReferences != nil }
 
     // MARK: The catalog
 
@@ -228,7 +243,10 @@ final class CatalogTests: XCTestCase {
         let old = NSImage(contentsOf: reference)
         guard let failure = verifySnapshot(
             of: image, as: strategy, named: name, snapshotDirectory: Self.references.path, testName: surface)
-        else { return }
+        else {
+            if Self.comparing { try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png")) }
+            return
+        }
         try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png"))
         if let old {
             try png(old).write(to: out.appendingPathComponent("\(surface).\(name).reference.png"))
