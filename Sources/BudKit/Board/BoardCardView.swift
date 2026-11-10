@@ -3,12 +3,14 @@ import SwiftUI
 
 /// One bud on the board: its first picture when it embeds one, its title behind the kind's
 /// mark, the trail from the board's bud down to its parent, then its when and due tags, its
-/// other tags, and how many buds are inside. Read only: a click does nothing yet.
+/// other tags, and how many buds are inside. Read only: a click does nothing yet. The card
+/// watches nothing: its picture comes in decoded, and it asks once when that is unknown.
 struct BoardCardView: View {
     let card: BoardCard
-    @ObservedObject var store: BudStore
+    let picture: BoardPictureState
     let now: Date
-    @State private var picture: Data?
+    /// Asks the store for the picture; called once, when it is unknown.
+    let load: () async -> Void
 
     private static let title = TextStyle(typeface: .text, size: 13, weight: 500)
     private static let small = TextStyle(typeface: .text, size: 11, weight: 400)
@@ -16,14 +18,13 @@ struct BoardCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            if let image {
-                image
+            if let picture = picture.picture {
+                Image(decorative: picture.image, scale: 2)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(maxWidth: .infinity)
                     .frame(height: 110)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                    .accessibilityLabel(card.picture ?? "Picture")
             }
             HStack(alignment: .top, spacing: 8) {
                 lead
@@ -47,24 +48,11 @@ struct BoardCardView: View {
         .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).stroke(Theme.line, lineWidth: 1))
         .shadow(color: Theme.shadow, radius: 1, y: 1)
-        .task(id: card.picture) {
-            guard card.picture != nil else { picture = nil; return }
-            picture = await store.picture(of: card.id)
+        .task(id: card.id) {
+            if case .unknown = picture { await load() }
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("board-card")
-    }
-
-    /// The picture as the platform decodes it; nothing while the vault has none.
-    private var image: Image? {
-        guard let picture else { return nil }
-        #if canImport(AppKit)
-        return NSImage(data: picture).map { Image(nsImage: $0) }
-        #elseif canImport(UIKit)
-        return UIImage(data: picture).map { Image(uiImage: $0) }
-        #else
-        return nil
-        #endif
     }
 
     /// The box of a to-do, filled in leaf with a tick once done; the small square of a note.
@@ -106,8 +94,8 @@ struct BoardCardView: View {
                 chip(tag, icon: nil, ink: Theme.text2, wash: Theme.raised)
             }
             Spacer(minLength: 0)
-            if !card.insideText.isEmpty {
-                Text(card.insideText)
+            if let inside = card.insideText {
+                Text(inside)
                     .textStyle(Self.small)
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)

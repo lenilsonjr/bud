@@ -91,8 +91,7 @@ final class BoardTests: XCTestCase {
         XCTAssertNil(name.whenText(now: now, calendar: calendar))
         let shortlist = board.columns[0].cards.first { $0.title == "Shortlist three candidates" }!
         XCTAssertEqual(shortlist.trailText, "Launch the newsletter › Pick a name")
-        XCTAssertEqual(shortlist.insideText, "")
-        XCTAssertNil(shortlist.picture)
+        XCTAssertNil(shortlist.insideText)
         let done = board.columns[4].cards[0]
         XCTAssertTrue(done.isDone)
         XCTAssertEqual(done.tags, ["waiting"])
@@ -106,21 +105,6 @@ final class BoardTests: XCTestCase {
         XCTAssertFalse(board.columns[0].cards.contains { $0.title == "Ask the printer about paper samples" }, "The Inbox is not inside")
     }
 
-    func testTheFirstEmbeddedPictureIsTheCardsPicture() {
-        XCTAssertEqual(BudLinks.embeds(in: "See ![[plan.pdf]] and ![[kitchen.JPG|the kitchen]] then ![[hall.png]]."), ["plan.pdf", "kitchen.JPG", "hall.png"])
-        XCTAssertEqual(BudLinks.firstPicture(in: "See ![[plan.pdf]] and ![[kitchen.JPG|the kitchen]] then ![[hall.png]]."), "kitchen.JPG")
-        XCTAssertNil(BudLinks.firstPicture(in: "A [[link]] is not an embed, nor is `![[code.png]]`."))
-        XCTAssertNil(BudLinks.firstPicture(in: "```\n![[fenced.png]]\n```\n"))
-        XCTAssertNil(BudLinks.firstPicture(in: "![[no-extension]] ![[.png]] ![[]]"))
-        XCTAssertEqual(BudLinks.firstPicture(in: "![[ Living room.webp ]]"), "Living room.webp")
-        XCTAssertTrue(BudLinks.isPicture("a.HEIC"))
-        XCTAssertFalse(BudLinks.isPicture("notes.md"))
-        var tree = Tree()
-        let bud = tree.add("Living room board", todo: false, under: rootID)
-        tree.setBody(bud.id, "![[living-room.jpg]]\n\nThe sofa goes by the window.")
-        XCTAssertEqual(Board(tree: tree, center: rootID).columns[0].cards[0].picture, "living-room.jpg")
-    }
-
     func testADayReadsRelativeToNow() {
         let day: TimeInterval = 86_400
         XCTAssertEqual(DayText.relative(now, now: now, calendar: calendar), "Today")
@@ -132,10 +116,14 @@ final class BoardTests: XCTestCase {
         XCTAssertEqual(DayText.relative(now.addingTimeInterval(-3 * day), now: now, calendar: calendar), DayText.short(now.addingTimeInterval(-3 * day), calendar: calendar))
     }
 
-    func testStoredColumnsReadBackCleanedAndOnceEach() throws {
+    func testColumnsAreCleanedAndOnceEachHoweverTheyAreMade() throws {
         let text = "{\"tags\":[\"#Doing\",\"doing\",\"waiting\",\"1\",\"some day\"]}"
         let columns = try JSONDecoder().decode(BoardColumns.self, from: Data(text.utf8))
         XCTAssertEqual(columns.tags, ["Doing", "waiting"])
+        XCTAssertEqual(BoardColumns(tags: ["#Doing", "doing", "waiting", "1", "some day"]).tags, ["Doing", "waiting"])
+        let (tree, center) = world()
+        let twice = Board(tree: tree, center: center, tags: BoardColumns(tags: ["doing", "doing"]).tags)
+        XCTAssertEqual(twice.columns.map(\.kind), [.open, .tag("doing"), .done], "No two columns share an id")
         let encoded = try JSONEncoder().encode(BoardColumns(tags: ["a", "b"]))
         XCTAssertEqual(String(decoding: encoded, as: UTF8.self), "{\"tags\":[\"a\",\"b\"]}")
     }
@@ -193,20 +181,29 @@ final class BoardStoreTests: XCTestCase {
         XCTAssertEqual(store.boards, [inboxID: BoardColumns(tags: ["inbox"])])
     }
 
-    func testThePictureComesFromTheVaultByTheEmbedsName() async throws {
+    func testAPictureIsAskedOfTheVaultOnceAndKeptDecoded() async throws {
         var tree = Tree()
         let bud = tree.add("Living room board", todo: false, under: rootID)
-        tree.setBody(bud.id, "![[living-room.jpg]]")
         let bare = tree.add("Bare", todo: false, under: rootID)
         let vault = MemoryVault(tree: tree)
-        let bytes = Data([0x89, 0x50, 0x4E, 0x47])
-        await vault.keepPicture("living-room.jpg", bytes)
+        // A 1 by 1 PNG, as small as one gets.
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")!
+        await vault.keepPicture(png, of: bud.id.uuidString)
         let store = BudStore(vault: vault)
         await store.settle()
-        let picture = await store.picture(of: bud.id)
-        XCTAssertEqual(picture, bytes)
-        let none = await store.picture(of: bare.id)
-        XCTAssertNil(none)
+        if case .unknown = store.pictureState(of: bud.id) {} else { XCTFail("Nothing asked yet") }
+        await store.loadPicture(of: bud.id)
+        let picture = try XCTUnwrap(store.pictureState(of: bud.id).picture)
+        XCTAssertEqual(picture.image.width, 1)
+        await store.loadPicture(of: bare.id)
+        if case .none = store.pictureState(of: bare.id) {} else { XCTFail("A bud without a picture is known to have none") }
+        await vault.keepPicture(nil, of: bud.id.uuidString)
+        await store.loadPicture(of: bud.id)
+        XCTAssertNotNil(store.pictureState(of: bud.id).picture, "Asked once; the answer is kept")
+        store.forgetPictures()
+        if case .unknown = store.pictureState(of: bud.id) {} else { XCTFail("Forgotten") }
+        store.keepPicture(nil, of: bud.id)
+        if case .none = store.pictureState(of: bud.id) {} else { XCTFail("Kept as none without asking") }
     }
 }
 #endif

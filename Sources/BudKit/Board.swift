@@ -25,15 +25,38 @@ public struct Board: Equatable, Sendable {
         let buds = tree.walk(under: center)
         title = tree.title(of: center)
         inside = buds.count
+        // One pass over the walk for what each card needs of the tree: the walk reads a parent
+        // before its children, so read backwards each bud's count is complete before its
+        // parent adds it, and the titles are at hand for the trails.
+        var titles: [UUID: String] = [center: title]
+        var parents: [UUID: UUID] = [:]
+        var sizes: [UUID: Int] = [:]
+        for bud in buds {
+            titles[bud.id] = bud.text
+            parents[bud.id] = bud.parent
+        }
+        for bud in buds.reversed() {
+            sizes[bud.parent, default: 0] += 1 + sizes[bud.id, default: 0]
+        }
         let order = tags ?? BoardColumns.inUse(by: buds)
         var open: [BoardCard] = [], done: [BoardCard] = [], gone: [BoardCard] = []
         var tagged: [[BoardCard]] = Array(repeating: [], count: order.count)
         let keys = order.map(BudTags.key)
         for bud in buds {
-            var card = BoardCard(bud: bud, in: tree, below: center)
+            var trail: [String] = []
+            var cursor: UUID? = bud.parent
+            while let id = cursor, id != center, let title = titles[id] {
+                trail.append(title)
+                cursor = parents[id]
+            }
+            trail.append(title)
+            var card = BoardCard(
+                id: bud.id, title: bud.text, trail: trail.reversed(), isTodo: bud.isTodo, isDone: bud.isDone,
+                isCancelled: bud.isCancelled, when: bud.when, due: bud.due, tags: bud.allTags, inside: sizes[bud.id] ?? 0
+            )
             if bud.isCancelled { gone.append(card); continue }
             if bud.isDone { done.append(card); continue }
-            if let column = keys.firstIndex(where: { key in bud.allTags.contains { BudTags.key($0) == key } }) {
+            if let column = keys.firstIndex(where: { key in card.tags.contains { BudTags.key($0) == key } }) {
                 card.tags.removeAll { BudTags.key($0) == keys[column] }
                 tagged[column].append(card)
             } else {
@@ -84,7 +107,8 @@ public struct BoardColumn: Equatable, Identifiable, Sendable {
 }
 
 /// One bud as its card shows it. The card is read-only this round: the fields are what the
-/// board draws, nothing it changes.
+/// board draws, nothing it changes. Its picture is not here: the vault's index knows which
+/// picture a bud embeds first, and the page asks the store for it by the card's id.
 public struct BoardCard: Equatable, Identifiable, Sendable {
     public var id: UUID
     public var title: String
@@ -100,13 +124,10 @@ public struct BoardCard: Equatable, Identifiable, Sendable {
     public var tags: [String]
     /// How many buds are inside it, at any depth.
     public var inside: Int
-    /// The file name of the first picture the bud embeds, `![[name.png]]`; nil without one.
-    public var picture: String?
 
     public init(
         id: UUID, title: String, trail: [String] = [], isTodo: Bool = false, isDone: Bool = false,
-        isCancelled: Bool = false, when: Date? = nil, due: Date? = nil, tags: [String] = [], inside: Int = 0,
-        picture: String? = nil
+        isCancelled: Bool = false, when: Date? = nil, due: Date? = nil, tags: [String] = [], inside: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -118,25 +139,13 @@ public struct BoardCard: Equatable, Identifiable, Sendable {
         self.due = due
         self.tags = tags
         self.inside = inside
-        self.picture = picture
-    }
-
-    /// The card of a bud on the board of `center`.
-    public init(bud: Bud, in tree: Tree, below center: UUID) {
-        let above = tree.ancestors(of: bud.id)
-        let cut = above.firstIndex(of: center).map { above.prefix($0 + 1) } ?? above.prefix(0)
-        self.init(
-            id: bud.id, title: bud.text, trail: cut.reversed().map { tree.title(of: $0) },
-            isTodo: bud.isTodo, isDone: bud.isDone, isCancelled: bud.isCancelled, when: bud.when, due: bud.due,
-            tags: bud.allTags, inside: tree.descendants(of: bud.id).count, picture: BudLinks.firstPicture(in: bud.body)
-        )
     }
 
     /// "Moving to Lisbon › Learn Portuguese".
     public var trailText: String { trail.joined(separator: " › ") }
 
-    /// "6 inside", or nothing for a leaf.
-    public var insideText: String { inside > 0 ? "\(inside) inside" : "" }
+    /// "6 inside"; nil for a leaf.
+    public var insideText: String? { inside > 0 ? "\(inside) inside" : nil }
 
     /// "Today", "Sat", "3 Nov": the when tag's word.
     public func whenText(now: Date, calendar: Calendar = .current) -> String? {
@@ -152,10 +161,13 @@ public struct BoardCard: Equatable, Identifiable, Sendable {
 /// Which tags have a column on a bud's board, in the person's order. One list per bud, in the
 /// vault's `board` map under the bud's id, so every device shows the same columns.
 public struct BoardColumns: Equatable, Codable, Sendable {
-    public var tags: [String]
+    /// Each a tag as written, once: a spelling that is not a tag is dropped, and one listed
+    /// twice keeps its first place.
+    public private(set) var tags: [String]
 
     public init(tags: [String]) {
-        self.tags = tags
+        var seen: Set<String> = []
+        self.tags = tags.compactMap(BudTags.clean).filter { seen.insert(BudTags.key($0)).inserted }
     }
 
     /// The default when nothing is stored: every tag the buds carry, each once, in the order
@@ -165,14 +177,9 @@ public struct BoardColumns: Equatable, Codable, Sendable {
         return buds.flatMap(\.allTags).filter { seen.insert(BudTags.key($0)).inserted }
     }
 
-    /// Reads a list another build wrote: a spelling that is not a tag is skipped, and a tag
-    /// listed twice keeps its first place.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        var seen: Set<String> = []
-        tags = try container.decode([String].self, forKey: .tags)
-            .compactMap(BudTags.clean)
-            .filter { seen.insert(BudTags.key($0)).inserted }
+        self.init(tags: try container.decode([String].self, forKey: .tags))
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -197,57 +204,8 @@ extension DayText {
         case 0: return "Today"
         case 1: return "Tomorrow"
         case -1: return "Yesterday"
-        case 2...6:
-            let formatter = DateFormatter()
-            formatter.calendar = calendar
-            formatter.timeZone = calendar.timeZone
-            formatter.locale = calendar.locale ?? .current
-            formatter.setLocalizedDateFormatFromTemplate("EEE")
-            return formatter.string(from: day)
+        case 2...6: return formatter(template: "EEE", calendar: calendar).string(from: day)
         default: return short(day, calendar: calendar)
         }
-    }
-}
-
-extension BudLinks {
-    /// What a file name must end with to be a picture, as the core's scan reads it.
-    static let pictureExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "svg"]
-
-    /// Whether a name is a picture's, by its extension in any case.
-    public static func isPicture(_ name: String) -> Bool {
-        guard let dot = name.lastIndex(of: "."), dot != name.startIndex else { return false }
-        return pictureExtensions.contains(name[name.index(after: dot)...].lowercased())
-    }
-
-    /// The embeds in a body, `![[name]]` or `![[name|label]]`, by name and in order; none inside
-    /// code, and none across lines.
-    public static func embeds(in body: String) -> [String] {
-        prose(body).flatMap { line -> [String] in
-            let chars = line.blank
-            var out: [String] = []
-            var i = 0
-            while i + 2 < chars.count {
-                guard chars[i] == "!", chars[i + 1] == "[", chars[i + 2] == "[" else { i += 1; continue }
-                var close: Int?
-                var j = i + 3
-                while j + 1 < chars.count {
-                    if chars[j] == "]", chars[j + 1] == "]" { close = j; break }
-                    j += 1
-                }
-                guard let close else { break }
-                let inner = String(chars[(i + 3)..<close])
-                guard !inner.contains("["), !inner.contains("]") else { i += 1; continue }
-                let name = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? inner
-                let trimmed = name.trimmingCharacters(in: .whitespaces)
-                if !trimmed.isEmpty { out.append(trimmed) }
-                i = close + 2
-            }
-            return out
-        }
-    }
-
-    /// The first embedded picture's name: what a card shows. Nil when the body embeds none.
-    public static func firstPicture(in body: String) -> String? {
-        embeds(in: body).first(where: isPicture)
     }
 }
