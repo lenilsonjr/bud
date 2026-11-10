@@ -250,7 +250,7 @@ struct TVReadScreen: View {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(rows, id: \.id) { row in
-                            TVBudRow(row: row, lit: focused == .row(row.id)) { read(row.id) }
+                            TVBudRow(row: row, lit: focused == .row(row.id), now: store.now) { read(row.id) }
                                 .focused($focused, equals: .row(row.id))
                                 .budMenu(row.id, store: store, onAdd: { adding = TVAddTarget(id: row.id) }, onOpen: { read(row.id) })
                         }
