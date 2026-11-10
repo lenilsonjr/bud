@@ -293,6 +293,9 @@ public final class BudStore: ObservableObject {
     private var inFlight = 0
     /// Counts local changes, so a snapshot taken before one is never applied after it.
     private var generation = 0
+    /// Counts saved lenses kept or let go here, so a read of the vault taken before one is
+    /// never applied after it.
+    private var lensEdits = 0
     private var watch: VaultWatch?
     /// Where the vault keeps each bud. Writes look a path up when they run, after the writes
     /// before them, so a bud planted a moment ago is found where the vault put it.
@@ -1454,13 +1457,15 @@ extension BudStore {
     /// sync brought another device's. A page on a lens that is gone closes.
     public func reloadLenses() async {
         await settle()
-        guard let stored = try? await vault.shared(.lenses) else { return }
+        let started = lensEdits
+        guard let stored = try? await vault.shared(.lenses), started == lensEdits else { return }
         let loaded = SavedLens.read(stored)
         if loaded != savedLenses { savedLenses = loaded }
         if let open = savedLens, saved(open) == nil { savedLens = nil }
     }
 
     private func keep(_ lens: SavedLens) {
+        lensEdits += 1
         savedLenses = SavedLens.sorted(savedLenses.filter { $0.id != lens.id } + [lens])
         guard let text = lens.text else { return }
         write { vault in try await vault.setShared(.lenses, lens.id.uuidString, text) }
@@ -1468,6 +1473,7 @@ extension BudStore {
 
     private func drop(_ id: UUID) {
         guard saved(id) != nil else { return }
+        lensEdits += 1
         savedLenses.removeAll { $0.id == id }
         if savedLens == id { savedLens = nil }
         write { vault in try await vault.setShared(.lenses, id.uuidString, nil) }
