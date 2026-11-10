@@ -64,4 +64,22 @@ struct PhoneFilesView: View {
         return store.tree.title(of: store.center)
     }
 }
+
+/// A bud's panels on a phone: the same ones the sidebars hold, stacked under the words in the
+/// layout's order and folded until tapped. Files stays out; the navigator is the file tree.
+struct PhonePanelStack: View {
+    @ObservedObject var store: BudStore
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(PhonePanelState.stack(of: store.panels.layout), id: \.self) { panel in
+                PanelSidebar.panel(panel, store: store)
+            }
+        }
+        // The headers keep their sidebar inset, so the stack steps out by as much to line their
+        // titles up with the words.
+        .padding(.horizontal, -10)
+        .accessibilityIdentifier("phone-panels")
+    }
+}
 #endif

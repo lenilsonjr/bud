@@ -82,6 +82,8 @@ public final class BudStore: ObservableObject {
     /// The panels around the page: where each sits and which are folded. The layout is read from
     /// the vault and changed through `arrange`; folding is this device's alone.
     @Published public var panels = PanelState()
+    /// Which of them are folded on a phone, where they stack under the words; this device's own.
+    @Published public var phonePanels = PhonePanelState()
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)

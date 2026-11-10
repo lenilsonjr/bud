@@ -6,8 +6,8 @@ import GameController
 
 /// Every bud's page, the one Files opens whatever the bud holds: the page bar with its path and
 /// the two sidebar toggles, the title, and the body as rendered Markdown. What is inside, the
-/// properties and the links are the panels beside it. The body autosaves half a second after
-/// the last keystroke.
+/// properties and the links are the panels beside it, or under the words on a phone. The body
+/// autosaves half a second after the last keystroke.
 struct DocumentView: View {
     let id: UUID
     @ObservedObject var store: BudStore
@@ -43,6 +43,8 @@ struct DocumentView: View {
                         if compact { TagRow(bud: bud, store: store) }
                     }
                     bodyEditor
+                    // The words first, then the panels; on a phone there is no sidebar for them.
+                    if compact { PhonePanelStack(store: store) }
                 }
                 .pageColumn()
             }

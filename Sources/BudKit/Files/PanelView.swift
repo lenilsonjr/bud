@@ -4,7 +4,8 @@ import SwiftUI
 /// One panel of a sidebar: the header with its grip, title, a count or a word beside it, an
 /// optional +, the ⋯ menu and the chevron that folds the body away; the body below while open;
 /// a hairline under. Dragging the header lifts the panel: its place fades, and the leaf drop
-/// line shows on the panel it would land above, or under the last one.
+/// line shows on the panel it would land above, or under the last one. On a phone the same
+/// panel stacks under the words: its whole header folds it, and there is no grip, menu or drag.
 struct PanelView<Content: View>: View {
     let panel: PagePanel
     @ObservedObject var store: BudStore
@@ -14,13 +15,14 @@ struct PanelView<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @Environment(\.panelDragging) private var dragging
     @Environment(\.stillPicture) private var still
+    @Environment(\.compact) private var compact
     @State private var menuOpen = false
     @GestureState private var holding = false
 
     static var headerHeight: CGFloat { 32 }
 
     var body: some View {
-        let collapsed = store.panels.isCollapsed(panel)
+        let collapsed = store.isPanelCollapsed(panel, compact: compact)
         let line = dragging.drag?.line(on: panel, in: store.panels.layout)
         VStack(alignment: .leading, spacing: 0) {
             header(collapsed: collapsed)
@@ -50,12 +52,34 @@ struct PanelView<Content: View>: View {
         }
     }
 
-    private func header(collapsed: Bool) -> some View {
+    /// The header row with what moves it: a tap anywhere on a phone, where the + and the
+    /// chevron keep their own taps; the drag that lifts the panel elsewhere.
+    @ViewBuilder private func header(collapsed: Bool) -> some View {
+        let row = headerRow(collapsed: collapsed).contentShape(Rectangle())
+        if compact {
+            row.onTapGesture(perform: fold)
+        } else {
+            row.gesture(
+                DragGesture(minimumDistance: 6, coordinateSpace: .named(FilesView.space))
+                    .updating($holding) { _, state, _ in state = true }
+                    .onChanged { dragging.moved(panel, $0.location) }
+                    .onEnded { dragging.ended(panel, $0.location) }
+            )
+        }
+    }
+
+    private func fold() {
+        withAnimation(.easeOut(duration: 0.15)) { store.togglePanel(panel, compact: compact) }
+    }
+
+    private func headerRow(collapsed: Bool) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal")
-                .textRole(.caption)
-                .foregroundStyle(Theme.text3.opacity(0.5))
-                .accessibilityHidden(true)
+            if !compact {
+                Image(systemName: "line.3.horizontal")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3.opacity(0.5))
+                    .accessibilityHidden(true)
+            }
             Text(panel.title)
                 .textRole(.eyebrow)
                 .foregroundStyle(Theme.text3)
@@ -78,10 +102,8 @@ struct PanelView<Content: View>: View {
                 .help("Add inside")
                 .accessibilityLabel("Add inside \(panel.title)")
             }
-            menuButton
-            Button {
-                withAnimation(.easeOut(duration: 0.15)) { store.panels.toggle(panel) }
-            } label: {
+            if !compact { menuButton }
+            Button(action: fold) {
                 Image(systemName: "chevron.down")
                     .rotationEffect(.degrees(collapsed ? -90 : 0))
                     .textRole(.caption)
@@ -97,13 +119,6 @@ struct PanelView<Content: View>: View {
         .padding(.leading, 10)
         .padding(.trailing, 4)
         .frame(height: Self.headerHeight)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 6, coordinateSpace: .named(FilesView.space))
-                .updating($holding) { _, state, _ in state = true }
-                .onChanged { dragging.moved(panel, $0.location) }
-                .onEnded { dragging.ended(panel, $0.location) }
-        )
     }
 
     /// The ⋯ that opens the panel's menu. The picture renderer cannot draw a popover, so a still
@@ -220,6 +235,18 @@ extension EnvironmentValues {
     var stillPanelDrag: PanelDrag? {
         get { self[StillPanelDragKey.self] }
         set { self[StillPanelDragKey.self] = newValue }
+    }
+}
+
+extension BudStore {
+    /// Whether a panel is folded where it is drawn: in the stack under the words on a phone, or
+    /// in its sidebar.
+    func isPanelCollapsed(_ panel: PagePanel, compact: Bool) -> Bool {
+        compact ? phonePanels.isCollapsed(panel) : panels.isCollapsed(panel)
+    }
+
+    func togglePanel(_ panel: PagePanel, compact: Bool) {
+        if compact { phonePanels.toggle(panel) } else { panels.toggle(panel) }
     }
 }
 
