@@ -24,6 +24,14 @@ final class ModalTests: XCTestCase {
         XCTAssertEqual(ModalMetrics.cardWidth(window: 390), 358)
     }
 
+    func testTheShortcutsSheetIsAWideCardUntilTheWindowIsNarrower() {
+        XCTAssertEqual(Modal.shortcuts.width, 720)
+        XCTAssertEqual(Modal.settings.width, 480)
+        XCTAssertEqual(ModalMetrics.cardWidth(window: 1400, card: Modal.shortcuts.width), 720)
+        XCTAssertEqual(ModalMetrics.cardWidth(window: 700, card: Modal.shortcuts.width), 668)
+        XCTAssertNotEqual(Modal.shortcuts.id, Modal.settings.id)
+    }
+
     func testCardMetricsFollowTheKit() {
         XCTAssertEqual(ModalMetrics.padding, 24)
         XCTAssertEqual(ModalMetrics.appearScale, 0.96)

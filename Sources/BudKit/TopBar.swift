@@ -374,22 +374,6 @@ struct TopBar: View {
     }
 }
 
-/// A key the way the board draws it: a small rounded tile with the shortcut in it.
-struct Keycap: View {
-    let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(Theme.font(TextStyle(typeface: .mono, size: 10, weight: 500)))
-            .foregroundStyle(Theme.text3)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .overlay(RoundedRectangle(cornerRadius: Radius.keycap, style: .continuous).stroke(Theme.lineStrong, lineWidth: 1))
-    }
-}
-
 #if os(macOS)
 import AppKit
 
