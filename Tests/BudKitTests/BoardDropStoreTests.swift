@@ -23,6 +23,9 @@ final class BoardDropStoreTests: XCTestCase {
         let quote = tree.add("Printer quote", todo: true, under: kids[2].id, created: now)
         let gone = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
         tree.buds[gone].fromState = "cancelled"
+        let ticket = tree.add("Fix the footer", todo: true, under: kids[2].id, created: now)
+        let planted = try XCTUnwrap(tree.buds.firstIndex { $0.id == ticket.id })
+        tree.buds[planted].from = "linear:BUD-7"
         let vault = MemoryVault(tree: tree)
         let store = BudStore(vault: vault)
         await store.reload()
@@ -102,6 +105,59 @@ final class BoardDropStoreTests: XCTestCase {
         XCTAssertEqual(after.state, .open)
         XCTAssertNil(after.fromState)
         XCTAssertEqual(after.tags, ["waiting"])
+    }
+
+    func testAPlantedBudIsNotCancelledByHandAndTheToastSaysSo() async throws {
+        let (store, vault, _) = try await loaded()
+        let ticket = try XCTUnwrap(store.board.columns.first?.cards.first { $0.title == "Fix the footer" })
+        let before = try await record(ticket.id, in: vault)
+        XCTAssertFalse(store.drop(ticket.id, on: .cancelled))
+        await store.settle()
+        let toast = try XCTUnwrap(store.toasts.current)
+        XCTAssertEqual(toast.action.message, "Fix the footer follows its source: cancelled is its source's to set")
+        XCTAssertNil(toast.action.undo, "nothing to take back")
+        let after = try await record(ticket.id, in: vault)
+        XCTAssertEqual(after, before)
+        XCTAssertTrue(store.drop(ticket.id, on: .done), "closing it by hand is fine")
+    }
+
+    func testACardWhoseTextNamesAnotherColumnStaysThereAndTheDropIsRefused() async throws {
+        let (store, vault, center) = try await loaded()
+        let name = try XCTUnwrap(store.board.columns.first { $0.kind == .tag("researching") }?.cards.first)
+        store.setBody(name.id, "Still #waiting on the lawyer")
+        await store.settle()
+        let before = try await record(name.id, in: vault)
+        XCTAssertFalse(store.drop(name.id, on: .tag("doing")))
+        await store.settle()
+        XCTAssertEqual(store.toasts.current?.action.message, "\(name.title) stays in #waiting: its text says #waiting")
+        let after = try await record(name.id, in: vault)
+        XCTAssertEqual(after, before)
+        let researching = store.board(of: center).columns.first { $0.kind == .tag("researching") }
+        XCTAssertEqual(researching?.cards.map(\.id).contains(name.id), true, "still where it was")
+    }
+
+    func testClosingACardWithOpenToDosInsideAsksFirst() async throws {
+        let (store, vault, _) = try await loaded()
+        let sender = try XCTUnwrap(store.board.columns.first { $0.kind == .tag("waiting") }?.cards.first)
+        XCTAssertGreaterThan(store.tree.openCount(under: sender.id), 0)
+        let before = try await record(sender.id, in: vault)
+        XCTAssertFalse(store.drop(sender.id, on: .done))
+        XCTAssertEqual(store.modal, .closeBranch(id: sender.id))
+        XCTAssertNil(store.toasts.current)
+        await store.settle()
+        let after = try await record(sender.id, in: vault)
+        XCTAssertEqual(after, before)
+    }
+
+    func testABudOffTheBoardIsNotMoved() async throws {
+        let (store, vault, _) = try await loaded()
+        let other = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text != "Launch the newsletter" })
+        let before = try await record(other.id, in: vault)
+        XCTAssertFalse(store.drop(other.id, on: .done))
+        await store.settle()
+        XCTAssertNil(store.toasts.current)
+        let after = try await record(other.id, in: vault)
+        XCTAssertEqual(after, before)
     }
 
     func testACardDroppedWhereItSitsChangesNothing() async throws {

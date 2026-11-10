@@ -1371,23 +1371,44 @@ extension BudStore {
 // MARK: dropping a card on a column
 
 extension BudStore {
-    /// Drops a card on a column of the center bud's board and offers to take it back. Only the
-    /// bud's front matter changes, as `BoardDrop` spells out: its tags, its state, its cancelled
-    /// mark. Returns false when the card sits in that column already.
+    /// Drops a card of the center bud's board on one of its columns and, once the vault has
+    /// written it, offers to take it back. Only the bud's front matter changes, as `BoardDrop`
+    /// spells out: its tags, its state, its cancelled mark. A card that sits there already, or
+    /// a bud that is not on this board, stays as it is; a drop `BoardDrop.refusal` turns down
+    /// says why in a toast; closing a bud with open to-dos inside asks first, through the Close
+    /// branch dialog, as a tick does. Returns whether the card moved.
     @discardableResult
     public func drop(_ id: UUID, on column: BoardColumn.Kind) -> Bool {
-        guard let before = tree.bud(id), let drop = BoardDrop.of(before, on: column, columns: board.columnTags) else { return false }
+        let columns = board.columnTags
+        guard board.card(id) != nil, let before = tree.bud(id),
+              let drop = BoardDrop.of(before, on: column, columns: columns) else { return false }
+        if let refusal = BoardDrop.refusal(of: before, on: column, columns: columns) {
+            toasts.show(Undoable(message: refusal, systemImage: "exclamationmark.triangle"))
+            return false
+        }
+        if drop.state == .done, tree.openCount(under: id) > 0 {
+            modal = .closeBranch(id: id)
+            return false
+        }
         commit { $0.apply(drop, to: id) }
-        write { [self] _ in try await edit(id) { try await drop.write(to: $0, at: $1) } }
-        toasts.show(Undoable(message: BoardDrop.message(on: column, title: before.text)) { [weak self] in
-            Task { @MainActor in self?.undoDrop(id, drop, before: before) }
-        })
+        write { [self] _ in
+            do {
+                try await edit(id) { try await drop.write(to: $0, at: $1) }
+            } catch {
+                toasts.show(Undoable(message: BoardDrop.failure(on: column, title: before.text), systemImage: "exclamationmark.triangle"))
+                return
+            }
+            toasts.show(Undoable(message: BoardDrop.message(on: column, title: before.text)) { [weak self] in
+                Task { @MainActor in self?.undoDrop(id, drop, before: before) }
+            })
+        }
         return true
     }
 
-    /// Puts the bud back as it was before the drop, here and in the vault.
+    /// Takes the drop back, here and in the vault: what it wrote goes back as it was, and what
+    /// changed since stays.
     private func undoDrop(_ id: UUID, _ drop: BoardDrop, before: Bud) {
-        commit { $0.restoreFront(of: id, to: before) }
+        commit { $0.undo(drop, on: id, before: before) }
         write { [self] _ in try await edit(id) { try await drop.undo(to: $0, at: $1, before: before) } }
     }
 }
