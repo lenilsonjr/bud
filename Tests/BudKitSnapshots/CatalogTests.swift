@@ -9,14 +9,13 @@ import SwiftUI
 /// Every screen against a reference picture committed next to this file, under `__Snapshots__`.
 /// Each state is set through the store, never by a tap, and rendered at one pixel per point so
 /// the whole set stays small. A missing reference is recorded and fails the run; a screen that
-/// no longer matches fails with the new picture, the reference and a difference image written to
-/// `catalog` inside `BUD_SNAPSHOT_DIR`, so the run's artifact carries what changed. Like the
-/// other pictures, the catalog only runs when `BUD_SNAPSHOT_DIR` is set.
+/// no longer matches fails with the reference and a difference image beside it. Every picture
+/// taken lands in `catalog` inside `BUD_SNAPSHOT_DIR`, with `manifest.txt` saying what became
+/// of each screen, so the run's artifact carries the whole catalog and what changed in it. Like
+/// the other pictures, the catalog only runs when `BUD_SNAPSHOT_DIR` is set.
 ///
 /// `BUD_CATALOG_REFERENCES` points the run at another folder of references, which is how
 /// `scripts/compare-screens.sh` holds the working tree against the pictures of an older ref.
-/// A run like that also keeps every picture it took in `catalog`, matched or not, so the script
-/// can tell a screen that left the catalog from one that still matches.
 @MainActor
 final class CatalogTests: XCTestCase {
     /// A window the catalog renders in: its name in the file, its size in points, whether it is
@@ -86,9 +85,6 @@ final class CatalogTests: XCTestCase {
         .deletingLastPathComponent()
         .appendingPathComponent("__Snapshots__", isDirectory: true)
         .appendingPathComponent("CatalogTests", isDirectory: true)
-
-    /// Whether the run compares against another ref's references and so keeps every picture.
-    private static var comparing: Bool { otherReferences != nil }
 
     // MARK: The catalog
 
@@ -200,6 +196,9 @@ final class CatalogTests: XCTestCase {
     func testEveryScreenMatchesItsReference() throws {
         let out = try pictureFolder("catalog")
         for screen in catalog {
+            for shot in screen.shots { try note("\(screen.surface).\(screen.state)-\(shot.name)", .planned, in: out) }
+        }
+        for screen in catalog {
             for shot in screen.shots {
                 let name = "\(screen.surface).\(screen.state)-\(shot.name)"
                 do {
@@ -209,6 +208,7 @@ final class CatalogTests: XCTestCase {
                     let image = try render(store: store, in: shot.window, scheme: shot.scheme)
                     try check(image, surface: screen.surface, name: "\(screen.state)-\(shot.name)", into: out)
                 } catch {
+                    try note(name, .failed, in: out)
                     XCTFail("\(name) could not be taken: \(error)")
                     continue
                 }
@@ -220,40 +220,69 @@ final class CatalogTests: XCTestCase {
     /// content on its own, at the phone's width.
     func testThePhonePaletteMatchesItsReference() throws {
         let out = try pictureFolder("catalog")
+        let names = [ColorScheme.light, .dark].map { ($0, "palette-phone-\($0 == .dark ? "dark" : "light")") }
+        for (_, name) in names { try note("modal.\(name)", .planned, in: out) }
         let store = stillStore()
         store.sidebar = SidebarVisibility(followsWindow: true)
-        for scheme in [ColorScheme.light, .dark] {
+        for (scheme, name) in names {
             let sheet = CommandPalette(store: store, inSheet: true) { store.searching = false }
                 .frame(width: Window.phone.size.width, height: Window.phone.size.height / 2)
                 .background(Theme.raised)
                 .environment(\.compact, true)
             let image = try stillImage(sheet, scheme: scheme, scale: 1)
-            try check(image, surface: "modal", name: "palette-phone-\(scheme == .dark ? "dark" : "light")", into: out)
+            try check(image, surface: "modal", name: name, into: out)
         }
     }
 
     // MARK: Comparing
 
-    /// One picture against its reference. A mismatch, or a reference that had to be recorded,
-    /// fails the test naming the screen, and leaves what a person needs to look at in `out`:
-    /// the picture as taken, and on a mismatch the reference and the difference between them.
+    /// What became of a screen, as the manifest records it. `planned` is written before any
+    /// picture is taken and stays when the run dies before reaching the screen.
+    private enum Outcome: String {
+        case planned, matched, mismatched, recorded, failed
+    }
+
+    /// One line of `manifest.txt` in `out`: the screen and its outcome, appended, so the last
+    /// line for a name is its answer and a run that dies leaves every earlier line in place.
+    private func note(_ name: String, _ outcome: Outcome, in out: URL) throws {
+        let file = out.appendingPathComponent("manifest.txt")
+        let line = Data("\(name) \(outcome.rawValue)\n".utf8)
+        guard let handle = try? FileHandle(forWritingTo: file) else { return try line.write(to: file) }
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: line)
+    }
+
+    /// One picture against its reference. The picture as taken always lands in `out`. A
+    /// mismatch, a reference that cannot be read as a picture, or one that had to be recorded
+    /// fails the test naming the screen, and leaves the reference and the difference beside it.
     private func check(_ image: NSImage, surface: String, name: String, into out: URL) throws {
-        let reference = Self.references.appendingPathComponent("\(surface).\(name).png")
+        let screen = "\(surface).\(name)"
+        let reference = Self.references.appendingPathComponent("\(screen).png")
+        let taken = out.appendingPathComponent("\(screen).png")
+        try png(image).write(to: taken)
         // Read before the library runs: in its record modes it overwrites the reference.
         let old = NSImage(contentsOf: reference)
-        guard let failure = verifySnapshot(
-            of: image, as: strategy, named: name, snapshotDirectory: Self.references.path, testName: surface)
-        else {
-            if Self.comparing { try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png")) }
+        if old == nil, FileManager.default.fileExists(atPath: reference.path) {
+            // The library cannot decode it either, so it never sees the file. The screen counts
+            // as changed, with the picture as taken standing in for the difference.
+            try Data(contentsOf: reference).write(to: out.appendingPathComponent("\(screen).reference.png"))
+            try png(image).write(to: out.appendingPathComponent("\(screen).diff.png"))
+            try note(screen, .mismatched, in: out)
+            XCTFail("\(screen) has a reference that cannot be read as a picture; see catalog/\(screen).png")
             return
         }
-        try png(image).write(to: out.appendingPathComponent("\(surface).\(name).png"))
+        guard let failure = verifySnapshot(
+            of: image, as: strategy, named: name, snapshotDirectory: Self.references.path, testName: surface)
+        else { return try note(screen, .matched, in: out) }
         if let old {
-            try png(old).write(to: out.appendingPathComponent("\(surface).\(name).reference.png"))
-            try png(difference(old, image)).write(to: out.appendingPathComponent("\(surface).\(name).diff.png"))
-            XCTFail("\(surface).\(name) does not match its reference; see catalog/\(surface).\(name).diff.png. \(failure)")
+            try png(old).write(to: out.appendingPathComponent("\(screen).reference.png"))
+            try png(difference(old, image)).write(to: out.appendingPathComponent("\(screen).diff.png"))
+            try note(screen, .mismatched, in: out)
+            XCTFail("\(screen) does not match its reference; see catalog/\(screen).diff.png. \(failure)")
         } else {
-            XCTFail("\(surface).\(name) had no reference; recorded one. \(failure)")
+            try note(screen, .recorded, in: out)
+            XCTFail("\(screen) had no reference; recorded one. \(failure)")
         }
     }
 
