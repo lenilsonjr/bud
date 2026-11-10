@@ -969,6 +969,13 @@ final class SnapshotTests: XCTestCase {
             try data.write(to: file)
             XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
         }
+        // The newsletter bar's due end lifted over the Friday of its last week: the bar drawn
+        // stretched to it with the leaf line, the day lit, and the day said beside the pointer.
+        // The drag is set as a still picture sets it, so nothing is written.
+        let lifted = CalendarDrag(entry: issue.id, field: .due, point: CGPoint(x: 790, y: 560), over: store.now.addingTimeInterval(24 * day))
+        let dragging = BudRootView(store: store).frame(width: frame.width, height: frame.height).environment(\.stillCalendarDrag, lifted)
+        try render(dragging, scheme: .light).write(to: folder.appendingPathComponent("calendar-month-dragging-light.png"))
+        XCTAssertEqual(store.monthGrid, store.monthGrid(moving: nil), "A picture of a drag moves nothing")
         if let roadmap = store.calendarThreads.first(where: { $0.title == "Q4 roadmap" }) { store.toggleThread(roadmap.id) }
         let hidden = BudRootView(store: store).frame(width: frame.width, height: frame.height)
         try render(hidden, scheme: .light).write(to: folder.appendingPathComponent("calendar-month-thread-off-light.png"))

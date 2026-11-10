@@ -4,9 +4,20 @@ import SwiftUI
 /// The month: the weekday names over six rows of seven cells, each with its number, room for
 /// the bars crossing it and its items. Bars are drawn over their row, one piece per week, in
 /// their thread's colour, and clipped to the row; lanes the row has no room for become a
-/// "+2 more" line in each cell they cross.
+/// "+2 more" line in each cell they cross. A bar's leading edge drags its scheduled day and its
+/// trailing edge its due day; an item drags its one day. While one is in hand the grid draws the
+/// bud where it would land, lights the day under the pointer and says the day beside it; letting
+/// go on a day moves the bud there, by whole days.
 struct MonthGridView: View {
     let grid: MonthGrid
+    /// The month with a drag applied, from the store, so the bud in hand is drawn where it would land.
+    let preview: (CalendarDrag) -> MonthGrid
+    /// A day let go on a day: the field, the bud and the day.
+    let onMove: (DateField, UUID, Date) -> Void
+    @Environment(\.stillCalendarDrag) private var stillDrag
+    /// The end or item in hand and where the pointer is, in the rows' space.
+    @State private var inHand: CalendarDrag? = nil
+    @GestureState private var holding = false
 
     /// The board's measures: the number's circle, the lane a bar takes, the bar itself.
     static let numberSize: CGFloat = 22
@@ -18,6 +29,10 @@ struct MonthGridView: View {
     static let laneTop: CGFloat = cellPadding + numberSize + 3
     /// What a row keeps under its lanes for an item or the "+2 more" line.
     static let itemRoom: CGFloat = 20
+    /// How much of a bar's end takes the drag.
+    static let handleWidth: CGFloat = 16
+    /// The space the rows are measured in: the pointer and the cells agree on it.
+    static let space = "calendar-month-rows"
 
     /// How many lanes a row of this height holds above the room for one line.
     static func lanes(fitting height: CGFloat) -> Int {
@@ -25,6 +40,8 @@ struct MonthGridView: View {
     }
 
     var body: some View {
+        let moving = inHand ?? stillDrag
+        let shown = moving.map(preview) ?? grid
         VStack(spacing: 0) {
             weekdays
             GeometryReader { geo in
@@ -36,12 +53,14 @@ struct MonthGridView: View {
                         ZStack(alignment: .topLeading) {
                             HStack(spacing: 0) {
                                 ForEach(0..<CalendarMonth.columns, id: \.self) { column in
-                                    cell(row: row, column: column, fits: fits)
+                                    cell(row: row, column: column, in: shown, fits: fits, moving: moving, size: geo.size)
                                         .frame(width: width, height: height)
                                 }
                             }
-                            ForEach(grid.bars(inRow: row, fitting: fits)) { bar in
-                                BarPiece(bar: bar)
+                            ForEach(shown.bars(inRow: row, fitting: fits)) { bar in
+                                BarPiece(bar: bar, lifted: moving?.entry == bar.entry)
+                                    .overlay(alignment: .leading) { handle(bar.entry, .when, size: geo.size) }
+                                    .overlay(alignment: .trailing) { handle(bar.entry, .due, size: geo.size) }
                                     .frame(width: CGFloat(bar.columns) * width - 2 * Self.barInset, height: Self.barHeight)
                                     .offset(x: CGFloat(bar.from) * width + Self.barInset, y: Self.laneTop + CGFloat(bar.lane) * Self.laneHeight)
                             }
@@ -50,6 +69,13 @@ struct MonthGridView: View {
                         .clipped()
                     }
                 }
+                .coordinateSpace(name: Self.space)
+                .overlay(alignment: .topLeading) {
+                    if let moving, let over = moving.over {
+                        dayChip(moving.field, over).offset(x: moving.point.x + 14, y: moving.point.y + 14)
+                    }
+                }
+                .onChange(of: holding) { _, now in if !now { inHand = nil } }
             }
         }
         .background(Theme.surface)
@@ -70,11 +96,12 @@ struct MonthGridView: View {
         .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
     }
 
-    private func cell(row: Int, column: Int, fits: Int) -> some View {
-        let day = grid.month.weeks[row][column]
+    private func cell(row: Int, column: Int, in shown: MonthGrid, fits: Int, moving: CalendarDrag?, size: CGSize) -> some View {
+        let day = shown.month.weeks[row][column]
         let quiet = !day.inMonth || day.isWeekend
-        let room = min(grid.lanes[row], fits)
-        let more = grid.overflow(row: row, column: column, fitting: fits)
+        let target = moving?.over == day.date
+        let room = min(shown.lanes[row], fits)
+        let more = shown.overflow(row: row, column: column, fitting: fits)
         return VStack(alignment: .leading, spacing: 2) {
             Text("\(day.number)")
                 .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
@@ -92,7 +119,8 @@ struct MonthGridView: View {
                     .foregroundStyle(Theme.text3)
                     .padding(.horizontal, 2)
             }
-            ForEach(grid.items(row: row, column: column)) { item in
+            ForEach(shown.items(row: row, column: column)) { item in
+                let lifted = moving?.entry == item.entry
                 HStack(spacing: 5) {
                     Circle()
                         .fill(Color(item.tone.tone))
@@ -104,6 +132,9 @@ struct MonthGridView: View {
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 2)
+                .background(lifted ? Theme.leafFill : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .contentShape(Rectangle())
+                .gesture(lift(item.entry, item.isDue ? .due : .when, size: size))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(item.title), \(item.isDue ? "due" : "scheduled")")
             }
@@ -111,18 +142,64 @@ struct MonthGridView: View {
         }
         .padding(Self.cellPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(quiet ? Theme.sidebar : .clear)
+        .background(target ? Theme.leafFill : quiet ? Theme.sidebar : .clear)
         .overlay(alignment: .trailing) { Theme.line.frame(width: 1) }
         .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
+        .overlay { if target { Rectangle().strokeBorder(Theme.leafLine, lineWidth: 1) } }
         .clipped()
+    }
+
+    /// The strip at a bar's end that takes the drag: clear, over the piece, the width of a thumb.
+    private func handle(_ entry: UUID, _ field: DateField, size: CGSize) -> some View {
+        Color.clear
+            .frame(width: Self.handleWidth)
+            .contentShape(Rectangle())
+            .gesture(lift(entry, field, size: size))
+            .accessibilityHidden(true)
+    }
+
+    /// The drag that lifts a day: the pointer and the day under it while it moves, the move when
+    /// it lets go on a day, nothing when it lets go off the grid.
+    private func lift(_ entry: UUID, _ field: DateField, size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
+            .updating($holding) { _, state, _ in state = true }
+            .onChanged { value in
+                inHand = CalendarDrag(entry: entry, field: field, point: value.location, over: grid.month.day(under: value.location, in: size))
+            }
+            .onEnded { value in
+                if let day = grid.month.day(under: value.location, in: size) { onMove(field, entry, day) }
+                inHand = nil
+            }
+    }
+
+    /// The day under the pointer, said beside it: the arrow or the flag and "14 Nov".
+    private func dayChip(_ field: DateField, _ day: Date) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
+        return HStack(spacing: 5) {
+            Image(systemName: field.symbol)
+                .textRole(.caption)
+                .foregroundStyle(Theme.leaf)
+            Text(DayText.day(day, calendar: grid.month.calendar))
+                .textStyle(TextStyle(typeface: .text, size: 11, weight: 600))
+                .foregroundStyle(Theme.text)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .background(Theme.raised, in: shape)
+        .overlay(shape.stroke(Theme.leafLine, lineWidth: 1))
+        .shadow(color: Theme.shadow, radius: 6, y: 3)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
 /// One week's piece of a bar: the thread's soft fill and line, an arrow where the bud is
 /// scheduled, a flag and "due 4 Dec" where it is due, the title between. A piece holding both
-/// days leads with the arrow and ends with the flag.
+/// days leads with the arrow and ends with the flag. Lifted, it draws the leaf line instead of
+/// its thread's, since it is where it would land, not where it is.
 struct BarPiece: View {
     let bar: MonthGrid.Bar
+    var lifted: Bool = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
@@ -150,7 +227,7 @@ struct BarPiece: View {
         .padding(.horizontal, 7)
         .frame(maxHeight: .infinity)
         .background(Color(bar.tone.soft), in: shape)
-        .overlay(shape.stroke(tone, lineWidth: 1))
+        .overlay(shape.stroke(lifted ? Theme.leaf : tone, lineWidth: lifted ? 1.5 : 1))
         .clipShape(shape)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
@@ -164,6 +241,18 @@ struct BarPiece: View {
 
     private var label: String {
         bar.dueLabel.map { "\(bar.title) · \($0)" } ?? bar.title
+    }
+}
+
+/// The end or item a still picture shows in hand, since a picture has no pointer to drag one.
+struct StillCalendarDragKey: EnvironmentKey {
+    static let defaultValue: CalendarDrag? = nil
+}
+
+extension EnvironmentValues {
+    var stillCalendarDrag: CalendarDrag? {
+        get { self[StillCalendarDragKey.self] }
+        set { self[StillCalendarDragKey.self] = newValue }
     }
 }
 #endif
