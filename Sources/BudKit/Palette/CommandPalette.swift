@@ -194,17 +194,7 @@ struct CommandPalette: View {
         case .bud(let hit):
             withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: hit.id, inFiles: inFiles) }
         case .destination(let d):
-            switch d {
-            case .everything:
-                withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = rootID }
-                if inFiles { store.surface = .files }
-            case .today: store.open(.today)
-            case .todos: store.open(.todos)
-            case .pinned: store.open(.pinned)
-            case .inbox: store.openInbox()
-            case .archive: store.openArchive()
-            case .trash: store.openTrash()
-            }
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(to: d, inFiles: inFiles) }
         }
         onClose()
     }
