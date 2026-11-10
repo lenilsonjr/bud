@@ -810,12 +810,15 @@ final class StoreVaultTests: XCTestCase {
 
     func testUndoingATagRenameTakesItBackFromADeletedLensToo() async throws {
         let (store, _) = await loaded()
-        let lens = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(tags: ["garden"])))
+        let lens = try XCTUnwrap(store.saveLens("Garden", query: LensQuery(pinned: true, tags: ["garden"])))
+        // A lens on show, so the rename has a toast and an Undo of its own.
+        let shown = try XCTUnwrap(store.saveLens("Beds", query: LensQuery(tags: ["garden"])))
         store.deleteLens(lens.id)
         let deleting = try XCTUnwrap(store.toasts.current?.action.undo)
         store.renameTag("garden", to: "yard")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed #garden to #yard in 1 saved lens")
         await store.settle()
-        await undo(store) { false }
+        await undo(store) { store.saved(shown.id)?.query.tags == ["garden"] }
         deleting()
         for _ in 0..<20 { await Task.yield() }
         await store.settle()
