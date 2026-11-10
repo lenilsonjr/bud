@@ -2,8 +2,9 @@
 import SwiftUI
 
 /// The month: the weekday names over six rows of seven cells, each with its number, room for
-/// the bars crossing it and its items. Bars are drawn over the cells, one piece per week, in
-/// their thread's colour.
+/// the bars crossing it and its items. Bars are drawn over their row, one piece per week, in
+/// their thread's colour, and clipped to the row; lanes the row has no room for become a
+/// "+2 more" line in each cell they cross.
 struct MonthGridView: View {
     let grid: MonthGrid
 
@@ -15,6 +16,13 @@ struct MonthGridView: View {
     static let barInset: CGFloat = 4
     /// Where the first lane starts under a row's top: the padding, the number and a hair.
     static let laneTop: CGFloat = cellPadding + numberSize + 3
+    /// What a row keeps under its lanes for an item or the "+2 more" line.
+    static let itemRoom: CGFloat = 20
+
+    /// How many lanes a row of this height holds above the room for one line.
+    static func lanes(fitting height: CGFloat) -> Int {
+        max(0, Int((height - laneTop - itemRoom - cellPadding) / laneHeight))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,21 +30,24 @@ struct MonthGridView: View {
             GeometryReader { geo in
                 let width = geo.size.width / CGFloat(CalendarMonth.columns)
                 let height = geo.size.height / CGFloat(CalendarMonth.rows)
-                ZStack(alignment: .topLeading) {
-                    VStack(spacing: 0) {
-                        ForEach(0..<CalendarMonth.rows, id: \.self) { row in
+                let fits = Self.lanes(fitting: height)
+                VStack(spacing: 0) {
+                    ForEach(0..<CalendarMonth.rows, id: \.self) { row in
+                        ZStack(alignment: .topLeading) {
                             HStack(spacing: 0) {
                                 ForEach(0..<CalendarMonth.columns, id: \.self) { column in
-                                    cell(row: row, column: column)
+                                    cell(row: row, column: column, fits: fits)
                                         .frame(width: width, height: height)
                                 }
                             }
+                            ForEach(grid.bars(inRow: row, fitting: fits)) { bar in
+                                BarPiece(bar: bar)
+                                    .frame(width: CGFloat(bar.columns) * width - 2 * Self.barInset, height: Self.barHeight)
+                                    .offset(x: CGFloat(bar.from) * width + Self.barInset, y: Self.laneTop + CGFloat(bar.lane) * Self.laneHeight)
+                            }
                         }
-                    }
-                    ForEach(grid.bars) { bar in
-                        BarPiece(bar: bar)
-                            .frame(width: CGFloat(bar.columns) * width - 2 * Self.barInset, height: Self.barHeight)
-                            .offset(x: CGFloat(bar.from) * width + Self.barInset, y: CGFloat(bar.row) * height + Self.laneTop + CGFloat(bar.lane) * Self.laneHeight)
+                        .frame(width: geo.size.width, height: height)
+                        .clipped()
                     }
                 }
             }
@@ -59,9 +70,11 @@ struct MonthGridView: View {
         .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
     }
 
-    private func cell(row: Int, column: Int) -> some View {
+    private func cell(row: Int, column: Int, fits: Int) -> some View {
         let day = grid.month.weeks[row][column]
         let quiet = !day.inMonth || day.isWeekend
+        let room = min(grid.lanes[row], fits)
+        let more = grid.overflow(row: row, column: column, fitting: fits)
         return VStack(alignment: .leading, spacing: 2) {
             Text("\(day.number)")
                 .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
@@ -70,8 +83,14 @@ struct MonthGridView: View {
                 .background(day.isToday ? Theme.leaf : .clear, in: Circle())
                 .accessibilityLabel(day.isToday ? "Today, \(day.number)" : "\(day.number)")
             // The lanes the row's bars take, so the items sit under them.
-            if grid.lanes[row] > 0 {
-                Color.clear.frame(width: 1, height: CGFloat(grid.lanes[row]) * Self.laneHeight)
+            if room > 0 {
+                Color.clear.frame(width: 1, height: CGFloat(room) * Self.laneHeight)
+            }
+            if more > 0 {
+                Text("+\(more) more")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+                    .padding(.horizontal, 2)
             }
             ForEach(grid.items(row: row, column: column)) { item in
                 HStack(spacing: 5) {
@@ -99,8 +118,9 @@ struct MonthGridView: View {
     }
 }
 
-/// One week's piece of a bar: the thread's soft fill and line, an arrow where the bud starts, a
-/// flag and "due 4 Dec" where it is due, the title between.
+/// One week's piece of a bar: the thread's soft fill and line, an arrow where the bud is
+/// scheduled, a flag and "due 4 Dec" where it is due, the title between. A piece holding both
+/// days leads with the arrow and ends with the flag.
 struct BarPiece: View {
     let bar: MonthGrid.Bar
 
@@ -108,7 +128,7 @@ struct BarPiece: View {
         let shape = RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
         let tone = Color(bar.tone.tone)
         HStack(spacing: 5) {
-            if let symbol {
+            if let symbol = leading {
                 Image(systemName: symbol)
                     .textRole(.caption)
                     .foregroundStyle(tone)
@@ -120,6 +140,12 @@ struct BarPiece: View {
                 .strikethrough(bar.isDone, color: Theme.text3)
                 .lineLimit(1)
             Spacer(minLength: 0)
+            if bar.starts && bar.dueLabel != nil {
+                Image(systemName: "flag")
+                    .textRole(.caption)
+                    .foregroundStyle(tone)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 7)
         .frame(maxHeight: .infinity)
@@ -130,10 +156,10 @@ struct BarPiece: View {
         .accessibilityLabel(label)
     }
 
-    /// The flag where it is due; else the arrow where it starts; else nothing.
-    private var symbol: String? {
-        if bar.dueLabel != nil { return "flag" }
-        return bar.starts ? "arrow.right" : nil
+    /// The arrow where the bud is scheduled; else the flag where it is due; else nothing.
+    private var leading: String? {
+        if bar.starts { return "arrow.right" }
+        return bar.dueLabel != nil ? "flag" : nil
     }
 
     private var label: String {
