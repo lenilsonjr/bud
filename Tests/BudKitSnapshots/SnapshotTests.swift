@@ -1024,6 +1024,63 @@ final class SnapshotTests: XCTestCase {
         try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .dark).write(to: folder.appendingPathComponent("calendar-week-dark.png"))
     }
 
+    /// The Calendar view on its year and on a custom range, 1440 by 900 as the board's frames:
+    /// the seed on the still clock with the month picture's two spanning buds, and the newsletter
+    /// thread given a due day in February so the picker offers "Until … is due". A popover cannot
+    /// open in a still picture, so the picker's content is drawn in its panel over the frame,
+    /// under the segments where the board places it.
+    func testRendersTheYearAndTheRangePicker() throws {
+        let folder = try pictureFolder()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.firstWeekday = 2
+        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        defer { store.calendarState = CalendarState() }
+        let day: TimeInterval = 86_400
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
+        store.setWhen(issue.id, store.now.addingTimeInterval(3 * day))
+        store.setDue(issue.id, store.now.addingTimeInterval(20 * day))
+        let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
+        store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
+        store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
+        store.setDue(newsletter.id, store.now.addingTimeInterval(99 * day))
+        store.surface = .calendar
+        store.calendarState = CalendarState(range: .year)
+        XCTAssertEqual(store.calendarTitle, "2026")
+        XCTAssertEqual(store.yearGrid.months.count, 12)
+        XCTAssertTrue(store.yearGrid.months[10].days.contains { $0.shade != nil }, "November is shaded by the spans")
+        let frame = CGSize(width: 1440, height: 900)
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("calendar-year-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        let range = CustomRange(first: YearMonth(year: 2026, month: 11), last: YearMonth(year: 2027, month: 2))
+        store.calendarState = CalendarState(range: .custom, custom: range)
+        XCTAssertEqual(store.calendarTitle, "Nov 2026 – Feb 2027")
+        XCTAssertEqual(store.yearGrid.months.map(\.title), ["November", "December", "January", "February"])
+        XCTAssertEqual(store.rangePresets.map(\.title), ["Next 3 months", "This half", "Until Launch the newsletter is due"])
+        let panel = RoundedRectangle(cornerRadius: Radius.toast, style: .continuous)
+        let picker = RangePicker(store: store)
+            .background(Theme.raised, in: panel)
+            .overlay(panel.stroke(Theme.lineStrong, lineWidth: 1))
+        for scheme in [ColorScheme.light, .dark] {
+            let open = ZStack(alignment: .topTrailing) {
+                BudRootView(store: store).frame(width: frame.width, height: frame.height)
+                picker.padding(.top, 104).padding(.trailing, 288)
+            }
+            .frame(width: frame.width, height: frame.height)
+            let data = try render(open, scheme: scheme)
+            let file = folder.appendingPathComponent("calendar-custom-picker-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+    }
+
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
         try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
     }
