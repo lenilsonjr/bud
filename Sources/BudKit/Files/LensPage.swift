@@ -31,14 +31,15 @@ struct LensPage: View {
 }
 
 /// A saved lens's page: what its question finds across every thread, grouped by thread, with
-/// any due date beside each hit.
+/// any due date beside each hit. The store works the groups out when the tree or the lens
+/// changes, not on every publish.
 struct SavedLensPage: View {
     @ObservedObject var store: BudStore
     let lens: SavedLens
 
     var body: some View {
         LensColumn(eyebrow: "SAVED LENS · ACROSS ALL THREADS", title: lens.name) {
-            let groups = lens.query.hitsByThread(store.tree, links: store.links, on: store.now)
+            let groups = store.savedLens == lens.id ? store.savedLensThreads : []
             ForEach(groups, id: \.thread.id) { group in
                 LensGroup(store: store, name: group.thread.text, buds: group.hits, tag: { bud in bud.due.map { ("Due", $0) } })
             }

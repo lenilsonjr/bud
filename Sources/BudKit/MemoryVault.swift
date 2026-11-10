@@ -27,8 +27,12 @@ public actor MemoryVault: Vault {
         for notify in watchers.values { notify() }
     }
 
+    /// How many snapshots have been taken: each is a reload of the store over it.
+    public private(set) var snapshotsTaken = 0
+
     public func snapshot() async throws -> [BudRecord] {
-        tree.records()
+        snapshotsTaken += 1
+        return tree.records()
     }
 
     public func create(parent: String?, title: String, kind: BudKind, source: String?, preferredPath: String?) async throws -> String {
@@ -94,7 +98,15 @@ public actor MemoryVault: Vault {
     public func shared(_ map: SharedMap) async throws -> [String: String] { maps[map] ?? [:] }
 
     public func setShared(_ map: SharedMap, _ key: String, _ value: String?) async throws {
+        if refusesShared { throw VaultError.refused("shared") }
         maps[map, default: [:]][key] = value
+    }
+
+    /// While on, every write to a map beside the buds is refused: a vault that cannot write.
+    private var refusesShared = false
+
+    public func refuseShared(_ refuse: Bool) {
+        refusesShared = refuse
     }
 
     /// The first picture of each bud, by the bud's path: what a vault on disk reads through its
