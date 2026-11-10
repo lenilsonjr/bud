@@ -57,13 +57,17 @@ public struct AgentConversation: Equatable, Sendable {
     /// Whether the agent is writing back: the three dots at the end of the thread.
     public var typing: Bool
     /// Whether the page goes with the next message: the This page chip in the composer, on until
-    /// its × takes it off.
+    /// its × takes it off and off until its + brings it back.
     public var includesPage: Bool
+    /// What is typed in the composer and not sent yet. Kept here so the panel can move between
+    /// the sidebars without losing it.
+    public var draft: String
 
-    public init(entries: [Entry] = [], typing: Bool = false, includesPage: Bool = true) {
+    public init(entries: [Entry] = [], typing: Bool = false, includesPage: Bool = true, draft: String = "") {
         self.entries = entries
         self.typing = typing
         self.includesPage = includesPage
+        self.draft = draft
     }
 
     public var messages: [Message] {
@@ -141,6 +145,14 @@ public struct AgentConversation: Equatable, Sendable {
         return request(for: text, page: page)
     }
 
+    /// Sends what is typed and clears it; the words stay when nothing was sent.
+    @discardableResult
+    public mutating func sendDraft(page: Page?) -> Request? {
+        guard let request = send(draft, page: page) else { return nil }
+        draft = ""
+        return request
+    }
+
     /// A conversation about a page, for the pictures and the tests: a question answered, a
     /// change made, the person's last bubble read, the agent typing.
     public static func scripted(on page: String) -> AgentConversation {
@@ -171,6 +183,7 @@ public enum AgentText {
     public static let undone = "Undone"
     public static let send = "Send"
     public static let removePage = "Send without this page"
+    public static let addPage = "Send this page along"
     /// The thread before anything is said.
     public static let empty = "Nothing said yet."
 }
