@@ -105,7 +105,7 @@ struct CommandPalette: View {
             }
             if !compact {
                 Theme.line.frame(height: 1)
-                Text(Self.footer)
+                Text(Self.footer(keys))
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
                     .padding(.horizontal, 16)
@@ -127,8 +127,8 @@ struct CommandPalette: View {
         }
     }
 
-    /// The keys in the footer, read off the table.
-    static var footer: String {
+    /// The keys in the footer, read off the window's layout.
+    static func footer(_ keys: KeyLayout) -> String {
         let key = { (id: Command.ID) in keys.key(for: id).label }
         return "\(key(.choose)) center on canvas · \(key(.openInFiles)) open in Files · \(key(.rowUp))\(key(.rowDown)) move · \(key(.close)) back"
     }
