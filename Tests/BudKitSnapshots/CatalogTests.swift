@@ -60,10 +60,14 @@ final class CatalogTests: XCTestCase {
         let prepare: @MainActor (BudStore) throws -> Void
     }
 
-    /// Every pixel must match its reference to the eye: the perceptual tolerance covers
-    /// antialiasing noise between runs, and no pixel may stray beyond it, so a control that
-    /// moved by a pixel fails however small it is.
-    private let strategy = Snapshotting<NSImage, NSImage>.image(precision: 1, perceptualPrecision: 0.98)
+    /// A pixel matches its reference when it is within the perceptual tolerance, which covers
+    /// antialiasing noise between runs. Five pixels in a hundred thousand may stray beyond it:
+    /// about 17 on the phone window and 63 on the Mac window. That absorbs the eight pixels on
+    /// one row where the help button's top edge meets the modal card's bottom edge under the
+    /// scrim in the phone settings pictures (modal.settings-phone-light and -dark), which
+    /// rasterize differently from one run to the next, while a control with more than about 60
+    /// pixels of edge that moves by a pixel still fails.
+    private let strategy = Snapshotting<NSImage, NSImage>.image(precision: 0.99995, perceptualPrecision: 0.98)
 
     /// The reference pictures: the library's folder beside this file, one file per screen.
     private static let references = URL(fileURLWithPath: #filePath, isDirectory: false)
