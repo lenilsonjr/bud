@@ -34,6 +34,8 @@ extension Key {
 
     /// The key a press is, with the modifiers held, when the table can name it: a letter, a
     /// number or a sign, or one of the named keys. Nil for the rest, a function key or Delete.
+    /// For the iPad: on the Mac the press carries what Option made of the key, so the recorder
+    /// reads the event itself there.
     public init?(_ press: KeyPress) {
         let base: Base
         switch press.key {
@@ -48,13 +50,39 @@ extension Key {
             guard character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol else { return nil }
             base = .letter(character.lowercased().first ?? character)
         }
-        var modifiers: Modifiers = []
-        if press.modifiers.contains(.control) { modifiers.insert(.control) }
-        if press.modifiers.contains(.option) { modifiers.insert(.option) }
-        if press.modifiers.contains(.shift) { modifiers.insert(.shift) }
-        if press.modifiers.contains(.command) { modifiers.insert(.command) }
-        self.init(base, modifiers)
+        self.init(base, Modifiers(press.modifiers))
     }
+
+    #if os(macOS)
+    /// The key a Mac key event is, by its code or its characters with the modifiers ignored.
+    public init?(_ event: NSEvent) {
+        self.init(characters: event.charactersIgnoringModifiers ?? "", keyCode: event.keyCode, modifiers: Modifiers(event.modifierFlags))
+    }
+    #endif
+}
+
+extension Key.Modifiers {
+    /// The modifiers of a press, the four the table names.
+    public init(_ modifiers: EventModifiers) {
+        var out: Key.Modifiers = []
+        if modifiers.contains(.control) { out.insert(.control) }
+        if modifiers.contains(.option) { out.insert(.option) }
+        if modifiers.contains(.shift) { out.insert(.shift) }
+        if modifiers.contains(.command) { out.insert(.command) }
+        self = out
+    }
+
+    #if os(macOS)
+    /// The modifiers on a Mac key event, the four the table names.
+    public init(_ flags: NSEvent.ModifierFlags) {
+        var out: Key.Modifiers = []
+        if flags.contains(.control) { out.insert(.control) }
+        if flags.contains(.option) { out.insert(.option) }
+        if flags.contains(.shift) { out.insert(.shift) }
+        if flags.contains(.command) { out.insert(.command) }
+        self = out
+    }
+    #endif
 }
 
 extension Keys {

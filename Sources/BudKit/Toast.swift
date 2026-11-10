@@ -75,8 +75,7 @@ struct ToastView: View {
                         .buttonStyle(.plain)
                         .textRole(.label)
                         .foregroundStyle(Theme.hubAccent)
-                        .keyboardShortcut(Keys.shortcut(.undo))
-                        .disabled(keys.recording != nil)
+                        .keyboardShortcut(keys.recording == nil ? Keys.shortcut(.undo) : nil)
                 }
             }
             .padding(.horizontal, 16)

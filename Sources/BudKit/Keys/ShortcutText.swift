@@ -12,6 +12,8 @@ public enum ShortcutText {
     public static let recordingHint = "Esc cancels."
     /// The line under a row that fires everywhere once a bare key was pressed for it.
     public static let bareKeyRefused = "Hold ⌘, ⌥ or ⌃ with it: alone it would type."
+    /// The line under a row for a beat after a key the table has no name for.
+    public static let unnamedKey = "That key cannot be recorded."
 
     /// The line under the row that wants a key another holds, and the one under the holder.
     public static func taken(by holder: Command, key: Key) -> String {
@@ -34,7 +36,7 @@ public enum ShortcutText {
 
     /// The group of the keys the Mac answers to from the desktop, and the line under its title.
     public static let systemWideTitle = "From any app"
-    public static let systemWideCaption = "On the Mac, with any app in front."
+    public static let systemWideCaption = "On the Mac, with any app in front. Recording these comes later."
 
     /// A scope's title in the sheet.
     public static func groupTitle(_ scope: Command.Scope) -> String {

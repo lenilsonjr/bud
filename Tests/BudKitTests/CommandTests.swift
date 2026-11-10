@@ -92,6 +92,8 @@ final class CommandTests: XCTestCase {
         XCTAssertTrue(Key("k", .command).hasModifiers)
         XCTAssertFalse(Key("n").hasModifiers)
         XCTAssertFalse(Key(.escape).hasModifiers)
+        XCTAssertFalse(Key("o", .shift).hasModifiers, "Shift alone types a capital, so the key is bare")
+        XCTAssertTrue(Key("g", [.command, .shift]).hasModifiers)
     }
 }
 

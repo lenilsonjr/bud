@@ -1,5 +1,8 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// The keyboard shortcuts sheet (H2): every command grouped by scope, each with the key it
 /// answers to now, read from the layout so a changed key shows at once. The system-wide keys sit
@@ -8,7 +11,8 @@ import SwiftUI
 /// A click on a keycap records (H3): the row's cap says so, the sheet takes the keyboard, and
 /// the next key lands through the layout, which refuses a bare key where it would type and
 /// holds a key another row has as a conflict on both rows (H4). A changed row carries a dot
-/// and Reset; the footer counts the changes and offers Reset all.
+/// and Reset; the footer counts the changes and offers Reset all. The keys the Mac answers to
+/// from the desktop are registered once at launch, so their caps are inert for now.
 struct ShortcutSheet: View {
     let close: () -> Void
     @Environment(\.compact) private var compact
@@ -16,9 +20,15 @@ struct ShortcutSheet: View {
     @FocusState private var listening: Bool
     /// The row the pointer is over, on the Mac, where Reset waits for it and the dot stays.
     @State private var hovered: Command.ID?
+    #if os(macOS)
+    /// The ear on the key events while a row records.
+    @State private var monitor: Any?
+    #endif
 
     /// How tall the list may grow before it scrolls.
     private static let listHeight: CGFloat = 480
+    /// How long the line for a key the table cannot name stays.
+    private static let refusalBeat: Duration = .seconds(2)
 
     var body: some View {
         let groups = ShortcutText.groups()
@@ -69,26 +79,60 @@ struct ShortcutSheet: View {
         .textRole(.body)
         .tint(Theme.leaf)
         // The keys a row records come here: the sheet takes the keyboard while one records, as a
-        // field would so Space and Return are keys and not a click, and lets go when it goes.
+        // field would so Space and Return are keys and not a click, and lets go when it goes. On
+        // the Mac the event itself is read, before any view or menu row answers it.
         .focusable(true, interactions: .edit)
         .focusEffectDisabled()
         .focused($listening)
+        #if !os(macOS)
         .onKeyPress(phases: .down) { press in
             guard layout.recording != nil else { return .ignored }
-            if let key = Key(press) { layout.record(key) }
+            layout.record(Key(press))
             return .handled
         }
-        .onChange(of: layout.recording) { _, recording in listening = recording != nil }
-        .onDisappear { layout.cancelRecording() }
+        #endif
+        .onChange(of: layout.recording) { _, recording in
+            listening = recording != nil
+            #if os(macOS)
+            listen(recording != nil)
+            #endif
+        }
+        .onDisappear {
+            layout.cancelRecording()
+            #if os(macOS)
+            listen(false)
+            #endif
+        }
+        // A key the table cannot name is said so for a beat, the row still recording.
+        .task(id: layout.refusal) {
+            guard layout.refusal == .unnamed else { return }
+            do { try await Task.sleep(for: Self.refusalBeat) } catch { return }
+            layout.clearRefusal()
+        }
         .background {
             // The cap in the head and this binding read the same row of the table; while a row
             // records, Esc is the recorder's.
             Button("", action: close)
-                .keyboardShortcut(Keys.shortcut(.close))
-                .disabled(layout.recording != nil)
+                .keyboardShortcut(layout.recording == nil ? Keys.shortcut(.close) : nil)
                 .opacity(0)
         }
     }
+
+    #if os(macOS)
+    /// Hears the key for the row recording before any view or menu does, so what Option makes
+    /// of a key and a key a menu row holds both reach the recorder, and nothing else answers.
+    private func listen(_ recording: Bool) {
+        if recording, monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                Keys.layout.record(Key(event))
+                return nil
+            }
+        } else if !recording, let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+    #endif
 
     private func column(_ groups: [ShortcutText.Group]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -116,8 +160,8 @@ struct ShortcutSheet: View {
 
     private func row(_ command: Command) -> some View {
         let recording = layout.recording == command.id
-        let wants = layout.conflict?.id == command.id
-        let holds = layout.conflict?.holder == command.id
+        let wants = layout.conflicts[command.id]
+        let holds = layout.wanted(command.id)
         #if os(macOS)
         let offersReset = hovered == command.id
         #else
@@ -129,7 +173,7 @@ struct ShortcutSheet: View {
                     .textRole(.body)
                     .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
-                if (layout.isChanged(command.id) || wants) && offersReset {
+                if (layout.isChanged(command.id) || wants != nil) && offersReset {
                     Button(ShortcutText.reset) { layout.reset(command.id) }
                         .buttonStyle(.plain)
                         .textRole(.caption)
@@ -140,18 +184,16 @@ struct ShortcutSheet: View {
                         .fill(Theme.pistil)
                         .frame(width: 6, height: 6)
                 }
-                Button { layout.startRecording(command.id) } label: {
-                    if recording {
-                        Keycap(ShortcutText.recording, look: .sheet, tone: .live)
-                    } else if wants, let conflict = layout.conflict {
-                        Keycap(conflict.key, look: .sheet, tone: .taken)
-                    } else {
-                        Keycap(layout.key(for: command.id), look: .sheet, tone: holds ? .taken : .plain)
+                if layout.canRecord(command.id) {
+                    Button { layout.startRecording(command.id) } label: {
+                        cap(command, recording: recording, wants: wants, holds: holds != nil)
                     }
+                    .buttonStyle(.plain)
+                } else {
+                    cap(command, recording: false, wants: nil, holds: false)
                 }
-                .buttonStyle(.plain)
             }
-            if let line = hint(for: command) {
+            if let line = hint(for: command, recording: recording, wants: wants, holds: holds) {
                 Text(line)
                     .textRole(.caption)
                     .foregroundStyle(recording ? Theme.text3 : Theme.rose)
@@ -168,15 +210,30 @@ struct ShortcutSheet: View {
         #endif
     }
 
+    /// The row's keycap: the key it answers to, the recorder's word while it records, or the
+    /// key it wants that another row holds.
+    @ViewBuilder private func cap(_ command: Command, recording: Bool, wants: KeyLayout.Conflict?, holds: Bool) -> some View {
+        if recording {
+            Keycap(ShortcutText.recording, look: .sheet, tone: .live)
+        } else if let wants {
+            Keycap(wants.key, look: .sheet, tone: .taken)
+        } else {
+            Keycap(layout.key(for: command.id), look: .sheet, tone: holds ? .taken : .plain)
+        }
+    }
+
     /// The line under a row: how to stop while it records, why its key did not land, or which
     /// row wants the key it holds.
-    private func hint(for command: Command) -> String? {
-        if layout.recording == command.id {
-            return layout.refused ? ShortcutText.bareKeyRefused : ShortcutText.recordingHint
+    private func hint(for command: Command, recording: Bool, wants: KeyLayout.Conflict?, holds: KeyLayout.Conflict?) -> String? {
+        if recording {
+            switch layout.refusal {
+            case .bare: return ShortcutText.bareKeyRefused
+            case .unnamed: return ShortcutText.unnamedKey
+            case nil: return ShortcutText.recordingHint
+            }
         }
-        guard let conflict = layout.conflict else { return nil }
-        if conflict.id == command.id { return ShortcutText.taken(by: Command.of(conflict.holder), key: conflict.key) }
-        if conflict.holder == command.id { return ShortcutText.wanted(by: Command.of(conflict.id)) }
+        if let wants { return ShortcutText.taken(by: Command.of(wants.holder), key: wants.key) }
+        if let holds { return ShortcutText.wanted(by: Command.of(holds.id)) }
         return nil
     }
 }
