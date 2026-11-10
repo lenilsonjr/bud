@@ -134,7 +134,7 @@ public struct AgentApps: Equatable, Sendable {
         if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
             return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
     }
 
     /// Where the command line tools go: a package's own bin, Homebrew's, the system's, npm's.
