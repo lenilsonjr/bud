@@ -44,7 +44,7 @@ struct Sidebar: View {
                                 depth: row.depth,
                                 selected: onPage(bud.id),
                                 expanded: expanded.contains(bud.id),
-                                onSelect: { store.center = bud.id; store.place = nil; store.savedLens = nil },
+                                onSelect: { store.center = bud.id; store.lens = nil; store.place = nil; store.savedLens = nil },
                                 onDisclose: { toggle(bud.id) }
                             )
                             .budMenu(bud.id, store: store)

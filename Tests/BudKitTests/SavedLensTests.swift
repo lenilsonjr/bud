@@ -49,21 +49,66 @@ final class SavedLensTests: XCTestCase {
         XCTAssertNil(SavedLens.clean("   "))
     }
 
-    /// The rows a saved lens ticks ask the question it was saved from.
-    func testTheTickedRowsComeBackFromTheQuestionTheyAsked() {
-        let linked = UUID()
-        let rows: [[LensFacet]] = [
-            [.openTodos],
-            [.done],
-            [.dueToday, .pinned, .recentlyGrown],
-            [.openTodos, .tag("home"), .source("mail"), .linked(linked, title: "Pick a name")],
+    /// A question a newer build wrote, with a key or a value this one does not know, matches
+    /// nothing, and a rename here writes the question back as it was.
+    func testAQuestionFromANewerBuildMatchesNothingAndARenameKeepsIt() throws {
+        let key = UUID(), value = UUID()
+        let newer = #"{"name":"Events","query":{"kind":"event","tags":["home/kitchen"]}}"#
+        let stored = [
+            key.uuidString: #"{"name":"Mood","query":{"mood":"calm","pinned":true}}"#,
+            value.uuidString: newer,
         ]
-        for ticked in rows {
-            let query = LensFacet.query(of: ticked)!
-            let back = LensFacet.facets(of: query) { _ in "Pick a name" }
-            XCTAssertEqual(Set(back), Set(ticked))
-            XCTAssertEqual(LensFacet.query(of: back), query)
+        let read = SavedLens.read(stored)
+        XCTAssertEqual(read.map(\.name), ["Events", "Mood"])
+        var tree = Tree()
+        let pinned = tree.add("Pinned", todo: false, under: rootID)
+        tree.setPinned(pinned.id, true)
+        for lens in read {
+            XCTAssertTrue(lens.query.never)
+            XCTAssertNotNil(lens.foreign)
+            XCTAssertEqual(lens.query.hits(tree), [])
         }
+        var events = read[0]
+        events.name = "Renamed"
+        XCTAssertEqual(events.text, #"{"name":"Renamed","query":{"kind":"event","tags":["home/kitchen"]}}"#)
+        var mood = read[1]
+        mood.name = "Calm"
+        XCTAssertEqual(mood.text, #"{"name":"Calm","query":{"mood":"calm","pinned":true}}"#)
+        XCTAssertEqual(SavedLens.read([key.uuidString: mood.text!]).first?.foreign, mood.foreign, "Read again the same")
+    }
+
+    func testAQuestionThisBuildKnowsCarriesNoForeignText() {
+        let lens = SavedLens(name: "To-dos", query: .todos)
+        XCTAssertNil(SavedLens.read([lens.id.uuidString: lens.text!]).first?.foreign)
+    }
+
+    /// A saved lens on the canvas asks its own question, whatever the menu's rows can say.
+    func testASavedLensAsksItsQuestionExactly() {
+        let lens = SavedLens(name: "Notes overdue", query: LensQuery(kind: .note, day: .overdue, holdsOpen: true))
+        XCTAssertEqual(LensFacet.query(of: [.saved(lens)]), lens.query)
+        XCTAssertEqual(LensFacet.saved(lens), LensFacet.saved(SavedLens(id: lens.id, name: "Renamed", query: .todos)), "One row per lens")
+    }
+
+    /// A bud the lens is linked with that has gone keeps the lens matching nothing.
+    func testALensLinkedWithAGoneBudMatchesNothing() {
+        var tree = Tree()
+        let thread = tree.add("Thread", todo: false, under: rootID)
+        _ = tree.add("Open", todo: true, under: thread.id)
+        let lens = SavedLens(name: "Around it", query: LensQuery(kind: .todo, linked: [UUID()]))
+        XCTAssertEqual(LensFacet.query(of: [.saved(lens)])?.hits(tree), [])
+        XCTAssertEqual(LensQuery(kind: .todo).hits(tree).count, 1, "Broader, it would match")
+    }
+
+    func testALensIsRefusedWithoutAQuestionANameOrWhenSavedAlready() {
+        let kept = SavedLens(name: "To-dos", query: .todos)
+        XCTAssertEqual(SavedLens.refusal(name: "A", query: nil, saved: []), "Tick a row to save a lens")
+        XCTAssertEqual(SavedLens.refusal(name: "A", query: LensQuery(), saved: []), "Tick a row to save a lens")
+        XCTAssertEqual(SavedLens.refusal(name: "A", query: LensQuery.todos.and(LensQuery(state: .done)), saved: []),
+                       "Nothing can match these rows")
+        XCTAssertEqual(SavedLens.refusal(name: "A", query: .todos, saved: [kept]), "Saved already as To-dos")
+        XCTAssertEqual(SavedLens.refusal(name: "  ", query: .today, saved: [kept]), "Give the lens a name")
+        XCTAssertNil(SavedLens.refusal(name: "Today", query: .today, saved: [kept]))
+        XCTAssertNil(SavedLens.refusal(query: .today, saved: [kept]), "The button shows before a name")
     }
 
     func testAPageGroupsTheHitsByThread() {

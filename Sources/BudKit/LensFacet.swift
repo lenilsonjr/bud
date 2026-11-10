@@ -9,6 +9,8 @@ public enum LensFacet: Hashable, Sendable {
     case source(String)
     /// The buds linked with one bud, either way; the title is the bud's when it was picked.
     case linked(UUID, title: String)
+    /// A saved lens, asked exactly as it was saved; the name is the one it had when ticked.
+    case saved(SavedLens)
 
     public static func == (a: LensFacet, b: LensFacet) -> Bool { a.identity == b.identity }
     public func hash(into hasher: inout Hasher) { hasher.combine(identity) }
@@ -18,6 +20,7 @@ public enum LensFacet: Hashable, Sendable {
         case .tag(let tag): return "#" + BudTags.key(tag)
         case .linked(let id, _): return "@" + id.uuidString
         case .source(let key): return "from:" + key
+        case .saved(let lens): return "saved:" + lens.id.uuidString
         default: return name
         }
     }
@@ -35,6 +38,7 @@ public enum LensFacet: Hashable, Sendable {
         case .done: return "Done"
         case .tag(let tag): return "#\(tag)"
         case .linked(_, let title): return "Linked to \(title)"
+        case .saved(let lens): return lens.name
         }
     }
 
@@ -48,6 +52,7 @@ public enum LensFacet: Hashable, Sendable {
         case .done: return "checkmark.circle"
         case .tag: return "number"
         case .linked: return "link"
+        case .saved: return "line.3.horizontal.decrease.circle"
         }
     }
 
@@ -62,6 +67,7 @@ public enum LensFacet: Hashable, Sendable {
         case .done: return LensQuery(state: .done)
         case .tag(let tag): return LensQuery(tags: [tag])
         case .linked(let id, _): return LensQuery(linked: [id])
+        case .saved(let lens): return lens.query
         }
     }
 

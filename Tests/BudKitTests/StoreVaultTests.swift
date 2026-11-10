@@ -628,8 +628,9 @@ final class StoreVaultTests: XCTestCase {
         await phone.reloadLenses()
         XCTAssertEqual(phone.savedLenses, [lens])
         phone.applyLens(lens.id)
-        XCTAssertEqual(Set(phone.canvasFacets), [.openTodos, .tag("launch")])
+        XCTAssertEqual(phone.canvasFacets, [.saved(lens)])
         XCTAssertEqual(phone.canvasLens, lens.query)
+        XCTAssertNil(phone.saveLens("Again"), "Saved already")
         phone.open(saved: lens.id)
         XCTAssertEqual(phone.savedLens, lens.id)
         XCTAssertEqual(phone.surface, .files)
@@ -673,6 +674,35 @@ final class StoreVaultTests: XCTestCase {
         XCTAssertEqual(store.saved(today.id), today, "Back under the same id")
         stored = try await vault.shared(.lenses)
         XCTAssertEqual(Set(stored.keys), [errands.id.uuidString, today.id.uuidString])
+    }
+
+    func testASavedLensOnTheCanvasStaysExactWhenItsLinkedBudGoes() async throws {
+        let (store, _) = await loaded()
+        let thread = try XCTUnwrap(store.tree.children(of: rootID).first)
+        let lens = try XCTUnwrap(store.saveLens("Around it", query: LensQuery(linked: [thread.id])))
+        store.applyLens(lens.id)
+        store.trash(thread.id)
+        await store.settle()
+        XCTAssertEqual(store.canvasFacets, [.saved(lens)], "The row stays")
+        XCTAssertEqual(store.canvasLens, lens.query)
+        store.applyLens(lens.id)
+        XCTAssertEqual(store.canvasFacets, [], "Asked again, it lets go")
+    }
+
+    func testAReadOvertakenBySavingHereEndsWithTheSavedLens() async throws {
+        let (store, _) = await loaded()
+        async let reading: Void = store.reloadLenses()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        await reading
+        XCTAssertEqual(store.savedLenses, [lens])
+    }
+
+    func testStartingOverLeavesNoSavedLensPage() async throws {
+        let (store, _) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        store.open(saved: lens.id)
+        store.freshStart(sample: false)
+        XCTAssertNil(store.savedLens)
     }
 
     func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {
