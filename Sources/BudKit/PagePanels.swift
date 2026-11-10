@@ -43,23 +43,37 @@ public enum PanelSide: String, CaseIterable, Codable, Sendable {
 public struct PanelLayout: Equatable, Codable, Sendable {
     public var left: [PagePanel]
     public var right: [PagePanel]
+    /// The names another build wrote on each side that this one does not know, kept so a save
+    /// from here does not hide that build's panel: they go back at the end of their side.
+    public var unknown: [PanelSide: [String]]
 
-    public init(left: [PagePanel], right: [PagePanel]) {
+    public init(left: [PagePanel], right: [PagePanel], unknown: [PanelSide: [String]] = [:]) {
         self.left = left
         self.right = right
+        self.unknown = unknown
     }
 
     /// Reads a layout another build may have written: a panel this build does not know is
-    /// skipped, the known ones keep their order, one listed twice keeps its first place, and a
-    /// known panel on neither side is hidden.
+    /// kept aside, the known ones keep their order, one listed twice keeps its first place, and
+    /// a known panel on neither side is hidden.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         var seen: Set<PagePanel> = []
-        let once = { (names: [String]) -> [PagePanel] in
-            names.compactMap(PagePanel.init(rawValue:)).filter { seen.insert($0).inserted }
+        var unknown: [PanelSide: [String]] = [:]
+        let once = { (names: [String], side: PanelSide) -> [PagePanel] in
+            let strange = names.filter { PagePanel(rawValue: $0) == nil }
+            if !strange.isEmpty { unknown[side] = strange }
+            return names.compactMap(PagePanel.init(rawValue:)).filter { seen.insert($0).inserted }
         }
-        left = try once(container.decode([String].self, forKey: .left))
-        right = try once(container.decode([String].self, forKey: .right))
+        left = try once(container.decode([String].self, forKey: .left), .left)
+        right = try once(container.decode([String].self, forKey: .right), .right)
+        self.unknown = unknown
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(left.map(\.rawValue) + (unknown[.left] ?? []), forKey: .left)
+        try container.encode(right.map(\.rawValue) + (unknown[.right] ?? []), forKey: .right)
     }
 
     private enum CodingKeys: String, CodingKey {
