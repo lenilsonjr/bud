@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 import BudKit
