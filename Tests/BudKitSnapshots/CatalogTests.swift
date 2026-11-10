@@ -169,6 +169,9 @@ final class CatalogTests: XCTestCase {
             Screen(surface: "modal", state: "fresh-start", shots: Shot.light([.mac])) { store in
                 store.modal = .freshStart
             },
+            Screen(surface: "modal", state: "shortcuts", shots: Shot.both(.mac)) { store in
+                store.modal = .shortcuts
+            },
         ]
     }
 
