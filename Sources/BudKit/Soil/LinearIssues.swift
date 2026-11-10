@@ -36,7 +36,7 @@ public struct LinearIssues: Sendable {
         guard let nodes = ((data["viewer"] as? [String: Any])?["assignedIssues"] as? [String: Any])?["nodes"] as? [[String: Any]] else {
             throw SourceError.unreadable("assignedIssues")
         }
-        let updated = nodes.compactMap { ($0["updatedAt"] as? String).flatMap(Self.instant) }.max()
+        let updated = nodes.compactMap { ($0["updatedAt"] as? String).flatMap(SourceDates.instant) }.max()
         return (nodes.compactMap(Self.item), updated)
     }
 
@@ -46,13 +46,13 @@ public struct LinearIssues: Sendable {
     public func changed(since: Date) async throws -> Date? {
         let data = try await query("""
         query { viewer { assignedIssues(first: 1, includeArchived: true, orderBy: updatedAt, \
-        filter: { updatedAt: { gt: "\(Self.stamp(since))" } }) { nodes { updatedAt } } } }
+        filter: { updatedAt: { gt: "\(SourceDates.stamp(since))" } }) { nodes { updatedAt } } } }
         """)
         guard let nodes = ((data["viewer"] as? [String: Any])?["assignedIssues"] as? [String: Any])?["nodes"] as? [[String: Any]] else {
             return since
         }
         guard let newest = nodes.first else { return nil }
-        return (newest["updatedAt"] as? String).flatMap(Self.instant) ?? since
+        return (newest["updatedAt"] as? String).flatMap(SourceDates.instant) ?? since
     }
 
     /// Particular issues by identifier, whatever their state or assignee now: the ones found, and
@@ -107,18 +107,6 @@ public struct LinearIssues: Sendable {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: text)
-    }
-
-    static func instant(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
-    }
-
-    static func stamp(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
     }
 
     /// Runs a query and hands back its data. A refused key is unauthorized, whether the server says

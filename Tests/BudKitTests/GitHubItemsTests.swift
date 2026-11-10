@@ -48,7 +48,7 @@ final class GitHubItemsTests: XCTestCase {
         XCTAssertEqual(item.role, .reviewRequest)
         XCTAssertTrue(item.todo)
         XCTAssertFalse(item.cancelled)
-        XCTAssertEqual(item.date, GitHubItems.instant("2026-11-05T10:00:00Z"))
+        XCTAssertEqual(item.date, SourceDates.instant("2026-11-05T10:00:00Z"))
         XCTAssertEqual(item.url?.absoluteString, "https://github.com/octocat/hello-world/pull/12")
     }
 
@@ -61,12 +61,12 @@ final class GitHubItemsTests: XCTestCase {
     }
 
     func testIssuesAreLookedUpByRepositoryAndNumberAndMissingOnesSaySo() async throws {
-        let http = ScriptedHTTP([
-            (issue("octocat/hello-world", 7, "Old thing", pull: true, state: "closed", merged: true), 200),
-            ("{\"message\": \"Not Found\"}", 404),
+        let http = ScriptedHTTP([], routes: [
+            "/repos/octocat/hello-world/issues/7": (issue("octocat/hello-world", 7, "Old thing", pull: true, state: "closed", merged: true), 200),
+            "/repos/octocat/hello-world/issues/99": ("{\"message\": \"Not Found\"}", 404),
         ])
         let answer = try await GitHubItems(token: "t", http: http).issues(["octocat/hello-world#7", "octocat/hello-world#99", "nonsense"])
-        XCTAssertEqual(http.asked.map { $0.url?.path }, ["/repos/octocat/hello-world/issues/7", "/repos/octocat/hello-world/issues/99"])
+        XCTAssertEqual(http.paths, ["/repos/octocat/hello-world/issues/7", "/repos/octocat/hello-world/issues/99"])
         XCTAssertEqual(answer.found.map(\.id), ["octocat/hello-world#7"])
         XCTAssertFalse(answer.found[0].todo, "a merged pull request is done")
         XCTAssertFalse(answer.found[0].cancelled)
@@ -74,10 +74,33 @@ final class GitHubItemsTests: XCTestCase {
     }
 
     func testAnIssueThisTokenMayNotReadIsNeitherFoundNorMissing() async throws {
-        let http = ScriptedHTTP([("{\"message\": \"Forbidden\"}", 403), ("{\"message\": \"Not Found\"}", 404)])
+        let http = ScriptedHTTP([], routes: [
+            "/repos/octocat/private/issues/1": ("{\"message\": \"Forbidden\"}", 403),
+            "/repos/octocat/hello-world/issues/99": ("{\"message\": \"Not Found\"}", 404),
+        ])
         let answer = try await GitHubItems(token: "t", http: http).issues(["octocat/private#1", "octocat/hello-world#99"])
         XCTAssertEqual(answer.found, [])
         XCTAssertEqual(answer.missing, ["octocat/hello-world#99"])
+    }
+
+    func testAnIssueWhoseRepositoryMovedIsFoundUnderTheIdItWasAskedBy() async throws {
+        let http = ScriptedHTTP([], routes: [
+            "/repos/octocat/hello-world/issues/7": (issue("octocat/hello-there", 7, "Moved along", pull: true), 200),
+        ])
+        let answer = try await GitHubItems(token: "t", http: http).issues(["octocat/hello-world#7"])
+        XCTAssertEqual(answer.found.map(\.id), ["octocat/hello-world#7"], "the planted bud's key still finds it")
+        XCTAssertEqual(answer.found.first?.detail, "octocat/hello-there · Pull request", "the body can say where it went")
+    }
+
+    func testASearchRefusedForAnythingButTheTokenIsNotUnauthorized() async {
+        for status in [403, 429] {
+            do {
+                _ = try await GitHubItems(token: "t", http: ScriptedHTTP([("{\"message\": \"rate limit\"}", status)])).search(.mine)
+                XCTFail("Expected a status")
+            } catch {
+                XCTAssertEqual(error as? SourceError, .status(status))
+            }
+        }
     }
 
     func testClosedWithoutBeingDoneIsCancelled() {
@@ -114,6 +137,13 @@ final class GitHubItemsTests: XCTestCase {
         XCTAssertNil(GitHubItems.split("oc tocat/hello#12"))
         XCTAssertNil(GitHubItems.split("octocat/he/llo#12"))
         XCTAssertNil(GitHubItems.split("../x/y#1"), "nothing that could walk the address")
+    }
+
+    func testTheTokenSheetNamesEachKindsToken() {
+        XCTAssertEqual(SourcesText.tokenSheet(.github).title, "Connect GitHub")
+        XCTAssertEqual(SourcesText.tokenSheet(.github).field, "Personal access token")
+        XCTAssertEqual(SourcesText.tokenSheet(.linear).title, "Connect Linear")
+        XCTAssertEqual(SourcesText.tokenSheet(.linear).field, "Personal API key")
     }
 
     func testARefusedTokenSaysSo() async {
@@ -153,7 +183,7 @@ final class GitHubSourceTests: XCTestCase {
             (found(issue(7, "My pull request", pull: true)), 200),
         ])
         let store = store(http)
-        await store.connectGitHub(name: "", token: "t")
+        await store.connect(.github, name: "", token: "t")
         let queries = http.asked.map { URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value }
         XCTAssertEqual(queries, ["is:open is:pr review-requested:@me", "is:open is:issue assignee:@me", "is:open is:pr author:@me"])
         let account = store.accounts[0]
@@ -170,7 +200,7 @@ final class GitHubSourceTests: XCTestCase {
             (found(issue(5, "Review me", pull: true)), 200), (found(), 200), (found(issue(5, "Review me", pull: true)), 200),
         ])
         let store = store(http)
-        await store.connectGitHub(name: "Work", token: "t")
+        await store.connect(.github, name: "Work", token: "t")
         XCTAssertEqual(store.accounts[0].items.map(\.role), [.reviewRequest])
     }
 
@@ -184,7 +214,7 @@ final class GitHubSourceTests: XCTestCase {
             (found(issue(7, "Mine", pull: true)), 200, ["ETag": "\"m1\""]),
         ])
         let store = store(http)
-        await store.connectGitHub(name: "Work", token: "t")
+        await store.connect(.github, name: "Work", token: "t")
         await store.refresh()
         let tags = http.asked.map { $0.value(forHTTPHeaderField: "If-None-Match") }
         XCTAssertEqual(tags, [nil, nil, nil, "\"r1\"", "\"a1\"", nil])
@@ -193,20 +223,19 @@ final class GitHubSourceTests: XCTestCase {
     }
 
     func testAClosedItemOutsideTheSearchesIsLookedUpAndADeletedOneIsGone() async {
-        let http = ScriptedHTTP([
-            (found(issue(5, "Review me", pull: true)), 200), (found(), 200), (found(), 200),
-            (issue(7, "Shipped", pull: true, state: "closed", merged: true), 200),
-            (issue(2, "Renamed since planting", pull: false), 200),
-            ("{\"message\": \"Not Found\"}", 404),
+        let http = ScriptedHTTP([(found(issue(5, "Review me", pull: true)), 200), (found(), 200), (found(), 200)], routes: [
+            "/repos/octocat/hello-world/issues/7": (issue(7, "Shipped", pull: true, state: "closed", merged: true), 200),
+            "/repos/octocat/hello-world/issues/2": (issue(2, "Renamed since planting", pull: false), 200),
+            "/repos/octocat/hello-world/issues/99": ("{\"message\": \"Not Found\"}", 404),
         ])
         let store = store(http)
-        await store.connectGitHub(name: "Work", token: "t")
+        await store.connect(.github, name: "Work", token: "t")
         let found = await store.sightings(for: [
             ("github:octocat/hello-world#5", nil), ("github:octocat/hello-world#7", nil),
             ("github:octocat/hello-world#2", nil), ("github:octocat/hello-world#99", nil),
         ])
         XCTAssertEqual(http.asked.count, 6, "the three searches, then one read per item outside them")
-        XCTAssertEqual(http.asked[3].url?.path, "/repos/octocat/hello-world/issues/7")
+        XCTAssertTrue(http.paths.isSuperset(of: ["/repos/octocat/hello-world/issues/7", "/repos/octocat/hello-world/issues/2"]))
         guard case .seen(let open) = found["github:octocat/hello-world#5"], case .seen(let merged) = found["github:octocat/hello-world#7"],
               case .seen(let renamed) = found["github:octocat/hello-world#2"]
         else { return XCTFail("Expected all three seen: \(found)") }
@@ -216,6 +245,23 @@ final class GitHubSourceTests: XCTestCase {
         XCTAssertEqual(found["github:octocat/hello-world#99"], .gone)
     }
 
+    func testARateLimitedSearchIsAProblemReachingGitHubAndKeepsTheTags() async {
+        let http = ScriptedHTTP(headed: [
+            (found(issue(5, "Review me", pull: true)), 200, ["ETag": "\"r1\""]), (found(), 200, [:]), (found(), 200, [:]),
+            ("{\"message\": \"API rate limit exceeded\"}", 403, [:]),
+            ("", 304, [:]), (found(), 200, [:]), (found(), 200, [:]),
+        ])
+        let store = store(http)
+        let config = await store.connect(.github, name: "Work", token: "t")
+        await store.refresh()
+        XCTAssertEqual(store.problems[config.id], "Couldn't reach Work. Bud will try again.")
+        XCTAssertEqual(http.asked.count, 4, "the first search failed: the others wait for the next read")
+        await store.refresh()
+        XCTAssertEqual(http.asked[4].value(forHTTPHeaderField: "If-None-Match"), "\"r1\"", "the tag outlived the limit")
+        XCTAssertEqual(store.accounts[0].items.map(\.title), ["Review me"])
+        XCTAssertNil(store.problems[config.id])
+    }
+
     func testARefusedTokenForgetsTheTags() async {
         let http = ScriptedHTTP(headed: [
             (found(), 200, ["ETag": "\"r1\""]), (found(), 200, [:]), (found(), 200, [:]),
@@ -223,7 +269,7 @@ final class GitHubSourceTests: XCTestCase {
             (found(), 200, [:]), (found(), 200, [:]), (found(), 200, [:]),
         ])
         let store = store(http)
-        let config = await store.connectGitHub(name: "Work", token: "t")
+        let config = await store.connect(.github, name: "Work", token: "t")
         await store.refresh()
         XCTAssertEqual(store.problems[config.id], "The token was refused. Sign in again on this device.")
         await store.signIn(config.id, token: "t2")
@@ -258,6 +304,16 @@ final class GitHubLiveRulesTests: XCTestCase {
     func testANewTitleRenamesTheBud() {
         let result = LiveRules.changes(for: bud, kind: .github, sighting: .seen(pull("Fix the typo in the README")), last: SourceSnapshot(pull()), now: now)
         XCTAssertEqual(result.changes, [.rename("Fix the typo in the README"), .mark("renamed \(stamp)")])
+    }
+
+    func testTheSnapshotLeavesOutTheLastUpdateWhichMovesWithEveryComment() {
+        var item = pull()
+        item.date = now
+        XCTAssertNil(SourceSnapshot(item, kind: .github).date)
+        XCTAssertEqual(SourceSnapshot(item, kind: .linear).date, now)
+        let result = LiveRules.changes(for: bud, kind: .github, sighting: .seen(item), last: SourceSnapshot(pull(), kind: .github), now: now)
+        XCTAssertEqual(result.changes, [])
+        XCTAssertEqual(result.seen, SourceSnapshot(pull(), kind: .github, at: now), "nothing to write down again")
     }
 
     func testGoneMarksTheBudGone() {

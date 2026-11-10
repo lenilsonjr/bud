@@ -296,66 +296,11 @@ struct ConnectCalendarSheet: View {
     }
 }
 
-/// Connect Linear with a personal API key; the soil shows the open issues assigned to you.
-struct ConnectLinearSheet: View {
+/// Connect an account a token alone reads, Linear or GitHub: a name and the token, checked
+/// before the account is added.
+struct ConnectTokenSheet: View {
     @ObservedObject var sources: SourceStore
-    let close: () -> Void
-
-    @State private var name = ""
-    @State private var token = ""
-    @State private var busy = false
-    @State private var problem: String?
-    /// The check of the key, cancelled with the sheet so a retry cannot add the account twice.
-    @State private var checking: Task<Void, Never>?
-
-    var body: some View {
-        DialogBody(title: "Connect Linear", text: SourcesText.linearBody) {
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Name, as in Work", text: $name)
-                SecureField("Personal API key", text: $token)
-                    .accessibilityIdentifier("source-token")
-                if let problem {
-                    Text(problem).textRole(.caption).foregroundStyle(Theme.rose)
-                }
-            }
-            .textFieldStyle(.roundedBorder)
-        } actions: {
-            Button(action: close) { BudButtonLabel(title: "Cancel") }
-                .buttonStyle(.budSecondary)
-                .keyboardShortcut(.cancelAction)
-            Button(action: connect) { BudButtonLabel(title: busy ? "Checking…" : "Connect") }
-                .buttonStyle(.budPrimary)
-                .keyboardShortcut(.defaultAction)
-                .disabled(busy || token.isEmpty)
-        }
-        .onDisappear { checking?.cancel() }
-    }
-
-    private func connect() {
-        busy = true
-        problem = nil
-        let key = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = name
-        checking = Task {
-            do {
-                let workspace = try await sources.linearWorkspace(token: key)
-                // Cancelled while checking: the sheet is gone and must not add the account.
-                guard !Task.isCancelled else { return }
-                // Connecting reads the issues over the network; the sheet closes at once.
-                Task { await sources.connectLinear(name: name.isEmpty ? workspace : name, token: key) }
-                close()
-            } catch {
-                problem = SourcesText.problem(error)
-                busy = false
-            }
-        }
-    }
-}
-
-/// Connect GitHub with a fine-grained personal access token; the soil shows the pull requests
-/// waiting for your review, the issues assigned to you and your open pull requests.
-struct ConnectGitHubSheet: View {
-    @ObservedObject var sources: SourceStore
+    let kind: SourceKind
     let close: () -> Void
 
     @State private var name = ""
@@ -366,10 +311,11 @@ struct ConnectGitHubSheet: View {
     @State private var checking: Task<Void, Never>?
 
     var body: some View {
-        DialogBody(title: "Connect GitHub", text: SourcesText.githubBody) {
+        let words = SourcesText.tokenSheet(kind)
+        DialogBody(title: words.title, text: words.body) {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Name, as in Work", text: $name)
-                SecureField("Personal access token", text: $token)
+                SecureField(words.field, text: $token)
                     .accessibilityIdentifier("source-token")
                 if let problem {
                     Text(problem).textRole(.caption).foregroundStyle(Theme.rose)
@@ -392,14 +338,15 @@ struct ConnectGitHubSheet: View {
         busy = true
         problem = nil
         let key = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = name
+        let (kind, name) = (kind, name)
         checking = Task {
             do {
-                let user = try await sources.githubUser(token: key)
+                // The account is named after what the token reads unless a name was given.
+                let reads = try await sources.check(kind, token: key)
                 // Cancelled while checking: the sheet is gone and must not add the account.
                 guard !Task.isCancelled else { return }
-                // Connecting reads the searches over the network; the sheet closes at once.
-                Task { await sources.connectGitHub(name: name.isEmpty ? user : name, token: key) }
+                // Connecting reads the account over the network; the sheet closes at once.
+                Task { await sources.connect(kind, name: name.isEmpty ? reads : name, token: key) }
                 close()
             } catch {
                 problem = SourcesText.problem(error)
@@ -420,6 +367,14 @@ public enum SourcesText {
     public static let linearBody = "Bud shows the open issues assigned to you. Make a personal API key in Linear under Settings › Security & access."
     public static let githubBody = "Bud shows pull requests waiting for your review, issues assigned to you and your open pull requests. Make a fine-grained personal access token on GitHub under Settings › Developer settings, with read access to issues and pull requests."
     public static let noCalendars = "No calendar with events was found there."
+
+    /// The words of the sheet that connects an account with a token alone.
+    public static func tokenSheet(_ kind: SourceKind) -> (title: String, body: String, field: String) {
+        switch kind {
+        case .github: return ("Connect GitHub", githubBody, "Personal access token")
+        default: return ("Connect Linear", linearBody, "Personal API key")
+        }
+    }
     /// The servers most people use, ready to pick.
     public static let servers: [(name: String, caption: String, url: String)] = [
         ("iCloud", "Make an app password at account.apple.com", "https://caldav.icloud.com/"),

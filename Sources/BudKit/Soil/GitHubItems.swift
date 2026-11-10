@@ -57,7 +57,9 @@ public struct GitHubItems: Sendable {
             URLQueryItem(name: "q", value: query.text), URLQueryItem(name: "sort", value: "updated"),
             URLQueryItem(name: "order", value: "desc"), URLQueryItem(name: "per_page", value: String(limit)),
         ]
-        let reply = try await get(parts.url!, tag: tag)
+        // Only a refused token is unauthorized: a rate limit, an organization that wants a
+        // sign-in, or a permission gap answers 403 too, and those pass.
+        let reply = try await get(parts.url!, tag: tag, refused: [401])
         if reply.status == 304 { return (nil, tag) }
         guard (200..<300).contains(reply.status) else { throw SourceError.status(reply.status) }
         guard let nodes = Self.json(reply)?["items"] as? [[String: Any]] else { throw SourceError.unreadable("items") }
@@ -65,27 +67,32 @@ public struct GitHubItems: Sendable {
     }
 
     /// Particular issues and pull requests by `owner/repo#number`, whatever their state now: the
-    /// ones found, and the ids GitHub no longer has, deleted or never readable with this token.
-    /// One this token may not read, or GitHub could not answer for, is in neither list.
+    /// ones found, under the id they were asked by even when their repository was renamed or
+    /// moved since, and the ids GitHub no longer has, deleted or never readable with this token.
+    /// One this token may not read, or GitHub could not answer for, is in neither list. They are
+    /// read at once, in the order asked.
     public func issues(_ ids: [String]) async throws -> (found: [SourceItem], missing: [String]) {
-        var found: [SourceItem] = []
-        var missing: [String] = []
-        for id in ids {
-            guard let (owner, repo, number) = Self.split(id) else {
-                missing.append(id)
-                continue
+        let answers = try await withThrowingTaskGroup(of: (Int, SourceItem?, Bool).self) { group in
+            for (i, id) in ids.enumerated() {
+                group.addTask {
+                    guard let (owner, repo, number) = Self.split(id) else { return (i, nil, true) }
+                    let url = api.appendingPathComponent("repos/\(owner)/\(repo)/issues/\(number)")
+                    let reply = try await get(url, refused: [401])
+                    switch reply.status {
+                    case 404, 410: return (i, nil, true)
+                    case 200..<300:
+                        guard let json = Self.json(reply), var item = Self.item(json, role: nil) else { throw SourceError.unreadable("issue") }
+                        item.id = id
+                        return (i, item, false)
+                    default: return (i, nil, false)
+                    }
+                }
             }
-            let url = api.appendingPathComponent("repos/\(owner)/\(repo)/issues/\(number)")
-            let reply = try await get(url, refused: [401])
-            switch reply.status {
-            case 404, 410: missing.append(id)
-            case 200..<300:
-                guard let json = Self.json(reply), let item = Self.item(json, role: nil) else { throw SourceError.unreadable("issue") }
-                found.append(item)
-            default: continue
-            }
+            var answers: [(Int, SourceItem?, Bool)] = []
+            for try await answer in group { answers.append(answer) }
+            return answers.sorted { $0.0 < $1.0 }
         }
-        return (found, missing)
+        return (answers.compactMap(\.1), answers.filter(\.2).map { ids[$0.0] })
     }
 
     /// One issue or pull request as a soil item: its title, the repository and kind, when it was
@@ -106,7 +113,7 @@ public struct GitHubItems: Sendable {
         }
         return SourceItem(
             id: id, title: title, detail: "\(repository) · \(pull == nil ? "Issue" : "Pull request")",
-            date: (json["updated_at"] as? String).flatMap(Self.instant), role: role,
+            date: (json["updated_at"] as? String).flatMap(SourceDates.instant), role: role,
             todo: open, cancelled: !open && !done,
             url: (json["html_url"] as? String).flatMap(URL.init(string:))
         )
@@ -130,10 +137,6 @@ public struct GitHubItems: Sendable {
         guard [owner, repo].allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." } })
         else { return nil }
         return (owner, repo, number)
-    }
-
-    static func instant(_ text: String) -> Date? {
-        ISO8601DateFormatter().date(from: text)
     }
 
     /// Reads one address with the token, asking only for what changed since `tag`. A refused

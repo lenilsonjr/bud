@@ -145,9 +145,9 @@ struct ModalHost: View {
             case let .calendars(account):
                 ConnectCalendarSheet(sources: .shared, account: account, close: { store.modal = .settings })
             case .connectLinear:
-                ConnectLinearSheet(sources: .shared, close: { store.modal = .settings })
+                ConnectTokenSheet(sources: .shared, kind: .linear, close: { store.modal = .settings })
             case .connectGitHub:
-                ConnectGitHubSheet(sources: .shared, close: { store.modal = .settings })
+                ConnectTokenSheet(sources: .shared, kind: .github, close: { store.modal = .settings })
             }
         }
         .modalCard()

@@ -204,41 +204,23 @@ public final class SourceStore: ObservableObject {
         for key in calendarItems.keys where key.hasPrefix("\(id)#") { calendarItems[key] = nil }
     }
 
-    // MARK: connecting Linear
+    // MARK: connecting with a token alone
 
-    /// Checks a personal API key and hands back the name of the workspace it reads.
-    public func linearWorkspace(token: String) async throws -> String {
-        try await LinearIssues(token: token, http: http).workspace()
+    /// Checks a token of an account that needs nothing else, and hands back what it reads: the
+    /// Linear workspace, the GitHub login. Mail and calendars ask for more and have their own.
+    public func check(_ kind: SourceKind, token: String) async throws -> String {
+        switch kind {
+        case .linear: return try await LinearIssues(token: token, http: http).workspace()
+        case .github: return try await GitHubItems(token: token, http: http).user()
+        case .mail, .calendar: throw SourceError.unreadable("kind")
+        }
     }
 
-    /// Adds a Linear account that reads the open issues assigned to you, keeps its key on this
-    /// device, and reads it.
+    /// Adds an account a token alone reads, keeps the token on this device, and reads it.
     @discardableResult
-    public func connectLinear(name: String, token: String) async -> SourceConfig {
+    public func connect(_ kind: SourceKind, name: String, token: String) async -> SourceConfig {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let config = SourceConfig(kind: .linear, name: trimmed.isEmpty ? SourceKind.linear.name : trimmed)
-        configs.append(config)
-        save()
-        await share(config)
-        keep(token, for: config)
-        publish()
-        await read(config)
-        return config
-    }
-
-    // MARK: connecting GitHub
-
-    /// Checks a fine-grained personal access token and hands back the login it signs in as.
-    public func githubUser(token: String) async throws -> String {
-        try await GitHubItems(token: token, http: http).user()
-    }
-
-    /// Adds a GitHub account that reads the pull requests waiting for your review, the issues
-    /// assigned to you and your open pull requests, keeps its token on this device, and reads it.
-    @discardableResult
-    public func connectGitHub(name: String, token: String) async -> SourceConfig {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let config = SourceConfig(kind: .github, name: trimmed.isEmpty ? SourceKind.github.name : trimmed)
+        let config = SourceConfig(kind: kind, name: trimmed.isEmpty ? kind.name : trimmed)
         configs.append(config)
         save()
         await share(config)
@@ -455,45 +437,42 @@ public final class SourceStore: ObservableObject {
                 }
             case .linear:
                 // A closed issue leaves the window but is still there to read.
-                var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
-                var answered = 0
-                for config in readable where !left.isEmpty {
-                    guard let token = tokens.token(for: config.id) else { continue }
-                    let ids = left.map { SourceRowText.origin($0.from).id }
-                    guard let answer = try? await LinearIssues(token: token, http: http).issues(ids) else { continue }
-                    answered += 1
-                    for item in answer.found {
-                        found[kind.key(item.id)] = .seen(item)
-                        missingEverywhere.remove(item.id)
-                    }
-                    left = left.filter { found[$0.from] == nil }
-                }
-                if everyone, answered == readable.count {
-                    for id in missingEverywhere { found[kind.key(id)] = .gone }
+                await lookUp(left, of: kind, readable: readable, everyone: everyone, into: &found) { token, ids in
+                    try await LinearIssues(token: token, http: http).issues(ids)
                 }
             case .github:
                 // A closed issue or merged pull request leaves the searches but is still there to read.
-                var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
-                var answered = 0
-                for config in readable where !left.isEmpty {
-                    guard let token = tokens.token(for: config.id) else { continue }
-                    let ids = left.map { SourceRowText.origin($0.from).id }
-                    guard let answer = try? await GitHubItems(token: token, http: http).issues(ids) else { continue }
-                    answered += 1
-                    for item in answer.found {
-                        found[kind.key(item.id)] = .seen(item)
-                        missingEverywhere.remove(item.id)
-                    }
-                    // One this token may not read is neither seen nor missing: left out.
-                    missingEverywhere.formIntersection(answer.missing)
-                    left = left.filter { found[$0.from] == nil }
-                }
-                if everyone, answered == readable.count {
-                    for id in missingEverywhere { found[kind.key(id)] = .gone }
+                await lookUp(left, of: kind, readable: readable, everyone: everyone, into: &found) { token, ids in
+                    try await GitHubItems(token: token, http: http).issues(ids)
                 }
             }
         }
         return found.filter { key, _ in planted.contains { $0.from == key } }
+    }
+
+    /// Asks each readable account of a kind for the planted items its window did not show, with
+    /// `ask`, which says which were found and which the account no longer has. Found ones are
+    /// seen; one every account said it no longer has is gone, once every account answered. One no
+    /// account could answer for, unreadable there or a read that failed, is left out.
+    private func lookUp(
+        _ left: [(from: String, when: Date?)], of kind: SourceKind, readable: [SourceConfig], everyone: Bool,
+        into found: inout [String: Sighting], ask: (String, [String]) async throws -> (found: [SourceItem], missing: [String])
+    ) async {
+        var left = left
+        var missingEverywhere = Set(left.map { SourceRowText.origin($0.from).id })
+        var answered = 0
+        for config in readable where !left.isEmpty {
+            guard let token = tokens.token(for: config.id) else { continue }
+            let ids = left.map { SourceRowText.origin($0.from).id }
+            guard let answer = try? await ask(token, ids) else { continue }
+            answered += 1
+            for item in answer.found { found[kind.key(item.id)] = .seen(item) }
+            missingEverywhere.formIntersection(answer.missing)
+            left = left.filter { found[$0.from] == nil }
+        }
+        if everyone, answered == readable.count {
+            for id in missingEverywhere { found[kind.key(id)] = .gone }
+        }
     }
 
     private func save() {

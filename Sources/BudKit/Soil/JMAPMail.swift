@@ -3,18 +3,16 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Sends one request and hands back the body and status. A stand-in replaces it in tests.
+/// Sends one request and hands back the reply. A stand-in replaces it in tests.
 public protocol HTTP: Sendable {
-    func send(_ request: URLRequest) async throws -> (Data, Int)
-    /// The same, with the reply's headers, for a source that asks whether anything changed by ETag.
     func exchange(_ request: URLRequest) async throws -> HTTPReply
 }
 
 extension HTTP {
-    /// A stand-in that scripts bodies alone answers without headers.
-    public func exchange(_ request: URLRequest) async throws -> HTTPReply {
-        let (body, status) = try await send(request)
-        return HTTPReply(body: body, status: status)
+    /// The body and status alone, for a source that never reads a header.
+    public func send(_ request: URLRequest) async throws -> (Data, Int) {
+        let reply = try await exchange(request)
+        return (reply.body, reply.status)
     }
 }
 
@@ -40,11 +38,6 @@ public struct HTTPReply: Sendable {
 /// address, method and body included, which the session would not do for a PROPFIND.
 public struct NetworkHTTP: HTTP {
     public init() {}
-
-    public func send(_ request: URLRequest) async throws -> (Data, Int) {
-        let reply = try await exchange(request)
-        return (reply.body, reply.status)
-    }
 
     public func exchange(_ request: URLRequest) async throws -> HTTPReply {
         var request = request
@@ -181,7 +174,7 @@ public struct JMAPMail: Sendable {
         let sender = (email["from"] as? [[String: Any]])?.first
         let name = (sender?["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? sender?["email"] as? String
         let keywords = email["keywords"] as? [String: Any] ?? [:]
-        let date = (email["receivedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+        let date = (email["receivedAt"] as? String).flatMap(SourceDates.instant)
         return SourceItem(
             id: id, title: subject, detail: name, date: date,
             unread: keywords["$seen"] == nil, todo: keywords["$flagged"] != nil

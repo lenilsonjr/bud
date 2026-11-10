@@ -18,6 +18,26 @@ public enum SourceKind: String, CaseIterable, Codable, Sendable {
     public func key(_ id: String) -> String { "\(rawValue):\(id)" }
 }
 
+/// Instants as sources write them, read with formatters made once.
+public enum SourceDates {
+    private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let whole = ISO8601DateFormatter()
+
+    /// `2026-11-05T10:00:00.000Z`, with or without the fraction.
+    public static func instant(_ text: String) -> Date? {
+        fractional.date(from: text) ?? whole.date(from: text)
+    }
+
+    /// The same, with the fraction, for a query that asks since an instant.
+    public static func stamp(_ date: Date) -> String {
+        fractional.string(from: date)
+    }
+}
+
 /// One thing a source shows below the soil: an email, an event, an issue. Nothing about it is
 /// written to the vault until it is planted.
 public struct SourceItem: Hashable, Codable, Sendable, Identifiable {
