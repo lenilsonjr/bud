@@ -705,6 +705,54 @@ fn a_boards_columns_reach_the_peer_and_a_change_there_comes_back() {
 }
 
 #[test]
+fn a_saved_lens_reaches_the_peer_and_a_rename_or_delete_there_comes_back() {
+    let (mut a, mut b) = pair();
+    assert!(a.vault.lenses().unwrap().is_empty());
+    a.vault
+        .set_lens(
+            "lens-1",
+            Some(r#"{"name":"Kitchen","query":{"tags":["home"]}}"#),
+        )
+        .unwrap();
+    a.vault
+        .set_lens(
+            "lens-2",
+            Some(r#"{"name":"Mail","query":{"source":"mail"}}"#),
+        )
+        .unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(
+        b.vault.lenses().unwrap(),
+        [
+            (
+                "lens-1".to_string(),
+                r#"{"name":"Kitchen","query":{"tags":["home"]}}"#.to_string()
+            ),
+            (
+                "lens-2".to_string(),
+                r#"{"name":"Mail","query":{"source":"mail"}}"#.to_string()
+            ),
+        ]
+    );
+
+    b.vault
+        .set_lens(
+            "lens-1",
+            Some(r#"{"name":"Home","query":{"tags":["home"]}}"#),
+        )
+        .unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(
+        a.vault.lenses().unwrap()[0].1,
+        r#"{"name":"Home","query":{"tags":["home"]}}"#
+    );
+
+    a.vault.set_lens("lens-2", None).unwrap();
+    exchange(&mut a, &mut b);
+    assert_eq!(b.vault.lenses().unwrap().len(), 1);
+}
+
+#[test]
 fn a_folder_file_deleted_outside_leaves_the_bud_at_its_folder_with_its_identity() {
     let (mut a, mut b) = pair();
     a.write("Routines.md", "---\npinned: true\n---\nWritten elsewhere\n");

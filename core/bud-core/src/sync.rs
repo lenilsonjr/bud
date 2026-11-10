@@ -941,6 +941,17 @@ impl Vault {
         self.set_shared("board", key, columns)
     }
 
+    /// The lenses the person named and kept, as the app wrote them: one per lens under its
+    /// own id, so every replica offers the same.
+    pub fn lenses(&self) -> Result<Vec<(String, String)>> {
+        self.shared("lenses")
+    }
+
+    /// Keep one saved lens; none deletes it.
+    pub fn set_lens(&mut self, id: &str, lens: Option<&str>) -> Result<()> {
+        self.set_shared("lenses", id, lens)
+    }
+
     /// A map of text the tree document carries beside the buds, sorted by key.
     fn shared(&self, name: &str) -> Result<Vec<(String, String)>> {
         let tree = self.load_tree()?;
