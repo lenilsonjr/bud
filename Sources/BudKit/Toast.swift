@@ -54,7 +54,7 @@ import SwiftUI
 struct ToastView: View {
     @ObservedObject var center: ToastCenter
     /// Undo's key is the recorder's while the shortcuts sheet records one.
-    @ObservedObject private var keys = Keys.layout
+    @ObservedObject var keys: KeyLayout
 
     var body: some View {
         if let toast = center.current {
@@ -75,7 +75,7 @@ struct ToastView: View {
                         .buttonStyle(.plain)
                         .textRole(.label)
                         .foregroundStyle(Theme.hubAccent)
-                        .keyboardShortcut(keys.recording == nil ? Keys.shortcut(.undo) : nil)
+                        .keyboardShortcut(keys.recording == nil ? keys.key(for: .undo).shortcut : nil)
                 }
             }
             .padding(.horizontal, 16)

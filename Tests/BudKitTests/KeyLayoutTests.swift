@@ -474,6 +474,31 @@ final class KeyLayoutTests: XCTestCase {
         XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).overrides, [.nextMatch: Key("m", .command)], "Two stored keys alike: the first in the table's order is let go")
     }
 
+    func testALayoutOnItsOwnSuiteIgnoresAKeyRecordedInAnother() throws {
+        let elsewhere = try desktop()
+        elsewhere.startRecording(.goAnywhere)
+        XCTAssertEqual(elsewhere.record(Key("p", .command)), .bound)
+        elsewhere.startRecording(.capture)
+        XCTAssertEqual(elsewhere.record(Key("k", .option), at: 40), .bound)
+        XCTAssertEqual(elsewhere.changed, 2)
+        let name = "bud.tests.still.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        let still = KeyLayout(defaults: defaults, desktop: true)
+        XCTAssertEqual(still.changed, 0, "A suite of its own holds none of the other's keys")
+        XCTAssertEqual(still.key(for: .goAnywhere), Key("k", .command))
+        XCTAssertEqual(still.key(for: .capture), Key(.space, .option))
+        XCTAssertEqual(still.hotKeys, [:])
+        for command in Command.all {
+            XCTAssertFalse(still.isChanged(command.id), "\(command.id) shows no dot")
+        }
+        still.startRecording(.soil)
+        XCTAssertEqual(still.record(Key("l", .command)), .bound)
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: true).changed, 1, "A key recorded here lands in this suite")
+        XCTAssertFalse(elsewhere.isChanged(.soil), "And in no other")
+        XCTAssertEqual(elsewhere.changed, 2)
+    }
+
     func testTheAppsKeysReadThroughTheLayoutOnThisDevice() {
         for command in Command.all {
             XCTAssertEqual(Keys.key(for: command.id), Keys.layout.key(for: command.id))

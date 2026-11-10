@@ -408,7 +408,7 @@ final class SnapshotTests: XCTestCase {
 
     func testRendersTheShortcutSheet() throws {
         let folder = try pictureFolder()
-        let store = BudStore(fileURL: nil)
+        let store = stillStore()
         for scheme in [ColorScheme.light, .dark] {
             store.modal = nil
             try render(store: store, scheme: scheme).write(to: folder.appendingPathComponent("help-button-\(scheme == .dark ? "dark" : "light").png"))

@@ -34,7 +34,7 @@ public struct BudRootView: View {
         .overlay { ModalHost(store: store) }
         // Above the modal too, so a toast from a dialog shows while Settings still covers the window.
         .overlay(alignment: .bottom) {
-            ToastView(center: store.toasts)
+            ToastView(center: store.toasts, keys: store.keys)
                 .padding(12)
                 .animation(.spring(duration: 0.4, bounce: 0.2), value: store.toasts.current?.id)
         }
@@ -78,7 +78,7 @@ public struct BudRootView: View {
 
     /// A window key's shortcut, or none while the shortcuts sheet records a key.
     private func windowKey(_ id: Command.ID) -> KeyboardShortcut? {
-        Keys.layout.recording == nil ? Keys.shortcut(id) : nil
+        store.keys.recording == nil ? store.keys.key(for: id).shortcut : nil
     }
 
     /// The help button at the bottom right of the window, on the Mac only: the sheet under it

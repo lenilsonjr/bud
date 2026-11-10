@@ -105,6 +105,8 @@ final class CommandTests: XCTestCase {
 }
 
 #if canImport(SwiftUI)
+import Combine
+
 @MainActor
 final class CommandStoreTests: XCTestCase {
     private func store() -> (BudStore, UUID) {
@@ -328,11 +330,19 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.modal, .settings)
     }
 
-    func testEveryKeyIsTheRecordersWhileARowRecords() {
-        let (store, _) = store()
-        defer { Keys.layout.cancelRecording() }
+    /// A layout on a suite of its own, so the test records nothing into the process's defaults.
+    private func keys() throws -> KeyLayout {
+        let name = "bud.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        return KeyLayout(defaults: defaults, desktop: false)
+    }
+
+    func testEveryKeyIsTheRecordersWhileARowRecords() throws {
+        let keys = try keys()
+        let store = BudStore(fileURL: nil, keys: keys)
         store.perform(.shortcuts)
-        Keys.layout.startRecording(.soil)
+        keys.startRecording(.soil)
         XCTAssertFalse(store.allows(.shortcuts), "Not even the sheet's own key closes it")
         XCTAssertFalse(store.perform(.shortcuts))
         XCTAssertEqual(store.modal, .shortcuts)
@@ -342,9 +352,25 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertFalse(store.perform(.back))
         XCTAssertNil(store.lastCommand)
         store.modal = .shortcuts
-        Keys.layout.cancelRecording()
+        keys.cancelRecording()
         XCTAssertTrue(store.perform(.shortcuts))
         XCTAssertNil(store.modal)
+    }
+
+    func testTheStoreReadsTheLayoutItWasGivenAndTheAppsOtherwise() throws {
+        XCTAssertTrue(BudStore(fileURL: nil).keys === Keys.layout, "The app's store reads the app's keys")
+        let keys = try keys()
+        let store = BudStore(fileURL: nil, keys: keys)
+        XCTAssertTrue(store.keys === keys)
+        var changes = 0
+        let feed = store.objectWillChange.sink { _ in changes += 1 }
+        defer { feed.cancel() }
+        keys.startRecording(.soil)
+        XCTAssertGreaterThanOrEqual(changes, 1, "The layout's change goes out as the store's")
+        XCTAssertFalse(store.allows(.goAnywhere), "The store's own layout is the one recording")
+        XCTAssertNil(Keys.layout.recording, "The app's layout heard nothing")
+        keys.cancelRecording()
+        XCTAssertTrue(store.allows(.goAnywhere))
     }
 
     func testCloseOrReopenTicksThePage() throws {

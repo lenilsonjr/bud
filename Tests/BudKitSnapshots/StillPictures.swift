@@ -17,10 +17,20 @@ extension XCTestCase {
         DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
     }
 
-    /// The seed world on the fixed clock, which the store reads from its device store.
+    /// The table's keys and none recorded over them, on a suite of their own wiped first, so the
+    /// shortcuts sheet draws the same keycaps whatever the process's defaults hold.
+    var stillKeys: KeyLayout {
+        let name = "bud.still.keys"
+        let defaults = UserDefaults(suiteName: name) ?? .standard
+        defaults.removePersistentDomain(forName: name)
+        return KeyLayout(defaults: defaults)
+    }
+
+    /// The seed world on the fixed clock, which the store reads from its device store, with the
+    /// still keys.
     @MainActor
     func stillStore(devices: DeviceStore? = nil) -> BudStore {
-        BudStore(fileURL: nil, devices: devices ?? stillDevices())
+        BudStore(fileURL: nil, devices: devices ?? stillDevices(), keys: stillKeys)
     }
 
     /// The folder the pictures go to, created. Skips the test when `BUD_SNAPSHOT_DIR` is not
