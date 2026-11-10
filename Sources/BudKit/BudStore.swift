@@ -893,8 +893,8 @@ public final class BudStore: ObservableObject {
                 let message = SavedLens.tagRenameMessage(
                     from: from, to: to, buds: buds, lenses: plan.asked, merged: plan.merged, lensesRefused: refused
                 )
-                let undo: (@Sendable () -> Void)? = refused && !reachesBuds ? nil : { [weak self] in
-                    Task { @MainActor in
+                let undoAll: @Sendable () -> Void = { [weak self] in
+                    Task { @MainActor () async -> Void in
                         guard let self else { return }
                         if reachesBuds { self.undoRenameTag(edits) }
                         // Each lens it reached goes back, unless it has been changed since.
@@ -908,6 +908,8 @@ public final class BudStore: ObservableObject {
                         }
                     }
                 }
+                // Nothing was changed when the vault refused the lenses and no bud was reached.
+                let undo = refused && !reachesBuds ? nil : undoAll
                 self.toasts.show(Undoable(message: message, systemImage: refused ? "exclamationmark.triangle" : "number", undo: undo))
             }
         }
