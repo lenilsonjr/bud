@@ -127,11 +127,7 @@ struct CalendarView: View {
                     quiet(store.calendarState.layout.comingLine)
                 }
             } else if store.calendarState.range == .month {
-                MonthGridView(
-                    grid: store.monthGrid,
-                    preview: { store.monthGrid(moving: $0) },
-                    onMove: { store.moveDate($0, of: $1, to: $2) }
-                )
+                MonthGridView(grid: store.monthGrid, onMove: { store.moveDate($0, of: $1, to: $2) })
             } else if store.calendarState.range == .day {
                 TimelineView(.periodic(from: .now, by: 60)) { _ in DayView(plan: store.dayPlan) }
             } else if store.calendarState.range == .week {

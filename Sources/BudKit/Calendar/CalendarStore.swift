@@ -12,42 +12,35 @@ extension BudStore {
 
     /// The month on show with its buds placed, after the threads and switches. Built from one
     /// walk of the tree; a view reads it once a render.
-    public var monthGrid: MonthGrid { monthGrid(moving: nil) }
-
-    /// The month as it would stand with a drag dropped where it is: the bud in hand drawn with
-    /// its day on the one under the pointer, so the bar stretches or the item moves as the
-    /// pointer crosses the cells. The month itself with no drag.
-    public func monthGrid(moving drag: CalendarDrag?) -> MonthGrid {
+    public var monthGrid: MonthGrid {
         let month = CalendarMonth(containing: calendarFocus, now: now, calendar: calendar)
-        let entries = CalendarEntry.all(in: tree, calendar: calendar).moving(drag, calendar: calendar)
-        return MonthGrid(month: month, entries: entries, state: calendarState)
+        return MonthGrid(month: month, entries: CalendarEntry.all(in: tree, calendar: calendar), state: calendarState)
     }
 
     /// Moves one of a bud's days onto `day`, keeping its time of day, and offers to move it
     /// back. Only that key reaches the file: `when` or `due`, nothing else. The one step every
     /// drag on a calendar ends in, whichever view it was dragged in; a drop on the day it is
-    /// already on changes nothing and says nothing.
-    public func moveDate(_ field: DateKey, of id: UUID, to day: Date) {
-        guard let bud = tree.bud(id), let old = field == .when ? bud.when : bud.due else { return }
-        let new = field.moved(old, toDay: day, calendar: calendar)
+    /// already on changes nothing and says nothing. A routine shown on its stamped day has no
+    /// `when` of its own: dragging it gives it one, and Undo takes it away again.
+    public func moveDate(_ key: DateKey, of id: UUID, to day: Date) {
+        guard let bud = tree.bud(id) else { return }
+        // What the file carries, which Undo puts back: nil for a routine on its stamped day.
+        let kept = key == .when ? bud.when : bud.due
+        let stamped = key == .when && bud.when == nil ? bud.from.flatMap(Tree.stampOccurrence) : nil
+        guard let old = kept ?? stamped else { return }
+        let new = key.moved(old, toDay: day, calendar: calendar)
         guard calendar.startOfDay(for: new) != calendar.startOfDay(for: old) else { return }
-        set(field, of: id, to: new)
-        let label = DayText.day(new, calendar: calendar)
-        let message = field == .when ? "Scheduled \(bud.text) for \(label)" : "Made \(bud.text) due \(label)"
-        toasts.show(Undoable(message: message, systemImage: field == .when ? "calendar" : "flag") { [weak self] in
-            Task { @MainActor in self?.set(field, of: id, to: old) }
+        set(key, of: id, to: new)
+        let label = DayText.short(new, calendar: calendar)
+        let message = key == .when ? "Scheduled \(bud.text) for \(label)" : "Made \(bud.text) due \(label)"
+        toasts.show(Undoable(message: message, systemImage: key == .when ? "calendar" : "flag") { [weak self] in
+            Task { @MainActor in self?.set(key, of: id, to: kept) }
         })
     }
 
-    /// A bar's leading edge let go on a day.
-    public func moveWhen(of id: UUID, to day: Date) { moveDate(.when, of: id, to: day) }
-
-    /// A bar's trailing edge let go on a day.
-    public func moveDue(of id: UUID, to day: Date) { moveDate(.due, of: id, to: day) }
-
     /// The one day's write, here and in the vault, without a toast.
-    private func set(_ field: DateKey, of id: UUID, to date: Date?) {
-        switch field {
+    private func set(_ key: DateKey, of id: UUID, to date: Date?) {
+        switch key {
         case .when: setWhen(id, date)
         case .due: setDue(id, date)
         }
