@@ -71,6 +71,17 @@ final class AgentConversationTests: XCTestCase {
         XCTAssertEqual(chat.send("again", page: page)?.page, nil)
     }
 
+    func testSendingTheDraftClearsItOnlyWhenSomethingWasSent() {
+        var chat = AgentConversation(draft: "  ")
+        XCTAssertNil(chat.sendDraft(page: page))
+        XCTAssertEqual(chat.draft, "  ", "Nothing sent, the words stay")
+        chat.draft = "make a checklist"
+        XCTAssertEqual(chat.sendDraft(page: page), AgentConversation.Request(text: "make a checklist", page: page))
+        XCTAssertEqual(chat.draft, "")
+        XCTAssertEqual(chat.messages.map(\.text), ["make a checklist", AgentText.noAgent])
+        XCTAssertEqual(AgentConversation().draft, "")
+    }
+
     func testTheWordsReadAsTheDesignWritesThem() {
         XCTAssertEqual(AgentText.noAgent, "No agent is set up yet.")
         XCTAssertEqual(AgentText.thisPage, "This page")
@@ -79,6 +90,8 @@ final class AgentConversationTests: XCTestCase {
         XCTAssertEqual(AgentText.undone, "Undone")
         XCTAssertEqual(AgentText.send, "Send")
         XCTAssertEqual(AgentText.placeholder, "Text the agent")
+        XCTAssertEqual(AgentText.removePage, "Send without this page")
+        XCTAssertEqual(AgentText.addPage, "Send this page along")
         XCTAssertEqual(AgentText.empty, "Nothing said yet.")
         XCTAssertEqual(PagePanel.agent.title, "Agent")
     }
