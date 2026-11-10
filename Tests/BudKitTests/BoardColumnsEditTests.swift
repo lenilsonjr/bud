@@ -66,40 +66,46 @@ final class BoardColumnsEditTests: XCTestCase {
 
     func testThePickerListsTheBoardsTagsThenTheOthersAndOffersANewOne() {
         let (tree, center) = world()
-        let inside = tree.walk(under: center)
-        let columns = BoardColumns(tags: ["waiting"])
-        let all = BoardTagChoices.rows(for: "", columns: columns, inside: inside, counts: tree.tagCounts())
+        let source = BoardTagSource(columns: BoardColumns(tags: ["waiting"]), inside: tree.walk(under: center), counts: tree.tagCounts())
+        XCTAssertEqual(source.carried, ["researching", "waiting", "doing"])
+        let all = BoardTagChoices.rows(for: "", in: source)
         XCTAssertEqual(all.onBoard, [.init(tag: "waiting", hasColumn: true), .init(tag: "researching"), .init(tag: "doing")], "The columns first, then the tags inside without one")
         XCTAssertEqual(all.others.map(\.tag), ["someday", "blocked", "this-week"], "Most used first")
         XCTAssertNil(all.create, "Nothing typed, nothing to create")
         XCTAssertEqual(all.pickable.map(\.tag), ["researching", "doing", "someday", "blocked", "this-week"])
         XCTAssertEqual(all.count, 5)
 
-        let typed = BoardTagChoices.rows(for: "#Bl", columns: columns, inside: inside, counts: tree.tagCounts())
+        let typed = BoardTagChoices.rows(for: "#Bl", in: source)
         XCTAssertEqual(typed.onBoard, [])
         XCTAssertEqual(typed.others.map(\.tag), ["blocked"])
         XCTAssertEqual(typed.create, "Bl", "What is typed can still be a new tag of its own, as the tag picker offers it")
 
-        let new = BoardTagChoices.rows(for: "lawyer", columns: columns, inside: inside, counts: tree.tagCounts())
+        let new = BoardTagChoices.rows(for: "lawyer", in: source)
         XCTAssertEqual(new.onBoard, [])
         XCTAssertEqual(new.others, [])
         XCTAssertEqual(new.create, "lawyer")
         XCTAssertEqual(new.count, 1)
         XCTAssertEqual(BoardColumnText.create("lawyer"), "New tag column #lawyer")
 
-        let column = BoardTagChoices.rows(for: "WAITING", columns: columns, inside: inside, counts: tree.tagCounts())
+        let column = BoardTagChoices.rows(for: "WAITING", in: source)
         XCTAssertEqual(column.onBoard, [.init(tag: "waiting", hasColumn: true)])
         XCTAssertNil(column.create, "A column it has is not created again")
         XCTAssertEqual(column.count, 0)
 
-        let bad = BoardTagChoices.rows(for: "some day", columns: columns, inside: inside, counts: tree.tagCounts())
+        let bad = BoardTagChoices.rows(for: "some day", in: source)
         XCTAssertNil(bad.create, "Not a tag")
     }
 
     func testThePickerPutsTheTagsThatStartWithTheTypedFirst() {
         let counts = [TagCount(tag: "ing-bound", buds: 3), TagCount(tag: "doing", buds: 2), TagCount(tag: "ingest", buds: 1)]
-        let rows = BoardTagChoices.rows(for: "ing", columns: BoardColumns(tags: []), inside: [], counts: counts)
+        let source = BoardTagSource(columns: BoardColumns(tags: []), carried: [], counts: counts)
+        let rows = BoardTagChoices.rows(for: "ing", in: source)
         XCTAssertEqual(rows.others.map(\.tag), ["ing-bound", "ingest", "doing"])
+        let many = BoardTagSource(columns: BoardColumns(tags: []), carried: ["c1", "c2"], counts: (1...9).map { TagCount(tag: "t\($0)", buds: 1) })
+        let capped = BoardTagChoices.rows(for: "", in: many, limit: 3)
+        XCTAssertEqual(capped.onBoard.map(\.tag), ["c1", "c2"])
+        XCTAssertEqual(capped.others.map(\.tag), ["t1", "t2", "t3"], "Each group at most the limit; typing narrows")
+        XCTAssertEqual(BoardTagChoices.rows(for: "t9", in: many, limit: 3).others.map(\.tag), ["t9"])
     }
 
     func testTheHeaderMenuMovesOrRemovesAColumnAndNothingElse() {
@@ -126,11 +132,12 @@ final class BoardColumnsEditTests: XCTestCase {
             "b": CGRect(x: 110, y: 0, width: 100, height: 400),
             "c": CGRect(x: 220, y: 0, width: 100, height: 400),
         ]
-        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 10, y: 50), frames: frames, tags: tags).gap, 0)
-        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 60, y: 50), frames: frames, tags: tags).gap, 1)
-        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 200, y: 50), frames: frames, tags: tags).gap, 2)
-        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 900, y: 50), frames: frames, tags: tags).gap, 3)
-        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 900, y: 50), frames: [:], tags: tags).gap, 0, "No frames yet: the start")
+        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 10, y: 50), frames: frames, tags: tags)?.gap, 0)
+        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 60, y: 50), frames: frames, tags: tags)?.gap, 1)
+        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 200, y: 50), frames: frames, tags: tags)?.gap, 2)
+        XCTAssertEqual(BoardColumnDrop.under(CGPoint(x: 900, y: 50), frames: frames, tags: tags)?.gap, 3)
+        XCTAssertNil(BoardColumnDrop.under(CGPoint(x: 900, y: 50), frames: [:], tags: tags), "No frames yet: no gap, so no move")
+        XCTAssertNil(BoardColumnDrop.under(CGPoint(x: 900, y: 50), frames: ["x": frames["a"]!], tags: tags))
 
         let before = BoardColumnDrop(gap: 1)
         XCTAssertEqual(before.line(on: "b", in: tags), .before)
@@ -150,13 +157,18 @@ final class BoardColumnsEditTests: XCTestCase {
         let tags = ["a", "b", "c"]
         let own = BoardColumnDrag(tag: "b", point: .zero, drop: BoardColumnDrop(gap: 1))
         XCTAssertNil(own.line(on: "b", in: tags), "Before itself changes nothing")
+        XCTAssertNil(own.target(in: tags), "So a drop there moves nothing")
         let next = BoardColumnDrag(tag: "b", point: .zero, drop: BoardColumnDrop(gap: 2))
         XCTAssertNil(next.line(on: "c", in: tags), "After itself changes nothing")
+        XCTAssertNil(next.target(in: tags))
         let far = BoardColumnDrag(tag: "b", point: .zero, drop: BoardColumnDrop(gap: 3))
         XCTAssertEqual(far.line(on: "c", in: tags), .after)
+        XCTAssertEqual(far.target(in: tags), 2)
+        XCTAssertEqual(BoardColumnDrag(tag: "c", point: .zero, drop: BoardColumnDrop(gap: 0)).target(in: tags), 0)
         XCTAssertNil(BoardColumnDrag(tag: "b", point: .zero).line(on: "c", in: tags), "No gap, no line")
+        XCTAssertNil(BoardColumnDrag(tag: "b", point: .zero).target(in: tags))
         var columns = BoardColumns(tags: tags)
-        columns.move("b", to: far.drop!.index(moving: "b", in: tags))
+        columns.move("b", to: far.target(in: tags)!)
         XCTAssertEqual(columns.tags, ["a", "c", "b"])
     }
 }
@@ -181,11 +193,19 @@ final class BoardColumnsStoreTests: XCTestCase {
         XCTAssertEqual(store.boards, [:])
         XCTAssertEqual(store.boardColumns(of: newsletter.id).tags, ["researching", "waiting"], "The default, spelled out")
 
-        let choices = store.boardTagChoices(for: "", of: newsletter.id)
+        let source = store.boardTagSource(of: newsletter.id)
+        XCTAssertEqual(source.columns.tags, ["researching", "waiting"])
+        XCTAssertEqual(source.carried, ["researching", "waiting"])
+        XCTAssertEqual(source.counts.map(\.tag), ["researching", "someday", "waiting"])
+        let choices = BoardTagChoices.rows(for: "", in: source)
         XCTAssertEqual(choices.onBoard.map(\.tag), ["researching", "waiting"])
         XCTAssertTrue(choices.onBoard.allSatisfy(\.hasColumn))
         XCTAssertEqual(choices.others.map(\.tag), ["someday"])
-        XCTAssertEqual(store.boardTagChoices(for: "blocked", of: newsletter.id).create, "blocked")
+        XCTAssertEqual(BoardTagChoices.rows(for: "blocked", in: source).create, "blocked")
+
+        store.moveBoardColumn("waiting", to: 1, of: newsletter.id)
+        store.editBoardColumns(of: newsletter.id) { _ in }
+        XCTAssertEqual(store.boards, [:], "An edit that changes nothing keeps the default board, so new tags still get columns")
 
         store.addBoardColumn("someday", of: newsletter.id)
         XCTAssertEqual(store.board.columns.map(\.kind), [.open, .tag("researching"), .tag("waiting"), .tag("someday"), .done], "At the end")
