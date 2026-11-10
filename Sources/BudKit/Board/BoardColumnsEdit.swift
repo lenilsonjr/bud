@@ -119,10 +119,10 @@ public enum BoardColumnText {
     public static let find = "Find or create a tag"
     public static let onBoard = "On this board"
     public static let others = "Other tags"
-    public static let create = "New tag column"
+    public static let newColumn = "New tag column"
     public static let add = "Add column"
     /// "New tag column #blocked": the create row once a new tag is typed.
-    public static func create(_ tag: String) -> String { "\(create) #\(tag)" }
+    public static func create(_ tag: String) -> String { "\(newColumn) #\(tag)" }
 }
 
 // MARK: the header menu
