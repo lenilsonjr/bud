@@ -27,9 +27,13 @@ struct BoardView: View {
         }
         let tags = board.columns.compactMap(\.tag)
         let moving = inHand.map { BoardColumnDrag(tag: $0.tag, point: $0.at, drop: BoardColumnDrop.under($0.at, frames: frames, tags: tags)) }
+        let edit = BoardColumnEdit(columns: BoardColumns(tags: tags)) { [weak store] item, tag in
+            guard let store else { return }
+            store.editBoardColumns(of: store.center) { item.apply(to: &$0, for: tag) }
+        }
         VStack(alignment: .leading, spacing: 16) {
             head(board)
-            columns(board, pictures: pictures)
+            columns(board, pictures: pictures, edit: edit)
         }
         .padding(.top, 20)
         .padding(.horizontal, compact ? 16 : 24)
@@ -41,8 +45,8 @@ struct BoardView: View {
             placed: { frames[$0] = $1 },
             moved: { tag, point in inHand = (tag, point) },
             ended: { tag, point in
-                let drop = BoardColumnDrop.under(point, frames: frames, tags: tags)
-                store.moveBoardColumn(tag, to: drop.index(moving: tag, in: tags), of: store.center)
+                let drag = BoardColumnDrag(tag: tag, point: point, drop: BoardColumnDrop.under(point, frames: frames, tags: tags))
+                if let index = drag.target(in: tags) { store.moveBoardColumn(tag, to: index, of: store.center) }
                 inHand = nil
                 frames = [:]
             },
@@ -52,7 +56,7 @@ struct BoardView: View {
             }
         ))
         .overlay(alignment: .topLeading) {
-            if let moving { BoardColumnLifted(tag: moving.tag).offset(x: moving.point.x - 8, y: moving.point.y - 8) }
+            if let inHand { BoardColumnLifted(tag: inHand.tag).offset(x: inHand.at.x - 8, y: inHand.at.y - 8) }
         }
         .onChange(of: store.center) { _, _ in
             showsCancelled = false
@@ -77,11 +81,7 @@ struct BoardView: View {
 
     /// The columns side by side, the add slot before Done, scrolling sideways when the window
     /// is narrower than they are.
-    @ViewBuilder private func columns(_ board: Board, pictures: BoardCardContext) -> some View {
-        let edit = BoardColumnEdit(columns: store.boardColumns(of: store.center)) { [weak store] item, tag in
-            guard let store else { return }
-            store.editBoardColumns(of: store.center) { item.apply(to: &$0, for: tag) }
-        }
+    @ViewBuilder private func columns(_ board: Board, pictures: BoardCardContext, edit: BoardColumnEdit) -> some View {
         let row = HStack(alignment: .top, spacing: 12) {
             ForEach(board.columns) { column in
                 if column.kind == .done { BoardAddColumn(store: store) }
@@ -256,17 +256,12 @@ struct BoardColumnView: View {
     }
 
     /// The tag chip, and the grip that lifts the column: a drag on it, where the board can take
-    /// one, in the board's space. A phone scrolls the columns sideways instead.
+    /// one, in the board's space, ahead of the row's sideways scroll so the pan does not take
+    /// it on an iPad. A phone scrolls the columns sideways instead.
     @ViewBuilder private func chip(_ tag: String) -> some View {
-        let mark = Text("#\(tag)")
-            .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
-            .foregroundStyle(Theme.leaf)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            .contentShape(Rectangle())
+        let mark = BoardTagChip(tag: tag).contentShape(Rectangle())
         if edit != nil, !compact, !still {
-            mark.gesture(
+            mark.highPriorityGesture(
                 DragGesture(minimumDistance: 6, coordinateSpace: .named(BoardView.space))
                     .updating($holding) { _, state, _ in state = true }
                     .onChanged { dragging.moved(tag, $0.location) }
