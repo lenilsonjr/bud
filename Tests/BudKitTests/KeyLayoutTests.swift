@@ -9,7 +9,11 @@ final class KeyLayoutTests: XCTestCase {
         return defaults
     }
 
-    private func layout() throws -> KeyLayout { KeyLayout(defaults: try freshDefaults()) }
+    /// A layout away from the Mac, where the keys the desktop answers to only show.
+    private func layout() throws -> KeyLayout { KeyLayout(defaults: try freshDefaults(), desktop: false) }
+
+    /// A layout on the Mac, which records the keys the desktop answers to by their place.
+    private func desktop(_ defaults: UserDefaults? = nil) throws -> KeyLayout { KeyLayout(defaults: try defaults ?? freshDefaults(), desktop: true) }
 
     private func stored(_ json: String, in defaults: UserDefaults) {
         defaults.set(Data(json.utf8), forKey: KeyLayout.key)
@@ -106,21 +110,169 @@ final class KeyLayoutTests: XCTestCase {
         XCTAssertNil(layout.refusal)
     }
 
-    func testTheKeysTheMacAnswersToFromTheDesktopCannotBeRecordedYet() throws {
+    func testTheKeysTheMacAnswersToFromTheDesktopCannotBeRecordedAwayFromTheMac() throws {
         let layout = try layout()
         for id in Command.systemWide {
             XCTAssertFalse(layout.canRecord(id))
             layout.startRecording(id)
-            XCTAssertNil(layout.recording, "\(id) is registered once at launch")
+            XCTAssertNil(layout.recording, "\(id) is the Mac's to record")
         }
         XCTAssertTrue(layout.canRecord(.goAnywhere))
         layout.startRecording(.goAnywhere)
         XCTAssertEqual(layout.recording, .goAnywhere)
+        let desktop = try desktop()
+        for id in Command.systemWide {
+            XCTAssertTrue(desktop.canRecord(id))
+        }
+    }
+
+    func testAKeyTheMacAnswersToFromTheDesktopIsRecordedByItsPlaceOnTheKeyboard() throws {
+        let layout = try desktop()
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key("k", .option), at: 40), .bound)
+        XCTAssertNil(layout.recording)
+        XCTAssertEqual(layout.key(for: .capture), Key("k", .option))
+        XCTAssertEqual(layout.hotKey(for: .capture), PhysicalKey(code: 40, modifiers: .option))
+        XCTAssertEqual(layout.hotKeys, [.capture: PhysicalKey(code: 40, modifiers: .option)])
+        XCTAssertTrue(layout.isChanged(.capture))
+        XCTAssertEqual(layout.changed, 1)
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key("l", .option), at: nil), .refused, "The desktop needs the key's place")
+        XCTAssertEqual(layout.refusal, .unnamed)
+        XCTAssertEqual(layout.recording, .capture)
+        XCTAssertEqual(layout.record(Key("l"), at: 37), .refused, "A bare key would type")
+        XCTAssertEqual(layout.refusal, .bare)
+        XCTAssertEqual(layout.record(Key(.escape), at: 53), .cancelled)
+        XCTAssertEqual(layout.key(for: .capture), Key("k", .option))
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key(.space, .option), at: 49), .bound, "The default again drops the change")
+        XCTAssertFalse(layout.isChanged(.capture))
+        XCTAssertEqual(layout.hotKeys, [:])
+        XCTAssertEqual(layout.hotKey(for: .capture), PhysicalKey(code: 49, modifiers: .option), "The default sits where Space does")
+    }
+
+    func testARowOfTheWindowIgnoresTheKeysPlace() throws {
+        let layout = try desktop()
+        layout.startRecording(.goAnywhere)
+        XCTAssertEqual(layout.record(Key("p", .command), at: 35), .bound)
+        XCTAssertEqual(layout.hotKeys, [:])
+        XCTAssertNil(layout.hotKey(for: .goAnywhere))
+        XCTAssertEqual(layout.key(for: .goAnywhere), Key("p", .command))
+    }
+
+    func testTheDefaultsOfTheDesktopsKeysSitOnTheUSKeyboard() throws {
+        let layout = try desktop()
+        XCTAssertEqual(layout.hotKey(for: .capture), PhysicalKey(code: 49, modifiers: .option))
+        XCTAssertEqual(layout.hotKey(for: .goAnywhereDesktop), PhysicalKey(code: 49, modifiers: [.option, .shift]))
+        XCTAssertEqual(try self.layout().hotKey(for: .capture), PhysicalKey(code: 49, modifiers: .option), "Known away from the Mac too, for the sheet")
+    }
+
+    func testTheSheetShowsTheCharacterTheKeyboardInUseGivesTheKey() throws {
+        let defaults = try freshDefaults()
+        let layout = try desktop(defaults)
+        defer { KeyboardLayout.current = .us }
+        layout.startRecording(.capture)
+        layout.record(Key("k", .option), at: 40)
+        XCTAssertEqual(layout.key(for: .capture), Key("k", .option))
+        KeyboardLayout.current = KeyboardLayout([40: "t", 49: "x"])
+        XCTAssertEqual(layout.key(for: .capture), Key("t", .option), "The key under the finger stays; its name follows the keyboard")
+        XCTAssertEqual(layout.hotKey(for: .capture), PhysicalKey(code: 40, modifiers: .option))
+        XCTAssertEqual(layout.key(for: .goAnywhereDesktop), Key(.space, [.option, .shift]), "Space is Space on every keyboard")
+        XCTAssertEqual(try desktop(defaults).key(for: .capture), Key("t", .option), "Read the same way after a relaunch")
+        KeyboardLayout.current = KeyboardLayout([:])
+        XCTAssertEqual(layout.key(for: .capture), Key("k", .option), "The US keyboard stands in where the one in use gives nothing")
+    }
+
+    func testAKeyTheSystemKeepsShowsAsTakenUntilTheAppSaysOtherwise() throws {
+        let layout = try desktop()
+        XCTAssertFalse(layout.isTakenBySystem(.capture))
+        layout.markTakenBySystem(.capture, true)
+        XCTAssertTrue(layout.isTakenBySystem(.capture))
+        XCTAssertEqual(layout.takenBySystem, [.capture])
+        XCTAssertEqual(layout.key(for: .capture), Key(.space, .option), "The row keeps the key; the app registers it again on the next change")
+        layout.startRecording(.capture)
+        layout.record(Key("k", .option), at: 40)
+        XCTAssertFalse(layout.isTakenBySystem(.capture), "A new key is not taken until the app says so")
+        layout.markTakenBySystem(.capture, true)
+        layout.reset(.capture)
+        XCTAssertFalse(layout.isTakenBySystem(.capture))
+        layout.markTakenBySystem(.capture, true)
+        layout.markTakenBySystem(.goAnywhereDesktop, true)
+        layout.markTakenBySystem(.goAnywhereDesktop, false)
+        XCTAssertEqual(layout.takenBySystem, [.capture])
+        layout.resetAll()
+        XCTAssertEqual(layout.takenBySystem, [])
+    }
+
+    func testTheDesktopsTwoRowsClashLikeAnyOthersAndTheKeysPlaceWaitsWithTheConflict() throws {
+        let layout = try desktop()
+        layout.startRecording(.goAnywhereDesktop)
+        XCTAssertEqual(layout.record(Key(.space, .option), at: 49), .taken(by: .capture))
+        let conflict = KeyLayout.Conflict(id: .goAnywhereDesktop, key: Key(.space, .option), holder: .capture, hotKey: PhysicalKey(code: 49, modifiers: .option))
+        XCTAssertEqual(layout.conflicts, [.goAnywhereDesktop: conflict])
+        XCTAssertEqual(layout.hotKeys, [:])
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key("k", .option), at: 40), .bound)
+        XCTAssertEqual(layout.conflicts, [:])
+        XCTAssertEqual(layout.hotKeys, [.capture: PhysicalKey(code: 40, modifiers: .option), .goAnywhereDesktop: PhysicalKey(code: 49, modifiers: .option)])
+        XCTAssertEqual(layout.key(for: .goAnywhereDesktop), Key(.space, .option))
+        layout.startRecording(.goAnywhere)
+        XCTAssertEqual(layout.record(Key("k", .option), at: 40), .taken(by: .capture), "A window row clashes with a desktop one over a modified key")
+        XCTAssertNil(layout.conflicts[.goAnywhere]?.hotKey, "A window row has no place to keep")
+        layout.reset(.capture)
+        XCTAssertEqual(layout.conflicts[.capture]?.holder, .goAnywhereDesktop, "Its default is the other desktop row's now")
+        XCTAssertEqual(layout.key(for: .capture), Key("k", .option))
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key("m", .option), at: 46), .bound)
+        XCTAssertEqual(layout.key(for: .goAnywhere), Key("k", .option), "The window row lands once the desktop row moves off")
+        XCTAssertEqual(layout.hotKeys[.capture], PhysicalKey(code: 46, modifiers: .option))
+        XCTAssertEqual(layout.hotKeys[.goAnywhere], nil)
+    }
+
+    func testTheDesktopsKeysSurviveARelaunchOnTheMacAndOnlyShowElsewhere() throws {
+        let defaults = try freshDefaults()
+        let layout = try desktop(defaults)
+        layout.startRecording(.capture)
+        layout.record(Key("k", .option), at: 40)
+        layout.startRecording(.goAnywhere)
+        layout.record(Key("p", .command), at: 35)
+        let again = try desktop(defaults)
+        XCTAssertEqual(again.key(for: .capture), Key("k", .option))
+        XCTAssertEqual(again.hotKey(for: .capture), PhysicalKey(code: 40, modifiers: .option))
+        XCTAssertEqual(again.key(for: .goAnywhere), Key("p", .command))
+        XCTAssertEqual(again.changed, 2)
+        XCTAssertEqual(again.takenBySystem, [], "Whether the system keeps it is asked again at launch")
+        let elsewhere = KeyLayout(defaults: defaults, desktop: false)
+        XCTAssertEqual(elsewhere.key(for: .capture), Key(.space, .option), "Another device shows the default")
+        XCTAssertEqual(elsewhere.key(for: .goAnywhere), Key("p", .command))
+        XCTAssertEqual(elsewhere.changed, 1)
+        XCTAssertEqual(elsewhere.hotKeys, [:])
+        let json = try XCTUnwrap(defaults.data(forKey: KeyLayout.hotKeysKey))
+        XCTAssertEqual(try JSONDecoder().decode([String: PhysicalKey].self, from: json), ["capture": PhysicalKey(code: 40, modifiers: .option)])
+    }
+
+    func testAStoredPlaceTheTableOfTodayWouldRefuseIsLetGoOnLoad() throws {
+        let defaults = try freshDefaults()
+        defaults.set(Data(#"{"capture":{"code":49,"modifiers":2},"goAnywhereDesktop":{"code":40,"modifiers":8},"goAnywhere":{"code":35,"modifiers":8}}"#.utf8), forKey: KeyLayout.hotKeysKey)
+        let layout = try desktop(defaults)
+        XCTAssertEqual(layout.hotKeys, [:])
+        XCTAssertNil(layout.overrides[.capture], "Its own default is no change")
+        XCTAssertNil(layout.overrides[.goAnywhereDesktop], "Go anywhere has ⌘K by default")
+        XCTAssertNil(layout.overrides[.goAnywhere], "A window row keeps no place")
+        XCTAssertEqual(layout.changed, 0)
+        defaults.set(Data(#"{"capture":{"code":122,"modifiers":2}}"#.utf8), forKey: KeyLayout.hotKeysKey)
+        XCTAssertEqual(try desktop(defaults).hotKeys, [:], "A key no keyboard names")
+        defaults.set(Data(#"{"goAnywhereDesktop":{"code":40,"modifiers":2}}"#.utf8), forKey: KeyLayout.hotKeysKey)
+        stored(#"{"goAnywhereDesktop":{"base":"q","modifiers":8},"capture":{"base":"q","modifiers":8}}"#, in: defaults)
+        let read = try desktop(defaults)
+        XCTAssertEqual(read.key(for: .goAnywhereDesktop), Key("k", .option), "The place is the truth, not the name kept beside it")
+        XCTAssertEqual(read.key(for: .capture), Key(.space, .option), "A name without a place is let go")
+        XCTAssertEqual(read.changed, 1)
     }
 
     func testAKeyAnotherRowHoldsShowsOnBothRowsAndIsNotSavedUntilOneChanges() throws {
         let defaults = try freshDefaults()
-        let layout = KeyLayout(defaults: defaults)
+        let layout = KeyLayout(defaults: defaults, desktop: false)
         layout.startRecording(.goAnywhere)
         XCTAssertEqual(layout.record(Key("j", .command)), .taken(by: .soil))
         XCTAssertNil(layout.recording)
@@ -131,14 +283,14 @@ final class KeyLayoutTests: XCTestCase {
         XCTAssertEqual(layout.key(for: .goAnywhere), Key("k", .command), "The wanted key is not the row's yet")
         XCTAssertEqual(layout.key(for: .soil), Key("j", .command))
         XCTAssertEqual(layout.changed, 0)
-        XCTAssertEqual(KeyLayout(defaults: defaults).changed, 0, "Nothing was saved")
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).changed, 0, "Nothing was saved")
         layout.startRecording(.soil)
         XCTAssertEqual(layout.record(Key("l", .command)), .bound)
         XCTAssertEqual(layout.conflicts, [:], "The holder moved off the key, so the wanted key lands")
         XCTAssertEqual(layout.key(for: .goAnywhere), Key("j", .command))
         XCTAssertEqual(layout.key(for: .soil), Key("l", .command))
         XCTAssertEqual(layout.changed, 2)
-        XCTAssertEqual(KeyLayout(defaults: defaults).overrides, layout.overrides)
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).overrides, layout.overrides)
     }
 
     func testEveryRowKeepsItsOwnConflict() throws {
@@ -203,7 +355,7 @@ final class KeyLayoutTests: XCTestCase {
 
     func testResetPutsTheDefaultBackAndResetAllClearsEveryChange() throws {
         let defaults = try freshDefaults()
-        let layout = KeyLayout(defaults: defaults)
+        let layout = KeyLayout(defaults: defaults, desktop: false)
         layout.startRecording(.goAnywhere)
         layout.record(Key("p", .command))
         layout.startRecording(.soil)
@@ -223,7 +375,7 @@ final class KeyLayoutTests: XCTestCase {
         XCTAssertEqual(layout.changed, 0)
         XCTAssertEqual(layout.conflicts, [:])
         XCTAssertNil(layout.recording)
-        XCTAssertEqual(KeyLayout(defaults: defaults).changed, 0)
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).changed, 0)
         for command in Command.all {
             XCTAssertEqual(layout.key(for: command.id), command.key)
         }
@@ -268,18 +420,18 @@ final class KeyLayoutTests: XCTestCase {
 
     func testTheChangesSurviveARelaunchOnTheSameDevice() throws {
         let defaults = try freshDefaults()
-        let layout = KeyLayout(defaults: defaults)
+        let layout = KeyLayout(defaults: defaults, desktop: false)
         layout.startRecording(.goAnywhere)
         layout.record(Key("p", .command))
         layout.startRecording(.nest)
         layout.record(Key(.return))
-        let again = KeyLayout(defaults: defaults)
+        let again = KeyLayout(defaults: defaults, desktop: false)
         XCTAssertEqual(again.key(for: .goAnywhere), Key("p", .command))
         XCTAssertEqual(again.key(for: .nest), Key(.return))
         XCTAssertEqual(again.changed, 2)
         XCTAssertNil(again.recording, "A recording is not kept")
         XCTAssertEqual(again.conflicts, [:], "Nor a key that never landed")
-        XCTAssertEqual(KeyLayout(defaults: try freshDefaults()).changed, 0, "Another device has its own")
+        XCTAssertEqual(KeyLayout(defaults: try freshDefaults(), desktop: false).changed, 0, "Another device has its own")
     }
 
     func testAStoredKeyTheTableOfTodayWouldRefuseIsLetGoOnLoad() throws {
@@ -292,18 +444,18 @@ final class KeyLayoutTests: XCTestCase {
              "open":{"base":"o","modifiers":0},
              "read":{"base":"o","modifiers":0}}
             """#, in: defaults)
-        let layout = KeyLayout(defaults: defaults)
+        let layout = KeyLayout(defaults: defaults, desktop: false)
         XCTAssertNil(layout.overrides[.goAnywhere], "Soil has ⌘J by default")
         XCTAssertNil(layout.overrides[.files], "A bare key would type")
-        XCTAssertNil(layout.overrides[.capture], "The desktop's keys cannot be recorded yet")
+        XCTAssertNil(layout.overrides[.capture], "The desktop's keys are kept by their place, and the Mac's alone")
         XCTAssertNil(layout.overrides[.soil], "Its own default is no change")
         XCTAssertEqual(layout.overrides[.open], Key("o"))
         XCTAssertEqual(layout.overrides[.read], Key("o"), "A page and the canvas never share a bare key")
         XCTAssertEqual(layout.changed, 2)
         XCTAssertEqual(layout.conflicts, [:], "Nothing is said; the rows show their defaults")
-        XCTAssertEqual(KeyLayout(defaults: defaults).changed, 2, "What was let go is gone for good")
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).changed, 2, "What was let go is gone for good")
         stored(#"{"files":{"base":"m","modifiers":8},"nextMatch":{"base":"m","modifiers":8}}"#, in: defaults)
-        XCTAssertEqual(KeyLayout(defaults: defaults).overrides, [.nextMatch: Key("m", .command)], "Two stored keys alike: the first in the table's order is let go")
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).overrides, [.nextMatch: Key("m", .command)], "Two stored keys alike: the first in the table's order is let go")
     }
 
     func testTheAppsKeysReadThroughTheLayoutOnThisDevice() {
@@ -327,9 +479,9 @@ final class KeyLayoutTests: XCTestCase {
     func testWhatTheStoreCannotReadLeavesTheDefaults() throws {
         let defaults = try freshDefaults()
         stored("not keys", in: defaults)
-        XCTAssertEqual(KeyLayout(defaults: defaults).changed, 0)
+        XCTAssertEqual(KeyLayout(defaults: defaults, desktop: false).changed, 0)
         stored(#"{"goAnywhere":{"base":"p","modifiers":8},"gone":{"base":"q","modifiers":8}}"#, in: defaults)
-        let layout = KeyLayout(defaults: defaults)
+        let layout = KeyLayout(defaults: defaults, desktop: false)
         XCTAssertEqual(layout.overrides, [.goAnywhere: Key("p", .command)], "A row that is no longer in the table is dropped")
     }
 

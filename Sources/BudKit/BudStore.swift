@@ -914,6 +914,23 @@ public final class BudStore: ObservableObject {
         }
     }
 
+    /// A row of Go anywhere: a bud that matched, or one of the places and lenses.
+    public enum Pick: Hashable, Sendable {
+        case bud(UUID)
+        case destination(Destination)
+    }
+
+    /// Where Go anywhere lands on the row chosen, from the window or the desktop alike: a bud
+    /// or a destination, each the way it goes above.
+    public func go(_ pick: Pick, inFiles: Bool) {
+        switch pick {
+        case .bud(let id): go(to: id, inFiles: inFiles)
+        case .destination(let destination): go(to: destination, inFiles: inFiles)
+        }
+    }
+        }
+    }
+
     /// The Files view on the Inbox.
     public func openInbox() { open(.inbox) }
     public func openArchive() { open(.archive) }
@@ -1034,7 +1051,7 @@ public final class BudStore: ObservableObject {
     public func perform(_ id: Command.ID, on bud: UUID? = nil) -> Bool {
         guard allows(id), !Command.of(id).inPlace else { return false }
         switch id {
-        case .goAnywhere: searching = true
+        case .goAnywhere, .goAnywhereDesktop: searching = true
         case .capture: modal = .capture
         case .canvas, .files, .board, .calendar: if let view = id.surface { surface = view }
         case .shortcuts: modal = modal == .shortcuts ? nil : .shortcuts

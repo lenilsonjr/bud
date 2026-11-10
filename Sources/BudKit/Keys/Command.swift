@@ -85,7 +85,7 @@ public struct Command: Hashable, Identifiable, Sendable {
     }
 
     public enum ID: String, CaseIterable, Sendable {
-        case goAnywhere, capture, undo, canvas, files, board, calendar, shortcuts, newUnderThis
+        case goAnywhere, capture, goAnywhereDesktop, undo, canvas, files, board, calendar, shortcuts, newUnderThis
         case rowDown, rowUp, choose, openInFiles, close
         case open, back, nextMatch, previousMatch, soil, nest, rise
         case closeOrReopen, read, linkAsTyped
@@ -107,6 +107,7 @@ public struct Command: Hashable, Identifiable, Sendable {
     public static let all: [Command] = [
         Command(id: .goAnywhere, name: "Go anywhere", scope: .everywhere, key: Key("k", .command)),
         Command(id: .capture, name: "Capture", scope: .everywhere, key: Key(.space, .option)),
+        Command(id: .goAnywhereDesktop, name: "Go anywhere from the desktop", scope: .everywhere, key: Key(.space, [.option, .shift])),
         Command(id: .undo, name: "Undo", scope: .everywhere, key: Key("z", .command), inPlace: true),
         Command(id: .canvas, name: "Canvas", scope: .everywhere, key: Key("1", .command)),
         Command(id: .files, name: "Files", scope: .everywhere, key: Key("2", .command)),
@@ -132,8 +133,10 @@ public struct Command: Hashable, Identifiable, Sendable {
     ]
 
     /// The rows the Mac answers to from the desktop, with another app in front: the app registers
-    /// their keys system-wide. The sheet lists them last, in their own group.
-    public static let systemWide: [ID] = [.capture]
+    /// their keys system-wide, by the key's place on the keyboard, and again whenever one is
+    /// recorded. The sheet lists them last, in their own group. Capture lands one line in the
+    /// Inbox; Go anywhere from the desktop floats the palette over whatever is in front.
+    public static let systemWide: [ID] = [.capture, .goAnywhereDesktop]
 
     private static let byID: [ID: Command] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 

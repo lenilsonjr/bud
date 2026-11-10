@@ -36,7 +36,9 @@ public enum ShortcutText {
 
     /// The group of the keys the Mac answers to from the desktop, and the line under its title.
     public static let systemWideTitle = "From any app"
-    public static let systemWideCaption = "On the Mac, with any app in front. Recording these comes later."
+    public static let systemWideCaption = "On the Mac, with any app in front, whatever the input source."
+    /// The line under a row of that group whose key the system would not give the app.
+    public static let takenBySystem = "Another app or the system already answers to this key."
 
     /// A scope's title in the sheet.
     public static func groupTitle(_ scope: Command.Scope) -> String {

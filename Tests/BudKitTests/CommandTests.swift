@@ -7,6 +7,7 @@ final class CommandTests: XCTestCase {
         let expected: [Command.ID: (String, Command.Scope, Key)] = [
             .goAnywhere: ("Go anywhere", .everywhere, Key("k", .command)),
             .capture: ("Capture", .everywhere, Key(.space, .option)),
+            .goAnywhereDesktop: ("Go anywhere from the desktop", .everywhere, Key(.space, [.option, .shift])),
             .undo: ("Undo", .everywhere, Key("z", .command)),
             .canvas: ("Canvas", .everywhere, Key("1", .command)),
             .files: ("Files", .everywhere, Key("2", .command)),
@@ -58,7 +59,7 @@ final class CommandTests: XCTestCase {
 
     func testTheMenuBarListsTheRowsTheStorePerformsUnderTheScopesThatHaveOne() {
         let listed = Command.menuScopes.flatMap(Command.menu(in:))
-        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .canvas, .files, .board, .calendar, .shortcuts, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
+        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .goAnywhereDesktop, .canvas, .files, .board, .calendar, .shortcuts, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
         XCTAssertTrue(listed.allSatisfy { !$0.inPlace })
         XCTAssertEqual(Command.menuScopes, [.everywhere, .canvas, .document], "Files has no row of its own yet")
     }
@@ -81,12 +82,16 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(Key(.tab, [.shift, .control]).label, "⌃⇧⇥")
         XCTAssertEqual(Key(.upArrow).label + Key(.downArrow).label, "↑↓")
         XCTAssertEqual(Key("/", .command).label, "⌘/")
+        XCTAssertEqual(Key(.space, [.option, .shift]).label, "⌥⇧Space")
     }
 
     func testTheSystemWideKeysAreRowsOfTheTable() {
-        XCTAssertEqual(Command.systemWide, [.capture])
+        XCTAssertEqual(Command.systemWide, [.capture, .goAnywhereDesktop])
         for id in Command.systemWide {
             XCTAssertTrue(Command.of(id).key.hasModifiers, "\(id) needs a modifier to be heard from the desktop")
+            XCTAssertNotNil(PhysicalKey(Command.of(id).key), "\(id) sits somewhere on the US keyboard, to be registered before anything is recorded")
+            XCTAssertEqual(Command.of(id).scope, .everywhere)
+            XCTAssertFalse(Command.of(id).inPlace, "The menu bar lists it, so System Settings can rebind it by name")
         }
     }
 
@@ -245,6 +250,42 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertEqual(store.surface, .canvas)
         store.perform(.capture)
         XCTAssertEqual(store.modal, .capture)
+        store.searching = false
+        store.perform(.goAnywhereDesktop)
+        XCTAssertTrue(store.searching, "Inside the window the desktop's Go anywhere is the window's")
+    }
+
+    func testTheRowChosenInGoAnywhereGoesTheSameWayFromTheWindowAndTheDesktop() throws {
+        let (store, bud) = store()
+        store.go(.bud(bud), inFiles: false)
+        XCTAssertEqual(store.center, bud)
+        XCTAssertEqual(store.surface, .canvas)
+        store.go(.bud(bud), inFiles: true)
+        XCTAssertEqual(store.surface, .files)
+        XCTAssertEqual(store.page, bud, "⌘Return opens the bud in Files")
+        let captured = try XCTUnwrap(store.capture("A thought"))
+        store.go(.bud(captured.id), inFiles: false)
+        XCTAssertTrue(store.inboxOpen, "An inbox bud opens the Inbox")
+        store.go(.destination(.everything), inFiles: false)
+        XCTAssertEqual(store.center, rootID)
+        XCTAssertEqual(store.surface, .files, "Everything stays where you are")
+        store.surface = .canvas
+        store.go(.destination(.everything), inFiles: true)
+        XCTAssertEqual(store.surface, .files, "Unless asked for Files")
+        store.go(.destination(.today), inFiles: false)
+        XCTAssertEqual(store.lens, .today)
+        XCTAssertEqual(store.surface, .files)
+        store.go(.destination(.todos), inFiles: false)
+        XCTAssertEqual(store.lens, .todos)
+        store.go(.destination(.pinned), inFiles: false)
+        XCTAssertEqual(store.lens, .pinned)
+        store.go(.destination(.archive), inFiles: false)
+        XCTAssertEqual(store.place, .archive)
+        XCTAssertNil(store.lens)
+        store.go(.destination(.trash), inFiles: false)
+        XCTAssertEqual(store.place, .trash)
+        store.go(.destination(.inbox), inFiles: true)
+        XCTAssertTrue(store.inboxOpen)
     }
 
     func testSwitchingThroughEveryViewKeepsTheCenter() {

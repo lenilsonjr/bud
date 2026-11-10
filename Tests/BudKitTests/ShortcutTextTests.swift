@@ -6,7 +6,8 @@ final class ShortcutTextTests: XCTestCase {
         XCTAssertEqual(ShortcutText.title, "Keyboard shortcuts")
         XCTAssertEqual(ShortcutText.note, "Click a key to record a new one.")
         XCTAssertEqual(ShortcutText.systemWideTitle, "From any app")
-        XCTAssertEqual(ShortcutText.systemWideCaption, "On the Mac, with any app in front. Recording these comes later.")
+        XCTAssertEqual(ShortcutText.systemWideCaption, "On the Mac, with any app in front, whatever the input source.")
+        XCTAssertEqual(ShortcutText.takenBySystem, "Another app or the system already answers to this key.")
         XCTAssertEqual(Command.Scope.allCases.map(ShortcutText.groupTitle), ["Everywhere", "On the canvas", "In Files", "On a page"])
     }
 
@@ -29,7 +30,7 @@ final class ShortcutTextTests: XCTestCase {
         let last = try XCTUnwrap(groups.last)
         XCTAssertEqual(last.title, ShortcutText.systemWideTitle)
         XCTAssertEqual(last.caption, ShortcutText.systemWideCaption)
-        XCTAssertEqual(last.commands.map(\.id), [.capture])
+        XCTAssertEqual(last.commands.map(\.id), [.capture, .goAnywhereDesktop])
         XCTAssertEqual(groups.dropLast().map(\.title), ["Everywhere", "On the canvas", "On a page"], "Files has no rows yet, so no group")
         XCTAssertTrue(groups.dropLast().allSatisfy { $0.caption == nil })
     }
@@ -40,6 +41,7 @@ final class ShortcutTextTests: XCTestCase {
         XCTAssertEqual(Set(listed), Set(Command.ID.allCases))
         XCTAssertEqual(ShortcutText.groups()[0].commands.map(\.id).first, .goAnywhere)
         XCTAssertFalse(ShortcutText.groups()[0].commands.map(\.id).contains(.capture), "A system-wide key is listed in its group alone")
+        XCTAssertFalse(ShortcutText.groups()[0].commands.map(\.id).contains(.goAnywhereDesktop))
     }
 
     func testTheHalvesSplitWholeGroupsAroundTheMiddle() {
