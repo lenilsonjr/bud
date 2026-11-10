@@ -29,14 +29,11 @@ public struct SettingsView: View {
     public var body: some View {
         Group {
             if let onDone {
-                // A modal on iPhone and iPad: the title and Done stay put and the sections scroll
-                // between them once they are taller than the card the window allows.
+                // A modal on iPhone and iPad: as wide as the card allows, and scrolled by the
+                // card once it is taller than the window.
                 VStack(alignment: .leading, spacing: 20) {
                     heading
-                    ViewThatFits(in: .vertical) {
-                        sections
-                        MaybeScroll { sections.frame(maxWidth: .infinity, alignment: .leading) }
-                    }
+                    sections
                     HStack {
                         Spacer()
                         Button(action: onDone) { BudButtonLabel(title: "Done") }

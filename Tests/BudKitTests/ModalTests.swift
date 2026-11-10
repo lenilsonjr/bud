@@ -22,6 +22,7 @@ final class ModalTests: XCTestCase {
         XCTAssertEqual(ModalMetrics.cardWidth(window: 1400), 480)
         XCTAssertEqual(ModalMetrics.cardWidth(window: 512), 480)
         XCTAssertEqual(ModalMetrics.cardWidth(window: 390), 358)
+        XCTAssertEqual(ModalMetrics.cardWidth(window: 20), 0, "a window caught mid-resize asks for no negative width")
     }
 
     func testACardIsNoTallerThanTheWindowLessItsMargins() {
