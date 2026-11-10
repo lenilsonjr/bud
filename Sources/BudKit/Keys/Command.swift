@@ -112,4 +112,10 @@ public struct Command: Hashable, Identifiable, Sendable {
     public static func all(in scope: Scope) -> [Command] {
         all.filter { $0.scope == scope }
     }
+
+    /// The rows the Mac menu bar lists for a scope: all but Undo, which Edit › Undo already
+    /// carries under the same key; the toast still binds through its row.
+    public static func menu(in scope: Scope) -> [Command] {
+        all(in: scope).filter { $0.id != .undo }
+    }
 }
