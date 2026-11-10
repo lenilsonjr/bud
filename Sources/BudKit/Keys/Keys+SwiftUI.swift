@@ -46,9 +46,8 @@ extension Key {
         case .upArrow: base = .upArrow
         case .downArrow: base = .downArrow
         default:
-            let character = press.key.character
-            guard character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol else { return nil }
-            base = .letter(character.lowercased().first ?? character)
+            guard let typed = Base(typed: press.key.character) else { return nil }
+            base = typed
         }
         self.init(base, Modifiers(press.modifiers))
     }

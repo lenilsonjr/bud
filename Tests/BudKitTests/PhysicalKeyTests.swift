@@ -34,6 +34,13 @@ final class PhysicalKeyTests: XCTestCase {
         XCTAssertNil(dvorak.base(for: 1), "A code the keyboard gives nothing")
         let shifted = KeyboardLayout([0: "A"])
         XCTAssertEqual(shifted.base(for: 0), .letter("a"), "The table keeps letters small")
+        XCTAssertEqual(Key.Base(typed: "A"), .letter("a"), "The one rule a key event and a place share")
+        XCTAssertEqual(Key.Base(typed: "/"), .letter("/"))
+        XCTAssertNil(Key.Base(typed: "\u{7F}"))
+        XCTAssertNil(Key.Base(typed: "\u{300}"))
+        for (code, base) in KeyboardLayout.named {
+            XCTAssertEqual(Key(characters: "", keyCode: code, modifiers: []), Key(base), "A key event names \(code) the way a place does")
+        }
     }
 
     func testAPhysicalKeyReadsAsTheKeyboardInUseNamesItWithTheUSOneStandingIn() {
