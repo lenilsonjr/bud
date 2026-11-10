@@ -35,18 +35,21 @@ public enum CalendarRange: String, CaseIterable, Codable, Sendable {
         return calendar.date(byAdding: component, value: count, to: date) ?? date
     }
 
-    /// The title over the grid for the date it shows: "November 2026", "Q4 2026", "2026".
+    /// The title over the grid for the date it shows: "Tuesday, 3 November 2026", "2 Nov – 8 Nov
+    /// 2026", "November 2026", "Q4 2026", "2026". The formats are written out, so the title reads
+    /// the same on every platform and matches the board.
     public func title(for date: Date, calendar: Calendar = .current) -> String {
         switch self {
         case .day:
-            return DayText.formatter(template: "EEEE d MMMM yyyy", calendar: calendar).string(from: date)
+            let weekday = DayText.formatter(format: "EEEE", calendar: calendar).string(from: date)
+            return "\(weekday), \(DayText.formatter(format: "d MMMM yyyy", calendar: calendar).string(from: date))"
         case .week:
             let start = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-            let short = DayText.formatter(template: "d MMM", calendar: calendar)
+            let short = DayText.formatter(format: "d MMM", calendar: calendar)
             return "\(short.string(from: start)) – \(short.string(from: end)) \(calendar.component(.year, from: end))"
         case .month, .custom:
-            return DayText.formatter(template: "MMMM yyyy", calendar: calendar).string(from: date)
+            return DayText.formatter(format: "MMMM yyyy", calendar: calendar).string(from: date)
         case .quarter:
             let quarter = (calendar.component(.month, from: date) - 1) / 3 + 1
             return "Q\(quarter) \(calendar.component(.year, from: date))"
