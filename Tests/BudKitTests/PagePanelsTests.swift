@@ -6,10 +6,14 @@ final class PagePanelsTests: XCTestCase {
         let layout = PanelLayout.standard
         XCTAssertEqual(layout.left, [.files])
         XCTAssertEqual(layout.right, [.properties, .inside, .whereItLives, .linkedFrom, .source])
-        XCTAssertEqual(Set(layout.left + layout.right), Set(PagePanel.allCases), "Every panel has a side")
+        XCTAssertEqual(layout.hidden, [.agent], "Every panel but Agent has a side until an agent runs")
         XCTAssertEqual(layout.side(of: .files), .left)
         XCTAssertEqual(layout.side(of: .source), .right)
         XCTAssertNil(PanelLayout(left: [.files], right: []).side(of: .inside))
+        var shown = layout
+        shown.showHidden()
+        XCTAssertEqual(shown.right, PanelLayout.standard.right + [.agent], "Show hidden panels puts Agent last on the right")
+        XCTAssertEqual(PagePanel.allCases.filter(\.fillsSidebar), [.files, .agent])
     }
 
     func testOnlySourceStartsCollapsedAndTheChevronFoldsEachPanel() {
@@ -62,7 +66,7 @@ final class PagePanelsTests: XCTestCase {
     }
 
     func testThePanelTitlesReadAsTheDesignWritesThem() {
-        XCTAssertEqual(PagePanel.allCases.map(\.title), ["Files", "Properties", "Inside", "Where it lives", "Linked from", "Source"])
+        XCTAssertEqual(PagePanel.allCases.map(\.title), ["Files", "Properties", "Inside", "Where it lives", "Linked from", "Source", "Agent"])
     }
 
     func testADroppedPanelLandsWhereTheLineWasInEitherSidebar() {
@@ -77,7 +81,7 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(layout.right, [.source, .properties, .whereItLives, .linkedFrom, .files], "Within one side it is taken out first")
         layout.move(.source, to: .right, at: -3)
         XCTAssertEqual(layout.right, [.source, .properties, .whereItLives, .linkedFrom, .files])
-        XCTAssertEqual(layout.hidden, [])
+        XCTAssertEqual(layout.hidden, [.agent])
     }
 
     func testTheGapUnderThePointerCountsThePanelsOldPlaceAndLinesTheEdgeItLandsOn() {
@@ -125,7 +129,7 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(PanelMenuItem.collapse.title(for: .source, in: state), "Expand")
         XCTAssertEqual(
             items.map { $0.isEnabled(for: .properties, in: state) },
-            [true, false, true, true, true, false, false], "At the top, nothing hidden, the standard layout"
+            [true, false, true, true, true, true, false], "At the top, only Agent hidden, the standard layout"
         )
         XCTAssertFalse(PanelMenuItem.moveDown.isEnabled(for: .source, in: state))
         XCTAssertTrue(PanelMenuItem.moveUp.isEnabled(for: .source, in: state))
@@ -140,23 +144,23 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(state.layout.left, [.files, .properties])
         PanelMenuItem.hide.apply(to: &state, for: .source)
         PanelMenuItem.hide.apply(to: &state, for: .inside)
-        XCTAssertEqual(state.layout.hidden, [.inside, .source])
+        XCTAssertEqual(state.layout.hidden, [.inside, .source, .agent])
         XCTAssertEqual(state.layout.right, [.whereItLives, .linkedFrom])
         XCTAssertTrue(PanelMenuItem.showHidden.isEnabled(for: .files, in: state))
         XCTAssertTrue(PanelMenuItem.reset.isEnabled(for: .files, in: state))
         PanelMenuItem.collapse.apply(to: &state, for: .files)
         XCTAssertTrue(state.isCollapsed(.files))
         PanelMenuItem.showHidden.apply(to: &state, for: .files)
-        XCTAssertEqual(state.layout.right, [.whereItLives, .linkedFrom, .inside, .source], "Back at the end of their usual side")
+        XCTAssertEqual(state.layout.right, [.whereItLives, .linkedFrom, .inside, .source, .agent], "Back at the end of their usual side")
         XCTAssertEqual(state.layout.hidden, [])
     }
 
     func testALayoutFromANewerBuildReadsWithItsUnknownPanelsSkipped() throws {
-        let text = "{\"left\":[\"files\",\"calendar\"],\"right\":[\"inside\",\"agent\",\"properties\"]}"
+        let text = "{\"left\":[\"files\",\"calendar\"],\"right\":[\"inside\",\"weather\",\"properties\"]}"
         let layout = try JSONDecoder().decode(PanelLayout.self, from: Data(text.utf8))
         XCTAssertEqual(layout.left, [.files])
         XCTAssertEqual(layout.right, [.inside, .properties], "The known ones keep their order")
-        XCTAssertEqual(layout.hidden, [.whereItLives, .linkedFrom, .source], "On neither side is hidden")
+        XCTAssertEqual(layout.hidden, [.whereItLives, .linkedFrom, .source, .agent], "On neither side is hidden")
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let written = try encoder.encode(layout)
@@ -178,6 +182,9 @@ final class PagePanelsTests: XCTestCase {
         arranged.move(.files, to: .right, at: 2)
         XCTAssertEqual(arranged.shown(on: .right, onBudPage: false), [.files])
         XCTAssertEqual(arranged.shown(on: .left, onBudPage: false), [])
+        arranged.move(.agent, to: .left, at: 0)
+        XCTAssertEqual(arranged.shown(on: .left, onBudPage: false), [.agent], "The chat goes with every page, like the tree")
+        XCTAssertTrue(PanelMenuItem.hide.isEnabled(for: .files, in: PanelState(layout: arranged), onBudPage: false))
     }
 
     func testALayoutListingAPanelTwiceKeepsItsFirstPlaceOnly() throws {
@@ -205,10 +212,11 @@ final class PagePanelsTests: XCTestCase {
         var state = PanelState()
         state.layout.move(.files, to: .right, at: 0)
         state.layout.hide(.linkedFrom)
+        state.layout.showHidden()
         state.toggle(.inside)
         XCTAssertNotEqual(state.layout, .standard)
         PanelMenuItem.reset.apply(to: &state, for: .files)
-        XCTAssertEqual(state.layout, .standard)
+        XCTAssertEqual(state.layout, .standard, "Agent is hidden again")
         XCTAssertEqual(state.folds.collapsed, [.source, .inside], "Folding is this device's and stays")
     }
 

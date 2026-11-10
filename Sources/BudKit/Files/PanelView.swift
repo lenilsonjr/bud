@@ -299,8 +299,8 @@ struct PanelRow<Lead: View>: View {
     }
 }
 
-/// A column of panels: the left or the right sidebar. A column with the file tree in it lets the
-/// tree scroll by itself and fill the height; any other column scrolls as one.
+/// A column of panels: the left or the right sidebar. A column with the file tree or the chat in
+/// it lets that panel scroll by itself and fill the height; any other column scrolls as one.
 struct PanelSidebar: View {
     @ObservedObject var store: BudStore
     let side: PanelSide
@@ -311,7 +311,7 @@ struct PanelSidebar: View {
     var body: some View {
         let panels = Self.panels(on: side, store: store)
         Group {
-            if panels.contains(.files) {
+            if panels.contains(where: \.fillsSidebar) {
                 column(panels)
             } else {
                 MaybeScroll { column(panels) }
@@ -351,6 +351,8 @@ struct PanelSidebar: View {
             LinkedFromPanel(id: store.center, store: store)
         case .source:
             SourcePanel(id: store.center, store: store)
+        case .agent:
+            AgentPanel(store: store)
         }
     }
 }

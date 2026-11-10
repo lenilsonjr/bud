@@ -278,6 +278,37 @@ final class SnapshotTests: XCTestCase {
         try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("panel-arranged-light.png"))
     }
 
+    /// The Agent panel shown on the right under Properties: the scripted chat, with the person's
+    /// bubbles green on the right, the agent's grey on the left, a change with Undo between
+    /// them, Read under the last bubble it saw, the agent typing, and the composer with This
+    /// page. Then the chip taken off and a message sent, answered by the quiet line.
+    func testRendersTheAgentPanel() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
+        store.setBody(name.id, "## What matters\n\nShort, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers\n- Check the domain is free")
+        store.openAsFile(name.id)
+        store.arrange { $0.layout.move(.agent, to: .right, at: 1) }
+        store.agent = .scripted(on: "Pick a name")
+        for scheme in [ColorScheme.light, .dark] {
+            let data = try render(store: store, scheme: scheme)
+            let file = folder.appendingPathComponent("agent-panel-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        store.agent.includesPage = false
+        store.agent.typing = false
+        store.agent.send("and a day for the printer?", page: nil)
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("agent-panel-sent-light.png"))
+        store.agent = AgentConversation()
+        store.arrange { $0.layout.move(.agent, to: .left, at: 0) }
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("agent-panel-empty-left-light.png"))
+    }
+
     func testRendersPlantedBuds() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
