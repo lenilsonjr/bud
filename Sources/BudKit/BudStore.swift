@@ -87,7 +87,9 @@ public final class BudStore: ObservableObject {
         didSet {
             if savedLenses != oldValue {
                 syncSavedFacets()
-                regroup()
+                // The open lens changed: its page again. One that went closes the page, which
+                // works it out then.
+                if let open = savedLens, let now = saved(open), now != oldValue.first(where: { $0.id == open }) { regroup() }
             }
         }
     }
@@ -881,24 +883,33 @@ public final class BudStore: ObservableObject {
         let lenses = LensTagRename()
         let reachesBuds = !changed.isEmpty
         let buds = changed.count
-        // The toast says what happened, once it has: the lenses as the write found them.
+        // The toast says what happened, once it has: the lenses as the write found them, once
+        // the vault has taken their writes, or said it would not.
         let done: @MainActor () -> Void = { [weak self] in
             guard let self else { return }
-            let plan = self.renameTagInLenses(from, to: to, into: lenses)
-            // Deleted lenses alone are nothing to show.
-            guard reachesBuds || plan.asked > 0 else { return }
-            let message = SavedLens.tagRenameMessage(from: from, to: to, buds: buds, lenses: plan.asked, merged: plan.merged)
-            self.toasts.show(Undoable(message: message, systemImage: "number") { [weak self] in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if reachesBuds { self.undoRenameTag(edits) }
-                    // Each lens it reached goes back, unless it has been changed since.
-                    await self.settle()
-                    self.undoRenameTagInLenses(lenses)
-                    // The lens goes back too, unless it has been changed since.
-                    if self.canvasFacets.map(\.name) == renamed.map(\.name) { self.canvasFacets = ticked }
+            self.renameTagInLenses(from, to: to, into: lenses) { plan, refused in
+                // Deleted lenses alone are nothing to show.
+                guard reachesBuds || plan.asked > 0 else { return }
+                let message = SavedLens.tagRenameMessage(
+                    from: from, to: to, buds: buds, lenses: plan.asked, merged: plan.merged, lensesRefused: refused
+                )
+                let undo: (@Sendable () -> Void)? = refused && !reachesBuds ? nil : { [weak self] in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        if reachesBuds { self.undoRenameTag(edits) }
+                        // Each lens it reached goes back, unless it has been changed since.
+                        await self.settle()
+                        self.undoRenameTagInLenses(lenses)
+                        // The rows go back as they were, unless they have been changed since.
+                        if self.canvasFacets.map(\.name) == lenses.rows.map(\.name) {
+                            let rows = LensFacet.synced(ticked, with: self.savedLenses) ?? ticked
+                            self.canvasFacets = rows
+                            self.canvasLens = LensFacet.query(of: rows)
+                        }
+                    }
                 }
-            })
+                self.toasts.show(Undoable(message: message, systemImage: refused ? "exclamationmark.triangle" : "number", undo: undo))
+            }
         }
         if reachesBuds {
             write { [self] vault in
@@ -917,7 +928,9 @@ public final class BudStore: ObservableObject {
             // Only lenses: nothing in the tree changes, so nothing reloads.
             writeBeside({ _ in done() }, failed: {})
         }
-    }    /// A ticked tag the rename reached takes its new name, so its chip keeps matching; one that
+    }
+
+    /// A ticked tag the rename reached takes its new name, so its chip keeps matching; one that
     /// lands on a tag ticked already merges into it.
     private func renameFacets(_ from: String, to: String) {
         var seen: Set<LensFacet> = []
@@ -1272,8 +1285,8 @@ private final class LensTagRename {
     var saved: [(before: SavedLens, after: SavedLens)] = []
     var deleted: [(before: SavedLens, after: SavedLens)] = []
     var merged: [(gone: SavedLens, into: SavedLens)] = []
-    /// The lenses that went which were ticked on the canvas then.
-    var ticked: Set<UUID> = []
+    /// The ticked rows once the rename was done, so its undo knows whether they changed since.
+    var rows: [LensFacet] = []
 }
 
 /// What a tag rename or remove wrote, by bud, filled in once the vault has done it, for the undo.
@@ -1622,21 +1635,54 @@ extension BudStore {
     /// the deleted ones an Undo may bring back; a lens a newer build wrote stays as it is, and
     /// of two that now ask one question the one first by name stays. What each was before and
     /// after, and what went, goes into `rename`, for the undo.
-    @discardableResult
-    private func renameTagInLenses(_ from: String, to: String, into rename: LensTagRename) -> SavedLens.TagRename {
+    private func renameTagInLenses(
+        _ from: String, to: String, into rename: LensTagRename,
+        landed: @escaping @MainActor (SavedLens.TagRename, _ refused: Bool) -> Void
+    ) {
         let plan = SavedLens.afterTagRename(savedLenses, from: from, to: to)
         rename.saved = plan.renamed
         rename.merged = plan.merged
-        rename.ticked = Set(plan.merged.map(\.gone).filter { canvasFacets.contains(.saved($0)) }.map(\.id))
-        // One lens per question: the one that now asks what another does goes.
-        for pair in plan.merged { drop(pair.gone.id) }
-        for pair in plan.renamed { keep(pair.after) }
+        // A ticked lens that goes gives its place on the canvas to the lens it went into, so
+        // the canvas asks what it asked.
+        var rows = canvasFacets
+        for (gone, into) in plan.merged {
+            guard let at = rows.firstIndex(of: .saved(gone)) else { continue }
+            let now = plan.renamed.first { $0.after.id == into.id }?.after ?? into
+            if rows.contains(.saved(now)) { rows.remove(at: at) } else { rows[at] = .saved(now) }
+        }
+        // One lens per question: the one that now asks what another does goes. Every change
+        // goes to the vault in one write.
+        var changes: [(key: String, text: String?)] = []
+        for pair in plan.merged where saved(pair.gone.id) != nil {
+            savedLenses.removeAll { $0.id == pair.gone.id }
+            if savedLens == pair.gone.id { savedLens = nil }
+            changes.append((pair.gone.id.uuidString, nil))
+        }
+        for pair in plan.renamed {
+            guard let text = pair.after.text else { continue }
+            savedLenses = SavedLens.sorted(savedLenses.filter { $0.id != pair.after.id } + [pair.after])
+            changes.append((pair.after.id.uuidString, text))
+        }
+        // The rows ask what the lenses ask now.
+        rows = LensFacet.synced(rows, with: savedLenses) ?? rows
+        canvasFacets = rows
+        canvasLens = LensFacet.query(of: rows)
+        rename.rows = rows
         deletedLenses = deletedLenses.map { lens in
             guard let renamed = lens.renamingTag(from, to: to) else { return lens }
             rename.deleted.append((lens, renamed))
             return renamed
         }
-        return plan
+        guard !changes.isEmpty else { return landed(plan, false) }
+        lensEdits += 1
+        writeBeside({ vault in
+            for change in changes { try await vault.setShared(.lenses, change.key, change.text) }
+            landed(plan, false)
+        }) { [weak self] in
+            // Refused: one read puts the lenses back as the vault holds them.
+            self?.queueReread(.lenses, edits: \.lensEdits) { self?.applyLenses($0) }
+            landed(plan, true)
+        }
     }
 
     /// Takes a tag rename back from the lenses it reached, each one unless it changed since.
@@ -1644,8 +1690,6 @@ extension BudStore {
         for (before, after) in rename.saved where saved(after.id) == after { keep(before) }
         for (gone, _) in rename.merged where saved(gone.id) == nil && !savedLenses.contains(where: { $0.asksSame(as: gone) }) {
             keep(gone)
-            // Ticked when it went, it is ticked again.
-            if rename.ticked.contains(gone.id), !canvasFacets.contains(.saved(gone)) { canvasFacets.append(.saved(gone)) }
         }
         deletedLenses = deletedLenses.map { lens in
             rename.deleted.first { $0.after == lens }?.before ?? lens

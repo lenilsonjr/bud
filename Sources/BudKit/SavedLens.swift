@@ -142,10 +142,10 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     }
 
     /// The saved lenses after a tag rename: each that asks for the tag asks for the new name.
-    /// Where the rename makes a lens ask what another already asks, one lens per question
-    /// stays, the first by name, and the others go. Only lenses this rename changed bring that
-    /// about: duplicates there were before stay as they were, and so does a lens this build
-    /// cannot read.
+    /// Where the rename makes a lens ask what a lens it did not touch asks already, the untouched
+    /// one stays, the first by name of them, and every changed lens asking it goes into it; only
+    /// where every lens asking one question was changed does the first by name stay. Lenses the
+    /// rename did not touch never go, and a lens this build cannot read takes no part.
     public static func afterTagRename(_ lenses: [SavedLens], from: String, to: String) -> TagRename {
         var out = TagRename()
         var now: [SavedLens] = []
@@ -168,10 +168,8 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         }
         for question in questions {
             let asking = readable.filter { $0.query == question }
-            let unchanged = asking.filter { !changed.contains($0.id) }
-            // Duplicates from before stay; the changed lenses join the first of them. Otherwise
-            // the first by name stays.
-            let stays = unchanged.count > 1 ? unchanged : [asking[0]]
+            let untouched = asking.filter { !changed.contains($0.id) }
+            let stays = untouched.isEmpty ? [asking[0]] : untouched
             for lens in asking where !stays.contains(where: { $0.id == lens.id }) {
                 let before = lenses.first { $0.id == lens.id } ?? lens
                 out.merged.append((before, stays[0]))
@@ -192,8 +190,15 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
 
     /// The tag rename's toast: what it reached among the buds and the saved lenses, and the
     /// lenses that went because another now asks the same.
-    public static func tagRenameMessage(from: String, to: String, buds: Int, lenses: Int, merged: [(gone: SavedLens, into: SavedLens)]) -> String {
+    /// When the vault refused the lenses' writes, it says so instead of naming them.
+    public static func tagRenameMessage(
+        from: String, to: String, buds: Int, lenses: Int, merged: [(gone: SavedLens, into: SavedLens)], lensesRefused: Bool = false
+    ) -> String {
         func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
+        if lensesRefused {
+            guard buds > 0 else { return "Couldn't rename #\(from) to #\(to) in the saved lenses" }
+            return "Renamed #\(from) to #\(to) in \(count(buds, "bud", "buds")), but couldn't change the saved lenses"
+        }
         var reached: [String] = []
         if buds > 0 { reached.append(count(buds, "bud", "buds")) }
         if lenses > 0 { reached.append(count(lenses, "saved lens", "saved lenses")) }
