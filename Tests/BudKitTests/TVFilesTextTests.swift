@@ -46,7 +46,7 @@ final class TVFilesTextTests: XCTestCase {
         let top = TVFilesText.rows(.everything, in: tree)
         XCTAssertEqual(top.map(\.title), tree.children(of: rootID).map(\.text))
         let newsletter = top[0]
-        XCTAssertEqual(TVFilesText.label(newsletter.tag), "5 inside · 3 open")
+        XCTAssertEqual(TVFilesText.label(newsletter.tag), "4 inside · 2 open")
         let inside = TVFilesText.rows(.everything, in: tree, inside: newsletter.id)
         XCTAssertEqual(inside.first?.title, "Pick a name")
         XCTAssertEqual(inside.first?.caption, "To-do", "Inside a bud the trail is above, so the row says its kind")

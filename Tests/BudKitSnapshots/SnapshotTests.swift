@@ -871,9 +871,10 @@ final class SnapshotTests: XCTestCase {
     }
 
     /// The Calendar view on its month, 1440 by 900 as the board's frame: the seed on the device
-    /// store's fixed clock and a Monday-first calendar, so the bars and items land where the
-    /// board draws them and the picture is the same on every run. One thread off, so the column
-    /// shows an unticked row; and the week segment, so its quiet line is seen.
+    /// store's fixed clock, two buds given a span, and a Monday-first calendar, so the bars and
+    /// items land where the board draws them and the picture is the same on every run. One
+    /// thread off, so the column shows an unticked row; and the week segment, so its quiet line
+    /// is seen.
     func testRendersTheMonthCalendar() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
@@ -881,6 +882,16 @@ final class SnapshotTests: XCTestCase {
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let store = stillStore()
+        // Two buds scheduled and due, so the month has bars across its weeks: one under the
+        // newsletter over four rows, one under the roadmap over two.
+        let day: TimeInterval = 86_400
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
+        store.setWhen(issue.id, store.now.addingTimeInterval(3 * day))
+        store.setDue(issue.id, store.now.addingTimeInterval(20 * day))
+        let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
+        store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
+        store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         calendar.locale = Locale(identifier: "en_GB")
