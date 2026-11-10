@@ -215,6 +215,44 @@ fn queries_answer_from_the_index() {
 }
 
 #[test]
+fn attachments_and_embeds_answer_from_the_index() {
+    let f = fixture(&[
+        (
+            "Newsletter.md",
+            "The cover: ![[cover.png]] and ![](Nowhere.png)\n",
+        ),
+        ("Newsletter/cover.png", "png bytes"),
+    ]);
+    let pictures = f.vault.attachments().unwrap();
+    assert_eq!(pictures.len(), 1);
+    assert_eq!(pictures[0].path, "Newsletter/cover.png");
+    assert_eq!(pictures[0].name, "cover.png");
+    assert_eq!(pictures[0].size, 9);
+    assert_eq!(
+        f.vault.attachment("Newsletter/cover.png".into()).unwrap(),
+        pictures.first().cloned()
+    );
+
+    let embeds = f.vault.embeds("Newsletter.md".into()).unwrap();
+    assert_eq!(embeds.len(), 2);
+    assert_eq!(embeds[0].to.as_deref(), Some("Newsletter/cover.png"));
+    assert_eq!(embeds[1].to, None);
+    assert_eq!(
+        f.vault.first_embed("Newsletter.md".into()).unwrap(),
+        embeds.first().cloned()
+    );
+    let who: Vec<String> = f
+        .vault
+        .embedding("Newsletter/cover.png".into())
+        .unwrap()
+        .into_iter()
+        .map(|e| e.from)
+        .collect();
+    assert_eq!(who, ["Newsletter.md"]);
+    assert!(f.vault.links("Newsletter.md".into()).unwrap().is_empty());
+}
+
+#[test]
 fn errors_are_one_enum() {
     let f = newsletter();
     let missing = f.vault.set_body("Nothing.md".into(), "x".into());

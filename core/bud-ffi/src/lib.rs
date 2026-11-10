@@ -135,6 +135,26 @@ pub struct LinkRecord {
     pub to: Option<String>,
 }
 
+/// A picture file in the vault: its path, its file name, its size in bytes and its modification
+/// time in seconds since the epoch.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct AttachmentRecord {
+    pub path: String,
+    pub name: String,
+    pub size: u64,
+    pub mtime: i64,
+}
+
+/// An embed (`![[photo.png]]` or `![alt](photo.png)`) written in a bud: the file as written, its
+/// label, and the attachment it names when exactly one does.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EmbedRecord {
+    pub from: String,
+    pub target: String,
+    pub label: Option<String>,
+    pub to: Option<String>,
+}
+
 /// A tag and how many buds carry it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct TagCountRecord {
@@ -803,6 +823,46 @@ impl Vault {
             .collect())
     }
 
+    /// Every picture in the index, by path; the Trash included, under `.trash/`.
+    pub fn attachments(&self) -> Result<Vec<AttachmentRecord>> {
+        Ok(self
+            .core()
+            .attachments()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// One picture by its path.
+    pub fn attachment(&self, path: String) -> Result<Option<AttachmentRecord>> {
+        Ok(self.core().attachment(&path)?.map(Into::into))
+    }
+
+    /// The embeds written in the bud at `path`, in order.
+    pub fn embeds(&self, path: String) -> Result<Vec<EmbedRecord>> {
+        Ok(self
+            .core()
+            .embeds(&path)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// The embeds that name the attachment at `path`.
+    pub fn embedding(&self, path: String) -> Result<Vec<EmbedRecord>> {
+        Ok(self
+            .core()
+            .embedding(&path)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    /// The first embed of the bud at `path` that names an attachment: the picture its card shows.
+    pub fn first_embed(&self, path: String) -> Result<Option<EmbedRecord>> {
+        Ok(self.core().first_embed(&path)?.map(Into::into))
+    }
+
     /// Every tag with the number of buds that carry it, most used first.
     pub fn tags(&self) -> Result<Vec<TagCountRecord>> {
         Ok(self
@@ -970,6 +1030,28 @@ impl From<bud_core::Link> for LinkRecord {
             target: link.target,
             label: link.label,
             to: link.to,
+        }
+    }
+}
+
+impl From<bud_core::Attachment> for AttachmentRecord {
+    fn from(attachment: bud_core::Attachment) -> Self {
+        AttachmentRecord {
+            path: attachment.path,
+            name: attachment.name,
+            size: attachment.size,
+            mtime: attachment.mtime,
+        }
+    }
+}
+
+impl From<bud_core::Embed> for EmbedRecord {
+    fn from(embed: bud_core::Embed) -> Self {
+        EmbedRecord {
+            from: embed.from,
+            target: embed.target,
+            label: embed.label,
+            to: embed.to,
         }
     }
 }

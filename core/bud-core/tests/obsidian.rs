@@ -1,5 +1,5 @@
-//! A small Obsidian vault opens unchanged: every note is indexed, nothing is written back
-//! (ADR-001 consequence 1, ADR-002 consequence 1).
+//! A small Obsidian vault opens unchanged: every note is indexed, so is its picture, nothing is
+//! written back (ADR-001 consequence 1, ADR-002 consequence 1).
 
 use bud_core::{Kind, Place, Vault};
 use pretty_assertions::assert_eq;
@@ -64,7 +64,11 @@ fn the_fixture_looks_like_a_vault() {
 #[test]
 fn every_markdown_file_is_a_note_and_folders_are_buds() {
     let (mut vault, _index) = open(&fixture());
-    assert_eq!(vault.rescan().unwrap().added, 11);
+    assert_eq!(
+        vault.rescan().unwrap().added,
+        12,
+        "eleven buds and a picture"
+    );
     let mut rows: Vec<(String, Kind, bool, Place)> = vault
         .all()
         .unwrap()
@@ -95,13 +99,23 @@ fn every_markdown_file_is_a_note_and_folders_are_buds() {
 }
 
 #[test]
-fn settings_and_attachments_are_skipped_and_the_trash_is_a_place() {
+fn settings_are_skipped_a_picture_is_an_attachment_and_the_trash_is_a_place() {
     let (mut vault, _index) = open(&fixture());
     vault.rescan().unwrap();
     assert_eq!(vault.bud(".obsidian").unwrap(), None);
     assert_eq!(vault.bud(".obsidian/app.json").unwrap(), None);
     assert_eq!(vault.bud(".obsidian/workspace.json").unwrap(), None);
     assert_eq!(vault.bud("image.png").unwrap(), None);
+    let picture = vault.attachment("image.png").unwrap().unwrap();
+    assert_eq!(picture.name, "image.png");
+    assert_eq!(
+        picture.size,
+        std::fs::metadata(fixture().join("image.png"))
+            .unwrap()
+            .len()
+    );
+    assert!(picture.mtime > 0);
+    assert_eq!(vault.attachments().unwrap(), vec![picture]);
     assert_eq!(vault.bud(".trash").unwrap(), None);
     let trashed = vault.bud(".trash/Old draft.md").unwrap().unwrap();
     assert_eq!(trashed.place, Place::Trash);
@@ -140,6 +154,39 @@ fn wiki_links_and_embeds_stay_as_text_in_the_body() {
 }
 
 #[test]
+fn the_embed_names_the_picture_and_the_picture_knows_who_embeds_it() {
+    let (mut vault, _index) = open(&fixture());
+    vault.rescan().unwrap();
+    let targets: Vec<String> = vault
+        .links("Linked note.md")
+        .unwrap()
+        .into_iter()
+        .map(|l| l.target)
+        .collect();
+    assert_eq!(
+        targets,
+        ["Other note", "Reading list"],
+        "an embed is no link"
+    );
+    let embeds = vault.embeds("Linked note.md").unwrap();
+    assert_eq!(embeds.len(), 1);
+    assert_eq!(embeds[0].target, "image.png");
+    assert_eq!(embeds[0].to.as_deref(), Some("image.png"));
+    assert_eq!(
+        vault.first_embed("Linked note.md").unwrap(),
+        embeds.first().cloned()
+    );
+    assert_eq!(vault.first_embed("Other note.md").unwrap(), None);
+    let who: Vec<String> = vault
+        .embedding("image.png")
+        .unwrap()
+        .into_iter()
+        .map(|e| e.from)
+        .collect();
+    assert_eq!(who, ["Linked note.md"]);
+}
+
+#[test]
 fn frontmatter_with_tags_and_aliases_is_a_note_and_its_body_is_intact() {
     let (mut vault, _index) = open(&fixture());
     vault.rescan().unwrap();
@@ -174,5 +221,6 @@ fn the_vault_bytes_are_identical_after_every_read() {
     assert!(vault.today("2026-11-02").unwrap().is_empty());
     assert_eq!(vault.counts("Projects").unwrap().inside, 1);
     assert_eq!(vault.counts("Daily").unwrap().inside, 2);
+    assert_eq!(vault.embedding("image.png").unwrap().len(), 1);
     assert_eq!(fingerprint(&fixture()), before);
 }

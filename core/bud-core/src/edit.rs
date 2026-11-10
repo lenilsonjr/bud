@@ -5,6 +5,7 @@
 //! children; operations that move or rename the file carry the folder with it, and the rows of
 //! every descendant follow.
 
+use crate::attachments;
 use crate::frontmatter;
 use crate::lock;
 use crate::scan;
@@ -330,6 +331,7 @@ impl Vault {
                      OR substr(path, 1, length(?2) + 1) = ?2 || '/'",
                     params![path, dir],
                 )?;
+                attachments::remove_under(&tx, dir)?;
             } else {
                 let rows: Vec<String> = {
                     let mut stmt = tx.prepare(
@@ -342,6 +344,17 @@ impl Vault {
                 let gone = |row: &&String| row.as_str() != path && !self.root.join(row).exists();
                 for row in rows.iter().filter(gone) {
                     tx.execute("DELETE FROM buds WHERE path = ?1", params![row])?;
+                }
+                let pictures: Vec<String> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT path FROM attachments
+                         WHERE substr(path, 1, length(?1) + 1) = ?1 || '/'",
+                    )?;
+                    let found = stmt.query_map(params![dir], |r| r.get(0))?;
+                    found.collect::<std::result::Result<_, _>>()?
+                };
+                for row in pictures.iter().filter(gone) {
+                    tx.execute("DELETE FROM attachments WHERE path = ?1", params![row])?;
                 }
             }
             tx.commit()?;
@@ -561,6 +574,8 @@ impl Vault {
                 params![path_now, path],
             )?;
         }
+        // The pictures in the bud's folder moved with it.
+        attachments::relocate(&tx, old_dir, new_dir)?;
         tx.commit()?;
         Ok(new_path)
     }
