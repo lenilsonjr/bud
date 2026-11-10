@@ -17,7 +17,7 @@ final class TVReadTextTests: XCTestCase {
     func testTheInsideLineCountsChildrenAndOpenToDos() throws {
         let tree = Tree.seed()
         let newsletter = try XCTUnwrap(tree.children(of: rootID).first)
-        XCTAssertEqual(TVReadText.insideLine(in: tree, under: newsletter.id), "5 inside · 3 open")
+        XCTAssertEqual(TVReadText.insideLine(in: tree, under: newsletter.id), "4 inside · 2 open")
         XCTAssertGreaterThan(tree.openCount(under: newsletter.id), 2, "open counts the children only, not the to-dos below them")
         let routines = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Routines" })
         XCTAssertEqual(TVReadText.insideLine(in: tree, under: routines.id), "Nothing inside yet")

@@ -20,6 +20,22 @@ final class CalendarMonthTests: XCTestCase {
         calendar.date(from: DateComponents(year: y, month: m, day: d))!
     }
 
+    /// The seed world with two buds that are scheduled and due, so the month has bars across its
+    /// weeks: one under the newsletter, Friday 6 to Monday 23; one under the roadmap, Wednesday
+    /// 4 to Saturday 14.
+    static func world(now: Date = Tree.stillNow) -> Tree {
+        var tree = Tree.seed(now: now)
+        let day: TimeInterval = 86_400
+        let newsletter = tree.children(of: rootID).first { $0.text == "Launch the newsletter" }!
+        let issue = tree.add("Send the first issue", todo: true, under: newsletter.id)
+        tree.setWhen(issue.id, now.addingTimeInterval(3 * day))
+        tree.setDue(issue.id, now.addingTimeInterval(20 * day))
+        let onboarding = tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" }!
+        tree.setWhen(onboarding.id, now.addingTimeInterval(1 * day))
+        tree.setDue(onboarding.id, now.addingTimeInterval(11 * day))
+        return tree
+    }
+
     // MARK: The month
 
     func testTheStillMomentIsATuesdayMorningInNovember2026() {
@@ -97,7 +113,7 @@ final class CalendarMonthTests: XCTestCase {
     // MARK: Threads
 
     func testEveryTopLevelBranchIsAThreadColouredInTurn() {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let threads = CalendarThread.list(in: tree)
         XCTAssertEqual(threads.map(\.title), tree.children(of: rootID).map(\.text))
         XCTAssertEqual(threads.prefix(4).map(\.tone), [.leaf, .amethyst, .pistil, .rose], "The four accents, as the board colours its threads")
@@ -111,7 +127,7 @@ final class CalendarMonthTests: XCTestCase {
     }
 
     func testAnEntryCarriesItsThreadAndItsDaysAtMidnight() throws {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let entries = CalendarEntry.all(in: tree, calendar: calendar)
         let walk = try XCTUnwrap(entries.first { $0.title == "A walk before the first meeting" })
         let health = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Health reset" })
@@ -141,7 +157,7 @@ final class CalendarMonthTests: XCTestCase {
     // MARK: The grid
 
     func testABudWithWhenAndDueIsABarCutAtEachWeeksEnd() throws {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let grid = MonthGrid(month: CalendarMonth(containing: now, now: now, calendar: calendar), entries: CalendarEntry.all(in: tree, calendar: calendar), state: CalendarState())
         let issue = try XCTUnwrap(tree.walk(under: rootID).first { $0.text == "Send the first issue" })
         let pieces = grid.bars.filter { $0.entry == issue.id }
@@ -163,7 +179,7 @@ final class CalendarMonthTests: XCTestCase {
     }
 
     func testABudWithOneDateIsAnItemOnItsDay() throws {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let grid = MonthGrid(month: CalendarMonth(containing: now, now: now, calendar: calendar), entries: CalendarEntry.all(in: tree, calendar: calendar), state: CalendarState())
         XCTAssertEqual(grid.items(row: 1, column: 1).map(\.title), ["A walk before the first meeting"], "Scheduled today")
         XCTAssertEqual(grid.items(row: 1, column: 1).map(\.isDue), [false])
@@ -212,7 +228,7 @@ final class CalendarMonthTests: XCTestCase {
     // MARK: The threads and the switches
 
     func testHidingAThreadTakesItsBudsOutAtOnce() throws {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let month = CalendarMonth(containing: now, now: now, calendar: calendar)
         let entries = CalendarEntry.all(in: tree, calendar: calendar)
         let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
@@ -231,7 +247,7 @@ final class CalendarMonthTests: XCTestCase {
     }
 
     func testTheWhenAndDueSwitchesHideEachDate() throws {
-        let tree = Tree.seed(now: now)
+        let tree = Self.world()
         let month = CalendarMonth(containing: now, now: now, calendar: calendar)
         let entries = CalendarEntry.all(in: tree, calendar: calendar)
         var state = CalendarState()
@@ -311,7 +327,7 @@ final class CalendarStoreTests: XCTestCase {
 
     private func makeStore() -> BudStore {
         let clock: @Sendable () -> Date = { Tree.stillNow }
-        let tree = Tree.seed(now: Tree.stillNow)
+        let tree = CalendarMonthTests.world()
         let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock)
         let store = BudStore(vault: MemoryVault(tree: tree), tree: tree, devices: devices)
         XCTAssertEqual(store.now, Tree.stillNow, "The device store's clock is the one clock")
