@@ -88,7 +88,7 @@ enum ModalMetrics {
     /// The card's own width, 480 pt unless the modal asks for more, or the window width minus
     /// 32 when the window is narrower than that.
     static func cardWidth(window: CGFloat, card: CGFloat = width) -> CGFloat {
-        min(card, window - 2 * margin)
+        max(0, min(card, window - 2 * margin))
     }
 
     /// The tallest a card may be: the window's height less a margin above and below, so a card
@@ -112,9 +112,8 @@ struct ModalHost: View {
             if let modal = store.modal {
                 scrim
                 GeometryReader { window in
-                    card(for: modal)
+                    card(for: modal, height: ModalMetrics.cardHeight(window: window.size.height))
                         .frame(width: ModalMetrics.cardWidth(window: window.size.width, card: modal.width))
-                        .frame(maxHeight: ModalMetrics.cardHeight(window: window.size.height))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: compact ? .bottom : .center)
                         .padding(.bottom, compact ? ModalMetrics.margin : 0)
                 }
@@ -138,7 +137,7 @@ struct ModalHost: View {
             .transition(.opacity)
     }
 
-    @ViewBuilder private func card(for modal: Modal) -> some View {
+    @ViewBuilder private func card(for modal: Modal, height: CGFloat) -> some View {
         Group {
             switch modal {
             case .add(let parent): AddSheet(store: store, mode: .enrich(under: parent))
@@ -169,16 +168,21 @@ struct ModalHost: View {
             case .shortcuts: ShortcutSheet(layout: store.keys, close: { store.modal = nil })
             }
         }
-        .modalCard()
+        .modalCard(maxHeight: height)
     }
 }
 
 extension View {
-    /// The raised card: fill, 1 pt stroke, 22 pt corners and 24 pt of padding.
-    func modalCard() -> some View {
+    /// The raised card: fill, 1 pt stroke, 22 pt corners and 24 pt of padding. Sized to what it
+    /// holds up to `maxHeight`; past that its content scrolls inside, so a card taller than the
+    /// window keeps its buttons and the scrim in reach.
+    func modalCard(maxHeight: CGFloat = .infinity) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.sheet, style: .continuous)
-        return padding(ModalMetrics.padding)
+        return MaybeScroll { padding(ModalMetrics.padding) }
+            .frame(maxHeight: maxHeight)
+            .fixedSize(horizontal: false, vertical: true)
             .background(Theme.raised, in: shape)
+            .clipShape(shape)
             .overlay(shape.stroke(Theme.lineStrong, lineWidth: 1))
     }
 }
