@@ -56,7 +56,7 @@ final class CommandTests: XCTestCase {
 
     func testTheMenuBarListsTheRowsTheStorePerformsUnderTheScopesThatHaveOne() {
         let listed = Command.menuScopes.flatMap(Command.menu(in:))
-        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .canvas, .files, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
+        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .canvas, .files, .shortcuts, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
         XCTAssertTrue(listed.allSatisfy { !$0.inPlace })
         XCTAssertEqual(Command.menuScopes, [.everywhere, .canvas, .document], "Files has no row of its own yet")
     }
