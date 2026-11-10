@@ -96,16 +96,19 @@ public struct CalendarState: Equatable, Codable, Sendable {
     public var layout: CalendarLayout = .calendar
     /// Threads whose row is unticked; every thread shows until it is hidden.
     public var hiddenThreads: Set<UUID> = []
+    /// Threads folded to their header in the timeline; every thread opens until it is folded.
+    public var collapsedThreads: Set<UUID> = []
     /// The switches that are on.
     public var shown: Set<CalendarShow> = CalendarState.defaultShown
     /// How many months the custom range spans. Where it starts is the day the calendar looks
     /// at, as for every range, so Today, the chevrons and the picker all move the one date.
     public var customMonths: Int = CalendarState.defaultCustomMonths
 
-    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown, customMonths: Int = CalendarState.defaultCustomMonths) {
+    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], collapsedThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown, customMonths: Int = CalendarState.defaultCustomMonths) {
         self.range = range
         self.layout = layout
         self.hiddenThreads = hiddenThreads
+        self.collapsedThreads = collapsedThreads
         self.shown = shown
         self.customMonths = max(customMonths, 1)
     }
@@ -116,6 +119,7 @@ public struct CalendarState: Equatable, Codable, Sendable {
         range = try c.decodeIfPresent(CalendarRange.self, forKey: .range) ?? .month
         layout = try c.decodeIfPresent(CalendarLayout.self, forKey: .layout) ?? .calendar
         hiddenThreads = try c.decodeIfPresent(Set<UUID>.self, forKey: .hiddenThreads) ?? []
+        collapsedThreads = try c.decodeIfPresent(Set<UUID>.self, forKey: .collapsedThreads) ?? []
         shown = try c.decodeIfPresent(Set<CalendarShow>.self, forKey: .shown) ?? Self.defaultShown
         customMonths = max(try c.decodeIfPresent(Int.self, forKey: .customMonths) ?? Self.defaultCustomMonths, 1)
     }
@@ -129,6 +133,13 @@ public struct CalendarState: Equatable, Codable, Sendable {
 
     public mutating func toggle(thread id: UUID) {
         if hiddenThreads.contains(id) { hiddenThreads.remove(id) } else { hiddenThreads.insert(id) }
+    }
+
+    public func isCollapsed(thread id: UUID) -> Bool { collapsedThreads.contains(id) }
+
+    /// Folds a thread's rows up under its header, or opens them again.
+    public mutating func toggle(collapsed id: UUID) {
+        if collapsedThreads.contains(id) { collapsedThreads.remove(id) } else { collapsedThreads.insert(id) }
     }
 
     /// Whether a bud passes the switches: a routine needs Routines on, a done bud needs Done on,
