@@ -229,23 +229,23 @@ struct HourBlock: View {
 }
 
 /// Chips in reading order, wrapping to the next line where the row runs out.
-struct ChipFlow: Layout {
+struct ChipFlow: SwiftUI.Layout {
     var spacing: CGFloat = 4
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: LayoutSubviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let frames = place(subviews, in: width)
         let height = frames.map { $0.maxY }.max() ?? 0
         return CGSize(width: proposal.width ?? (frames.map { $0.maxX }.max() ?? 0), height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: LayoutSubviews, cache: inout ()) {
         for (subview, frame) in zip(subviews, place(subviews, in: bounds.width)) {
             subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
         }
     }
 
-    private func place(_ subviews: Subviews, in width: CGFloat) -> [CGRect] {
+    private func place(_ subviews: LayoutSubviews, in width: CGFloat) -> [CGRect] {
         var frames: [CGRect] = []
         var x: CGFloat = 0
         var y: CGFloat = 0
