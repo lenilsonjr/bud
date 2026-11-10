@@ -24,10 +24,16 @@ public enum PagePanel: String, CaseIterable, Codable, Sendable {
 /// The two sidebars.
 public enum PanelSide: String, CaseIterable, Codable, Sendable {
     case left, right
+
+    public var other: PanelSide { self == .left ? .right : .left }
+
+    /// "left sidebar", as the menu names it.
+    public var name: String { "\(rawValue) sidebar" }
 }
 
 /// Which panels each sidebar holds, top to bottom. The default is Files alone on the left and
-/// the page's own panels on the right; moving them is for later.
+/// the page's own panels on the right. A panel on neither side is hidden. The layout is one per
+/// vault: the store keeps it in the vault's shared maps, so every device shows the same.
 public struct PanelLayout: Equatable, Codable, Sendable {
     public var left: [PagePanel]
     public var right: [PagePanel]
@@ -52,10 +58,67 @@ public struct PanelLayout: Equatable, Codable, Sendable {
         if right.contains(panel) { return .right }
         return nil
     }
+
+    /// The panels neither sidebar holds, in their usual order.
+    public var hidden: [PagePanel] { PagePanel.allCases.filter { side(of: $0) == nil } }
+
+    /// Puts a panel on a side at a place in that sidebar, taking it from wherever it was; a
+    /// place past the end puts it last.
+    public mutating func move(_ panel: PagePanel, to side: PanelSide, at index: Int) {
+        remove(panel)
+        var panels = self.panels(on: side)
+        panels.insert(panel, at: max(0, min(index, panels.count)))
+        set(panels, on: side)
+    }
+
+    /// Trades places with the panel above; nothing at the top.
+    public mutating func moveUp(_ panel: PagePanel) {
+        guard let side = side(of: panel), let i = panels(on: side).firstIndex(of: panel), i > 0 else { return }
+        var panels = self.panels(on: side)
+        panels.swapAt(i, i - 1)
+        set(panels, on: side)
+    }
+
+    /// Trades places with the panel below; nothing at the bottom.
+    public mutating func moveDown(_ panel: PagePanel) {
+        guard let side = side(of: panel), let i = panels(on: side).firstIndex(of: panel), i < panels(on: side).count - 1 else { return }
+        var panels = self.panels(on: side)
+        panels.swapAt(i, i + 1)
+        set(panels, on: side)
+    }
+
+    public func canMoveUp(_ panel: PagePanel) -> Bool {
+        guard let side = side(of: panel) else { return false }
+        return panels(on: side).first != panel
+    }
+
+    public func canMoveDown(_ panel: PagePanel) -> Bool {
+        guard let side = side(of: panel) else { return false }
+        return panels(on: side).last != panel
+    }
+
+    /// Takes a panel out of its sidebar; Show hidden panels brings it back.
+    public mutating func hide(_ panel: PagePanel) { remove(panel) }
+
+    /// Puts every hidden panel back, each at the end of the side it usually has.
+    public mutating func showHidden() {
+        for panel in hidden {
+            move(panel, to: Self.standard.side(of: panel) ?? .right, at: .max)
+        }
+    }
+
+    private mutating func remove(_ panel: PagePanel) {
+        left.removeAll { $0 == panel }
+        right.removeAll { $0 == panel }
+    }
+
+    private mutating func set(_ panels: [PagePanel], on side: PanelSide) {
+        if side == .left { left = panels } else { right = panels }
+    }
 }
 
 /// How the panels stand: where each sits and which are folded. Whether a sidebar shows at all
-/// is `SidebarVisibility`. Kept in memory for now; a saved layout comes later.
+/// is `SidebarVisibility`. The layout is the vault's; folding stays on this device, in memory.
 public struct PanelState: Equatable, Sendable {
     public var layout: PanelLayout
     public var collapsed: Set<PagePanel>
@@ -69,6 +132,112 @@ public struct PanelState: Equatable, Sendable {
 
     public mutating func toggle(_ panel: PagePanel) {
         if collapsed.contains(panel) { collapsed.remove(panel) } else { collapsed.insert(panel) }
+    }
+}
+
+/// A gap between a sidebar's panels, where a dragged panel lands: before the `gap`th panel of
+/// the side, or after the last one when `gap` is their count.
+public struct PanelDrop: Equatable, Sendable {
+    public var side: PanelSide
+    public var gap: Int
+
+    public init(side: PanelSide, gap: Int) {
+        self.side = side
+        self.gap = gap
+    }
+
+    /// Which edge of a panel the drop line is drawn on: the top of the panel at the gap, or the
+    /// bottom of the last one.
+    public enum Line: Sendable { case above, below }
+
+    public func line(on panel: PagePanel, in layout: PanelLayout) -> Line? {
+        let panels = layout.panels(on: side)
+        if gap < panels.count { return panels[gap] == panel ? .above : nil }
+        return panels.last == panel ? .below : nil
+    }
+
+    /// The place the moved panel takes on the side, since the gaps count its old place too.
+    public func index(moving panel: PagePanel, in layout: PanelLayout) -> Int {
+        if layout.side(of: panel) == side, let i = layout.panels(on: side).firstIndex(of: panel), i < gap {
+            return gap - 1
+        }
+        return gap
+    }
+
+    /// Which sidebar a point is over, from the width of each one shown; nil over the page.
+    public static func side(at x: CGFloat, in width: CGFloat, left: CGFloat?, right: CGFloat?) -> PanelSide? {
+        if let left, x < left { return .left }
+        if let right, x > width - right { return .right }
+        return nil
+    }
+
+    /// The gap under a point on a side: after every panel whose middle is above it, from the
+    /// panels' frames in the same space as the point.
+    public static func under(_ point: CGPoint, on side: PanelSide, frames: [PagePanel: CGRect], layout: PanelLayout) -> PanelDrop {
+        var gap = 0
+        for (i, panel) in layout.panels(on: side).enumerated() {
+            if let frame = frames[panel], frame.midY <= point.y { gap = i + 1 }
+        }
+        return PanelDrop(side: side, gap: gap)
+    }
+}
+
+/// A panel in hand: which, where the pointer is, and the gap it would land in.
+public struct PanelDrag: Equatable, Sendable {
+    public var panel: PagePanel
+    public var point: CGPoint
+    public var drop: PanelDrop?
+
+    public init(panel: PagePanel, point: CGPoint, drop: PanelDrop? = nil) {
+        self.panel = panel
+        self.point = point
+        self.drop = drop
+    }
+}
+
+/// The ⋯ menu on a panel's header, top to bottom, in three groups: moving it, folding or hiding
+/// it, and the layout as a whole. The words are here so a test reads them on any platform.
+public enum PanelMenuItem: CaseIterable, Sendable {
+    case moveToOtherSide, moveUp, moveDown, collapse, hide, showHidden, reset
+
+    /// The first item of a group after the first.
+    public var startsGroup: Bool { self == .collapse || self == .showHidden }
+
+    public func title(for panel: PagePanel, in state: PanelState) -> String {
+        switch self {
+        case .moveToOtherSide: return "Move to \((state.layout.side(of: panel) ?? .right).other.name)"
+        case .moveUp: return "Move up"
+        case .moveDown: return "Move down"
+        case .collapse: return state.isCollapsed(panel) ? "Expand" : "Collapse"
+        case .hide: return "Hide panel"
+        case .showHidden: return "Show hidden panels"
+        case .reset: return "Reset layout"
+        }
+    }
+
+    /// Whether it does anything from here: the last panel shown cannot hide, since the menu to
+    /// show the others would go with it.
+    public func isEnabled(for panel: PagePanel, in state: PanelState) -> Bool {
+        switch self {
+        case .moveToOtherSide, .collapse: return true
+        case .moveUp: return state.layout.canMoveUp(panel)
+        case .moveDown: return state.layout.canMoveDown(panel)
+        case .hide: return state.layout.left.count + state.layout.right.count > 1
+        case .showHidden: return !state.layout.hidden.isEmpty
+        case .reset: return state.layout != .standard
+        }
+    }
+
+    public func apply(to state: inout PanelState, for panel: PagePanel) {
+        switch self {
+        case .moveToOtherSide: state.layout.move(panel, to: (state.layout.side(of: panel) ?? .right).other, at: .max)
+        case .moveUp: state.layout.moveUp(panel)
+        case .moveDown: state.layout.moveDown(panel)
+        case .collapse: state.toggle(panel)
+        case .hide: state.layout.hide(panel)
+        case .showHidden: state.layout.showHidden()
+        case .reset: state.layout = .standard
+        }
     }
 }
 

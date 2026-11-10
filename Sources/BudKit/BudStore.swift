@@ -79,7 +79,8 @@ public final class BudStore: ObservableObject {
     @Published public var zoom: CGFloat = 1
     /// Whether Files shows each sidebar; iOS follows the window shape until a toggle decides.
     @Published public var sidebar = SidebarVisibility(followsWindow: BudStore.sidebarFollowsWindow)
-    /// The panels around the page: where each sits and which are folded.
+    /// The panels around the page: where each sits and which are folded. The layout is read from
+    /// the vault and changed through `arrange`; folding is this device's alone.
     @Published public var panels = PanelState()
 
     static var sidebarFollowsWindow: Bool {
@@ -259,6 +260,7 @@ public final class BudStore: ObservableObject {
                 await self?.reload()
                 await self?.soil?.reloadShared()
                 await self?.reloadTriggers()
+                await self?.reloadLayout()
             }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
@@ -269,6 +271,7 @@ public final class BudStore: ObservableObject {
         Task { @MainActor [weak self] in
             await self?.reload()
             await self?.reloadTriggers()
+            await self?.reloadLayout()
             await self?.startWatching()
         }
     }
@@ -1194,6 +1197,31 @@ extension BudStore {
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+    }
+}
+
+// MARK: the panels' layout
+
+extension BudStore {
+    /// The one key of the layout map: which panels each sidebar holds, as JSON.
+    static let layoutKey = "panels"
+
+    /// Changes the panels. One that moves or hides a panel goes to the vault too, so every
+    /// device shows the same arrangement; folding one stays here.
+    public func arrange(_ change: (inout PanelState) -> Void) {
+        let before = panels.layout
+        change(&panels)
+        guard panels.layout != before, let text = Self.triggerText(panels.layout) else { return }
+        write { vault in try await vault.setShared(.layout, Self.layoutKey, text) }
+    }
+
+    /// Reads the layout from the vault, once the writes queued here have landed: after a sync
+    /// brought another device's arrangement.
+    public func reloadLayout() async {
+        await settle()
+        guard let stored = try? await vault.shared(.layout), let text = stored[Self.layoutKey],
+              let layout = try? Self.triggerDecoder.decode(PanelLayout.self, from: Data(text.utf8)) else { return }
+        if layout != panels.layout { panels.layout = layout }
     }
 }
 
