@@ -1013,10 +1013,7 @@ public final class BudStore: ObservableObject {
         switch id {
         case .goAnywhere: searching = true
         case .capture: modal = .capture
-        case .canvas: surface = .canvas
-        case .files: surface = .files
-        case .board: surface = .board
-        case .calendar: surface = .calendar
+        case .canvas, .files, .board, .calendar: if let view = id.surface { surface = view }
         case .shortcuts: modal = modal == .shortcuts ? nil : .shortcuts
         case .newUnderThis: modal = .adding(under: bud ?? page ?? center)
         case .open: guard bud != nil else { return false }

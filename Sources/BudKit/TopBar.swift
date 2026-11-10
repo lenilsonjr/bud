@@ -13,9 +13,15 @@ struct TopBar: View {
     @State private var lensOpen = false
     @State private var switching = false
 
+    /// The width under which the four segments give way to the folded switch: a narrow Mac
+    /// window or an iPad held upright, where the bar's buttons leave no room for four names.
+    static let foldWidth: CGFloat = 900
+
     var body: some View {
         VStack(spacing: 0) {
-            bar
+            // The bar reads its own width, so a still picture folds the switch the same way.
+            GeometryReader { geo in bar(folded: compact || geo.size.width < Self.foldWidth) }
+                .frame(height: 52)
             if compact && store.surface == .canvas && !store.canvasFacets.isEmpty { compactChips }
         }
         .frame(maxWidth: .infinity)
@@ -26,7 +32,7 @@ struct TopBar: View {
         #endif
     }
 
-    private var bar: some View {
+    private func bar(folded: Bool) -> some View {
         HStack(spacing: compact ? 10 : 14) {
             #if os(iOS)
             if !compact && store.surface == .files { sidebarToggle }
@@ -34,7 +40,7 @@ struct TopBar: View {
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
-            if compact {
+            if folded {
                 viewSwitch
             } else {
                 Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
@@ -97,6 +103,7 @@ struct TopBar: View {
         .task { await store.devices.start() }
         .padding(.leading, compact ? 12 : leadingInset)
         .padding(.trailing, compact ? 8 : 14)
+        .frame(maxWidth: .infinity)
         .frame(height: 52)
     }
 
@@ -115,12 +122,11 @@ struct TopBar: View {
         }
     }
 
-    /// On a narrow bar the four views fold into one button: the view you are in, and a popover
-    /// listing all four, the current one ticked. The picture renderer cannot draw a popover, so a
-    /// still picture shows the button alone.
+    /// On a narrow bar the four views fold into one button: the view you are in, drawn as the
+    /// switch's lit segment, and a popover listing all four, the current one ticked. The picture
+    /// renderer cannot draw a popover, so a still picture shows the button alone.
     private var viewSwitch: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-        return Button { switching.toggle() } label: {
+        Button { switching.toggle() } label: {
             HStack(spacing: 4) {
                 Text(store.surface.rawValue)
                     .foregroundStyle(Theme.text)
@@ -134,9 +140,7 @@ struct TopBar: View {
             .padding(.leading, 10)
             .padding(.trailing, 8)
             .padding(.vertical, 5)
-            .background(shape.fill(Theme.raised).shadow(color: .black.opacity(0.08), radius: 1, y: 1))
-            .overlay(shape.stroke(Theme.lineStrong, lineWidth: 1))
-            .contentShape(shape)
+            .raisedSegment()
         }
         .buttonStyle(.plain)
         .help("Switch the view")
@@ -154,6 +158,7 @@ struct TopBar: View {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(Theme.leaf)
                                 .opacity(on ? 1 : 0)
+                                .accessibilityHidden(true)
                             Text(surface.rawValue)
                                 .fontWeight(on ? .semibold : .regular)
                                 .foregroundStyle(Theme.text)
@@ -165,6 +170,8 @@ struct TopBar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(surface.rawValue)
+                    .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
             .padding(8)

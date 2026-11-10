@@ -879,7 +879,8 @@ final class SnapshotTests: XCTestCase {
     private let phone = CGSize(width: 393, height: 852)
 
     /// The view switch with Board and Calendar lit in turn, each over its quiet page with the
-    /// same bud in the breadcrumb; on the phone the switch folds into one button.
+    /// same bud in the breadcrumb; on the phone, and in a Mac window too narrow for four
+    /// segments, the switch folds into one button.
     func testRendersTheViewSwitchAndTheQuietPages() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
@@ -901,6 +902,8 @@ final class SnapshotTests: XCTestCase {
         store.surface = .board
         let narrow = BudRootView(store: store).frame(width: phone.width, height: phone.height).environment(\.compact, true)
         try render(narrow, scheme: .light).write(to: folder.appendingPathComponent("phone-board-light.png"))
+        let window = BudRootView(store: store).frame(width: TopBar.foldWidth - 40, height: 600)
+        try render(window, scheme: .light).write(to: folder.appendingPathComponent("mac-narrow-board-light.png"))
     }
 
     /// The phone layout: Files split with the navigator on top, the canvas, and the palette.
