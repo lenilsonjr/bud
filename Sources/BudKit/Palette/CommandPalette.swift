@@ -198,7 +198,11 @@ struct CommandPalette: View {
         case .bud(let hit): pick = .bud(hit.id)
         case .destination(let d): pick = .destination(d)
         }
-        withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(pick, inFiles: inFiles) }
+        if pick.movesTheCanvas {
+            withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.go(pick, inFiles: inFiles) }
+        } else {
+            store.go(pick, inFiles: inFiles)
+        }
         (onGo ?? onClose)()
     }
 }

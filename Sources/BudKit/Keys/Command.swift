@@ -6,6 +6,13 @@ public struct Key: Hashable, Sendable {
     public enum Base: Hashable, Sendable {
         case letter(Character)
         case space, escape, `return`, tab, upArrow, downArrow
+
+        /// The letter a typed character is in the table: a letter, a number or a sign, kept
+        /// small. Nil for a control character or a combining mark, which the table cannot name.
+        public init?(typed character: Character) {
+            guard character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol else { return nil }
+            self = .letter(character.lowercased().first ?? character)
+        }
     }
 
     public struct Modifiers: OptionSet, Hashable, Sendable {
@@ -40,19 +47,12 @@ public struct Key: Hashable, Sendable {
     /// themselves carry what Option made of the key (å for ⌥A). Nil for a key the table has no
     /// name for: Delete, a function key, Home, a left or right arrow.
     public init?(characters: String, keyCode: UInt16, modifiers: Modifiers) {
-        switch keyCode {
-        case 49: self.init(.space, modifiers)
-        case 53: self.init(.escape, modifiers)
-        case 36, 76: self.init(.return, modifiers)
-        case 48: self.init(.tab, modifiers)
-        case 126: self.init(.upArrow, modifiers)
-        case 125: self.init(.downArrow, modifiers)
-        default:
-            guard let character = characters.first, characters.count == 1,
-                  character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol
-            else { return nil }
-            self.init(.letter(character.lowercased().first ?? character), modifiers)
+        if let named = KeyboardLayout.named[keyCode] {
+            self.init(named, modifiers)
+            return
         }
+        guard let character = characters.first, characters.count == 1, let base = Base(typed: character) else { return nil }
+        self.init(base, modifiers)
     }
 
     /// The key the way the board draws it: ⌘K, ⇧⌘G, ⌥Space, Esc.

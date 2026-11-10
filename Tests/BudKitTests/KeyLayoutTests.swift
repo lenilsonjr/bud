@@ -151,6 +151,22 @@ final class KeyLayoutTests: XCTestCase {
         XCTAssertEqual(layout.hotKey(for: .capture), PhysicalKey(code: 49, modifiers: .option), "The default sits where Space does")
     }
 
+    func testADesktopRowNamesItsKeyByItsPlaceWithNothingHeld() throws {
+        let layout = try desktop()
+        layout.startRecording(.capture)
+        XCTAssertEqual(layout.record(Key("!", [.shift, .command]), at: 18), .bound, "The press came as Shift typed it")
+        XCTAssertEqual(layout.key(for: .capture), Key("1", [.shift, .command]), "The row reads the key the way it will from now on")
+        XCTAssertEqual(layout.overrides[.capture], Key("1", [.shift, .command]))
+        XCTAssertEqual(layout.hotKeys[.capture], PhysicalKey(code: 18, modifiers: [.shift, .command]))
+        layout.startRecording(.goAnywhereDesktop)
+        XCTAssertEqual(layout.record(Key("!", [.shift, .command]), at: 18), .taken(by: .capture), "The same place is the same key, however the press named it")
+        layout.startRecording(.goAnywhereDesktop)
+        XCTAssertEqual(layout.record(Key("k", .option), at: 122), .refused, "A place no keyboard names")
+        XCTAssertEqual(layout.refusal, .unnamed)
+        XCTAssertEqual(layout.recording, .goAnywhereDesktop)
+        XCTAssertEqual(layout.record(Key("x"), at: 53), .cancelled, "Esc by its place cancels, however the press named it")
+    }
+
     func testARowOfTheWindowIgnoresTheKeysPlace() throws {
         let layout = try desktop()
         layout.startRecording(.goAnywhere)

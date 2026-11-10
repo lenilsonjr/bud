@@ -176,15 +176,26 @@ public final class KeyLayout {
     /// row that fires everywhere, since it would take a letter from every text field. A key
     /// another row would answer to as well is kept aside as a conflict and lands once that row
     /// moves off it. `code` is where the key sits on the keyboard, which a row the Mac answers
-    /// to from the desktop keeps and the others ignore; such a row refuses a key without one.
+    /// to from the desktop keeps and the others ignore; such a row refuses a key without one,
+    /// and names the key the way the keyboard in use names its place, with nothing held, since
+    /// that is how the row reads it from then on.
     @discardableResult
     public func record(_ key: Key?, at code: UInt16? = nil) -> Outcome {
         guard let id = recording else { return .cancelled }
         willChange()
         refusal = nil
-        guard let key else {
+        guard var key else {
             refusal = .unnamed
             return .refused
+        }
+        var hotKey: PhysicalKey?
+        if Command.systemWide.contains(id) {
+            guard let code, let named = PhysicalKey(code: code, modifiers: key.modifiers).key() else {
+                refusal = .unnamed
+                return .refused
+            }
+            hotKey = PhysicalKey(code: code, modifiers: key.modifiers)
+            key = named
         }
         let command = Command.of(id)
         if key == self.key(for: id) {
@@ -201,14 +212,6 @@ public final class KeyLayout {
                 refusal = .bare
                 return .refused
             }
-        }
-        var hotKey: PhysicalKey?
-        if Command.systemWide.contains(id) {
-            guard let code else {
-                refusal = .unnamed
-                return .refused
-            }
-            hotKey = PhysicalKey(code: code, modifiers: key.modifiers)
         }
         recording = nil
         return land(key, on: id, at: hotKey)

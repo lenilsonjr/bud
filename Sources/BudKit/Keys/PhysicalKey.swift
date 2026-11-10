@@ -64,7 +64,8 @@ public struct KeyboardLayout: Sendable {
     /// and again whenever that changes.
     public static var current: KeyboardLayout = .us
 
-    /// The named keys of the table, at the codes every layout keeps for them.
+    /// The named keys of the table, at the codes every layout keeps for them: the one place a
+    /// code names a key, for a key event and a recorded place alike.
     public static let named: [UInt16: Key.Base] = [
         49: .space, 53: .escape, 36: .return, 76: .return, 48: .tab, 126: .upArrow, 125: .downArrow,
     ]
@@ -76,11 +77,7 @@ public struct KeyboardLayout: Sendable {
     /// What this layout makes of a code: a named key by its code, else the character the layout
     /// gives it when the table can name that, nil otherwise.
     public func base(for code: UInt16) -> Key.Base? {
-        if let named = Self.named[code] { return named }
-        guard let character = characters(code),
-              character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol
-        else { return nil }
-        return .letter(character.lowercased().first ?? character)
+        Self.named[code] ?? characters(code).flatMap(Key.Base.init(typed:))
     }
 
     /// The code of a key of the table on the US keyboard: the named keys by their own code, a

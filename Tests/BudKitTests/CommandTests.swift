@@ -255,6 +255,14 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.searching, "Inside the window the desktop's Go anywhere is the window's")
     }
 
+    func testOnlyARowThatMovesTheCanvasAnimates() {
+        XCTAssertTrue(BudStore.Pick.bud(UUID()).movesTheCanvas)
+        XCTAssertTrue(BudStore.Pick.destination(.everything).movesTheCanvas)
+        for destination in Destination.allCases where destination != .everything {
+            XCTAssertFalse(BudStore.Pick.destination(destination).movesTheCanvas, "\(destination) opens in Files, in place")
+        }
+    }
+
     func testTheRowChosenInGoAnywhereGoesTheSameWayFromTheWindowAndTheDesktop() throws {
         let (store, bud) = store()
         store.go(.bud(bud), inFiles: false)
