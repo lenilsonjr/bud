@@ -47,8 +47,8 @@ final class RustVault: BudKit.Vault {
         try core.setState(path: path, state: state.map(Self.state))
     }
 
-    func setWhen(_ path: String, _ when: Date?) async throws { try core.setWhen(path: path, when: when.map(Self.day)) }
-    func setDue(_ path: String, _ due: Date?) async throws { try core.setDue(path: path, due: due.map(Self.day)) }
+    func setWhen(_ path: String, _ when: Date?) async throws { try core.setWhen(path: path, when: when.map { DayText.fileDate($0) }) }
+    func setDue(_ path: String, _ due: Date?) async throws { try core.setDue(path: path, due: due.map { DayText.fileDate($0) }) }
     func setPinned(_ path: String, _ pinned: Bool) async throws { try core.setPinned(path: path, pinned: pinned) }
     func setFromState(_ path: String, _ state: String?) async throws { try core.setFromState(path: path, state: state) }
 
@@ -122,8 +122,8 @@ final class RustVault: BudKit.Vault {
                 )
                 planted[record.path] = path
                 if let state = record.state { try core.setState(path: path, state: Self.state(state)) }
-                if let when = record.when { try core.setWhen(path: path, when: Self.day(when)) }
-                if let due = record.due { try core.setDue(path: path, due: Self.day(due)) }
+                if let when = record.when { try core.setWhen(path: path, when: DayText.fileDate(when)) }
+                if let due = record.due { try core.setDue(path: path, due: DayText.fileDate(due)) }
                 if record.pinned { try core.setPinned(path: path, pinned: true) }
                 if let created = record.created {
                     try core.setCreated(path: path, created: ISO8601DateFormatter().string(from: created))
@@ -209,7 +209,8 @@ final class RustVault: BudKit.Vault {
         state == .done ? .done : .open
     }
 
-    /// A day as the files write it, `2026-11-04`, in the device's calendar.
+    /// A day as a query names it, `2026-11-04`, in the device's calendar. `when` and `due` go
+    /// through `DayText.fileDate`, which keeps a time of day.
     private static func day(_ date: Date) -> String {
         let parts = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)

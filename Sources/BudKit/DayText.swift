@@ -6,6 +6,20 @@ public enum DayText {
         formatter(template: "d MMM", calendar: calendar).string(from: date)
     }
 
+    /// A date as the vault files write `when` and `due`: the day, `2026-11-04`, when it is
+    /// midnight in the calendar; the moment with its zone, `2026-11-03T14:00:00+01:00`, when it
+    /// has a time of day, so its first ten characters still name the day it was set on. The
+    /// core keeps either as written and counts a moment on its day.
+    public static func fileDate(_ date: Date, calendar: Calendar = .current) -> String {
+        if calendar.startOfDay(for: date) == date {
+            let parts = calendar.dateComponents([.year, .month, .day], from: date)
+            return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = calendar.timeZone
+        return formatter.string(from: date)
+    }
+
     /// One formatter per template, calendar, time zone and locale, kept: a board of cards asks
     /// for the same few on every render, and a formatter is slow to make.
     static func formatter(template: String, calendar: Calendar) -> DateFormatter {
