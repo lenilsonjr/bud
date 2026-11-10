@@ -90,7 +90,7 @@ struct BoardView: View {
                 if column.kind == .done { BoardAddColumn(store: store) }
                 BoardColumnView(column: column, pictures: pictures, edit: column.tag == nil ? nil : edit, hover: hover(on: column.kind, in: board))
                     .frame(width: column.kind == .done ? 220 : 232)
-                    .boardDrop(onTarget: { target(column.kind, $0) }) { store.drop($0, on: column.kind) }
+                    .budDrop(onTarget: { target(column.kind, $0) }) { store.drop($0, on: column.kind) }
             }
             cancelled(board, pictures: pictures)
         }
@@ -125,7 +125,7 @@ struct BoardView: View {
         if showsCancelled {
             BoardColumnView(column: board.cancelled, pictures: pictures, hover: hover(on: .cancelled, in: board)) { showsCancelled = false }
                 .frame(width: 220)
-                .boardDrop(onTarget: { target(.cancelled, $0) }) { store.drop($0, on: .cancelled) }
+                .budDrop(onTarget: { target(.cancelled, $0) }) { store.drop($0, on: .cancelled) }
         } else {
             Button { showsCancelled = true } label: {
                 VStack(spacing: 8) {
