@@ -820,7 +820,7 @@ final class SnapshotTests: XCTestCase {
         store.surface = .board
         // The slot stands after the three tag columns: the page's 24 pt, four columns of 232
         // and their 12 pt gaps; the picker hangs under it.
-        let picker = BoardColumnPicker(store: store, id: newsletter.id)
+        let picker = BoardColumnPicker(store: store, id: newsletter.id, source: store.boardTagSource(of: newsletter.id))
             .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Theme.line))
             .shadow(color: Theme.shadowStrong.opacity(0.4), radius: 16, y: 10)

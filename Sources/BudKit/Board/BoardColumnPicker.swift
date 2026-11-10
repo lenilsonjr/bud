@@ -2,15 +2,20 @@
 import SwiftUI
 
 /// The slot after the last tag column, before Done: a 40 pt stub with a plus, where the next
-/// column will stand. A click opens the picker. The picture renderer cannot draw a popover, so
-/// a still picture shows the stub alone and draws the picker as a plain view.
+/// column will stand. A click gathers what the picker reads, once, and opens it. The picture
+/// renderer cannot draw a popover, so a still picture shows the stub alone and draws the
+/// picker as a plain view.
 struct BoardAddColumn: View {
     @ObservedObject var store: BudStore
     @Environment(\.stillPicture) private var still
     @State private var open = false
+    @State private var source = BoardTagSource(columns: BoardColumns(tags: []), carried: [], counts: [])
 
     var body: some View {
-        Button { open.toggle() } label: {
+        Button {
+            if !open { source = store.boardTagSource(of: store.center) }
+            open.toggle()
+        } label: {
             Image(systemName: "plus")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.leaf)
@@ -30,7 +35,7 @@ struct BoardAddColumn: View {
         .accessibilityLabel(BoardColumnText.add)
         .accessibilityIdentifier("add-column")
         .popover(isPresented: still ? .constant(false) : $open, arrowEdge: .bottom) {
-            BoardColumnPicker(store: store, id: store.center) { open = false }
+            BoardColumnPicker(store: store, id: store.center, source: source) { open = false }
             #if os(iOS)
             .presentationCompactAdaptation(.popover)
             #endif
@@ -39,13 +44,15 @@ struct BoardAddColumn: View {
 }
 
 /// Find or create a tag: the search line, then On this board and Other tags as
-/// `BoardTagChoices` lists them, each tag a chip, a check on one that has a column already,
-/// and New tag column last, lit once a new tag is typed. ↑↓ move, ↩ picks, Esc closes. A pick
-/// adds the column at the end and closes the picker. The field is a system control the
-/// picture renderer does not draw, so a still picture shows its words as plain text.
+/// `BoardTagChoices` lists them from the source gathered as the picker opened, each tag a
+/// chip, a check on one that has a column already, and New tag column last, lit once a new
+/// tag is typed. ↑↓ move, ↩ picks, Esc closes. A pick adds the column at the end and closes
+/// the picker. The field is a system control the picture renderer does not draw, so a still
+/// picture shows its words as plain text.
 struct BoardColumnPicker: View {
     @ObservedObject var store: BudStore
     let id: UUID
+    let source: BoardTagSource
     var onChoose: () -> Void = {}
     @Environment(\.stillPicture) private var still
     @Environment(\.dismiss) private var dismiss
@@ -53,18 +60,19 @@ struct BoardColumnPicker: View {
     @State private var pick = 0
     @FocusState private var focused: Bool
 
-    init(store: BudStore, id: UUID, query: String = "", onChoose: @escaping () -> Void = {}) {
+    init(store: BudStore, id: UUID, source: BoardTagSource, query: String = "", onChoose: @escaping () -> Void = {}) {
         self.store = store
         self.id = id
+        self.source = source
         self.onChoose = onChoose
         _query = State(initialValue: query)
     }
 
     var body: some View {
-        let choices = store.boardTagChoices(for: query, of: id)
+        let choices = BoardTagChoices.rows(for: query, in: source)
         let order = choices.pickable
         VStack(alignment: .leading, spacing: 2) {
-            field
+            field(choices)
             if !choices.onBoard.isEmpty { group(BoardColumnText.onBoard, choices.onBoard, order: order) }
             if !choices.others.isEmpty { group(BoardColumnText.others, choices.others, order: order) }
             createRow(choices.create, picked: pick == order.count)
@@ -79,7 +87,7 @@ struct BoardColumnPicker: View {
         .accessibilityIdentifier("board-column-picker")
     }
 
-    private var field: some View {
+    private func field(_ choices: BoardTagChoices) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .textRole(.caption)
@@ -94,7 +102,7 @@ struct BoardColumnPicker: View {
                 TextField(BoardColumnText.find, text: $query)
                     .textFieldStyle(.plain)
                     .focused($focused)
-                    .onSubmit(take)
+                    .onSubmit { take(choices) }
                     #if os(iOS)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -110,8 +118,7 @@ struct BoardColumnPicker: View {
     }
 
     /// ↩ takes the lit row: a tag, or the new tag column after the last.
-    private func take() {
-        let choices = store.boardTagChoices(for: query, of: id)
+    private func take(_ choices: BoardTagChoices) {
         let order = choices.pickable
         if order.indices.contains(pick) {
             choose(order[pick].tag)
@@ -144,12 +151,7 @@ struct BoardColumnPicker: View {
 
     private func line(_ row: BoardTagChoices.Row, picked: Bool) -> some View {
         HStack(spacing: 8) {
-            Text("#\(row.tag)")
-                .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
-                .foregroundStyle(row.hasColumn ? Theme.text3 : Theme.leaf)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(row.hasColumn ? Theme.raised : Theme.leafSoft, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            BoardTagChip(tag: row.tag, quiet: row.hasColumn)
             Spacer(minLength: 8)
             if row.hasColumn {
                 Image(systemName: "checkmark")
@@ -190,6 +192,23 @@ struct BoardColumnPicker: View {
         .padding(.top, 4)
         .overlay(alignment: .top) { Divider() }
         .accessibilityIdentifier("new-tag-column")
+    }
+}
+
+/// A tag as the board writes it: "#doing" in leaf on the leaf wash, as a column's header
+/// reads it; quiet, in the third tone on the raised wash, for one the picker lists but cannot
+/// pick again.
+struct BoardTagChip: View {
+    let tag: String
+    var quiet = false
+
+    var body: some View {
+        Text("#\(tag)")
+            .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
+            .foregroundStyle(quiet ? Theme.text3 : Theme.leaf)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(quiet ? Theme.raised : Theme.leafSoft, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 }
 
@@ -240,8 +259,8 @@ struct BoardColumnMenu: View {
 
 /// What a column needs from the board while one is in hand: the drag itself, and the way to
 /// say where it is, where the pointer went, where it let go, and that the grip opened, dropped
-/// or cancelled. The board sets it. Two are equal when their drags are, so the columns redraw
-/// only when the drag changes.
+/// or cancelled. The board sets it. Two are equal when the column in hand and its gap are: the
+/// pointer's point is the board's own to draw, so the columns do not redraw as it moves.
 struct BoardColumnDragging: Equatable {
     var drag: BoardColumnDrag? = nil
     var placed: (String, CGRect) -> Void = { _, _ in }
@@ -249,7 +268,9 @@ struct BoardColumnDragging: Equatable {
     var ended: (String, CGPoint) -> Void = { _, _ in }
     var released: () -> Void = {}
 
-    static func == (a: BoardColumnDragging, b: BoardColumnDragging) -> Bool { a.drag == b.drag }
+    static func == (a: BoardColumnDragging, b: BoardColumnDragging) -> Bool {
+        a.drag?.tag == b.drag?.tag && a.drag?.drop == b.drag?.drop
+    }
 }
 
 private struct BoardColumnDraggingKey: EnvironmentKey {
@@ -283,12 +304,7 @@ struct BoardColumnLifted: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-        Text("#\(tag)")
-            .textStyle(TextStyle(typeface: .text, size: 12, weight: 600))
-            .foregroundStyle(Theme.leaf)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Theme.leafSoft, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        BoardTagChip(tag: tag)
             .padding(12)
             .frame(width: 232, alignment: .leading)
             .background(Theme.raised, in: shape)
