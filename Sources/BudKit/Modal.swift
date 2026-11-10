@@ -159,7 +159,7 @@ struct ModalHost: View {
                 ConnectTokenSheet(sources: .shared, kind: .linear, close: { store.modal = .settings })
             case .connectGitHub:
                 ConnectTokenSheet(sources: .shared, kind: .github, close: { store.modal = .settings })
-            case .shortcuts: ShortcutSheet(close: { store.modal = nil })
+            case .shortcuts: ShortcutSheet(layout: store.keys, close: { store.modal = nil })
             }
         }
         .modalCard()

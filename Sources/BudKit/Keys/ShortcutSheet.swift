@@ -15,9 +15,10 @@ import AppKit
 /// from the desktop record by the key's place on the keyboard, on the Mac alone, and show as
 /// taken when the system keeps the key for itself or another app.
 struct ShortcutSheet: View {
+    /// The layout the rows read and record into: the store's, so a picture can bring its own.
+    @ObservedObject var layout: KeyLayout
     let close: () -> Void
     @Environment(\.compact) private var compact
-    @ObservedObject private var layout = Keys.layout
     @FocusState private var listening: Bool
     /// The row the pointer is over, on the Mac, where Reset waits for it and the dot stays.
     @State private var hovered: Command.ID?
@@ -46,7 +47,7 @@ struct ShortcutSheet: View {
                 }
                 Spacer()
                 #if os(macOS)
-                Keycap(Keys.key(for: .close))
+                Keycap(layout.key(for: .close))
                 #endif
             }
             Theme.line.frame(height: 1)
@@ -114,7 +115,7 @@ struct ShortcutSheet: View {
             // The cap in the head and this binding read the same row of the table; while a row
             // records, Esc is the recorder's.
             Button("", action: close)
-                .keyboardShortcut(layout.recording == nil ? Keys.shortcut(.close) : nil)
+                .keyboardShortcut(layout.recording == nil ? layout.key(for: .close).shortcut : nil)
                 .opacity(0)
         }
     }
@@ -124,8 +125,9 @@ struct ShortcutSheet: View {
     /// of a key and a key a menu row holds both reach the recorder, and nothing else answers.
     private func listen(_ recording: Bool) {
         if recording, monitor == nil {
+            let layout = layout
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                Keys.layout.record(Key(event), at: event.keyCode)
+                layout.record(Key(event), at: event.keyCode)
                 return nil
             }
         } else if !recording, let monitor {

@@ -261,6 +261,9 @@ public final class BudStore: ObservableObject {
     public let toasts = ToastCenter()
     /// The devices paired with this vault, for Settings.
     public let devices: DeviceStore
+    /// The keys this store's window answers to: the app's layout, or one of a test's own, so a
+    /// picture of the sheet shows the table's defaults whatever the process's defaults hold.
+    public let keys: KeyLayout
 
     private let vault: Vault
     /// The last vault write queued; the next one waits for it, so writes land in order.
@@ -276,10 +279,12 @@ public final class BudStore: ObservableObject {
 
     /// A store over a vault. It shows `tree` at once and loads the vault's snapshot over it; the
     /// vault's `watch` reloads it again whenever the vault changes under it. `defaults` is where
-    /// this device's own choices go; `agentApps` is what the agent picker finds installed.
-    public init(vault: Vault, tree: Tree = Tree(), devices: DeviceStore? = nil, defaults: UserDefaults = .standard, agentApps: AgentApps = AgentApps()) {
+    /// this device's own choices go; `agentApps` is what the agent picker finds installed;
+    /// `keys` is the layout the window and its sheet read, the app's unless a test brings one.
+    public init(vault: Vault, tree: Tree = Tree(), devices: DeviceStore? = nil, defaults: UserDefaults = .standard, agentApps: AgentApps = AgentApps(), keys: KeyLayout = Keys.layout) {
         self.vault = vault
         self.devices = devices ?? .shared
+        self.keys = keys
         self.defaults = defaults
         self.agentApps = agentApps
         self.agentChoice = AgentChoice.read(from: defaults, in: agentApps)
@@ -288,7 +293,7 @@ public final class BudStore: ObservableObject {
         self.links = LinkGraph(tree)
         self.center = rootID
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
-        keyFeed = Keys.layout.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        keyFeed = keys.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         self.devices.onSyncFinished = { [weak self] summary in
             // A sync writes the files itself, which the vault's watch does not report.
             Task { @MainActor in
@@ -316,13 +321,13 @@ public final class BudStore: ObservableObject {
     /// The store the apps use for now: a memory vault that reads and writes the JSON file, and
     /// starts from the seed world when there is none, told from the device store's clock, so a
     /// picture on a fixed clock shows the same today on every run.
-    public convenience init(fileURL: URL? = BudStore.defaultFile, devices: DeviceStore? = nil) {
+    public convenience init(fileURL: URL? = BudStore.defaultFile, devices: DeviceStore? = nil, keys: KeyLayout = Keys.layout) {
         var loaded: Tree? = nil
         if let url = fileURL, let data = try? Data(contentsOf: url) {
             loaded = try? JSONDecoder().decode(Tree.self, from: data)
         }
         let tree = loaded ?? Tree.seed(now: (devices ?? .shared).now())
-        self.init(vault: MemoryVault(tree: tree, fileURL: fileURL), tree: tree, devices: devices)
+        self.init(vault: MemoryVault(tree: tree, fileURL: fileURL), tree: tree, devices: devices, keys: keys)
     }
 
     /// The tree as a vault would hand it back, so a first picture and a reload agree.
@@ -1046,7 +1051,7 @@ public final class BudStore: ObservableObject {
     /// must hold on what the window shows. New under this needs a target as well, which the
     /// canvas always has and Files only on a bud's page; Close or reopen needs a to-do's page.
     public func allows(_ id: Command.ID) -> Bool {
-        guard Keys.layout.recording == nil else { return false }
+        guard keys.recording == nil else { return false }
         guard modal == nil || (modal == .shortcuts && id == .shortcuts) else { return false }
         switch id {
         case .newUnderThis: return surface == .canvas || page != nil
