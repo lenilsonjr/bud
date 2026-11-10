@@ -12,7 +12,9 @@ struct AgentPanel: View {
         PanelView(panel: .agent, store: store) {
             VStack(spacing: 0) {
                 AgentThread(conversation: store.agent) { store.agent.undo($0) }
+                #if os(macOS)
                 AgentSetupLine(store: store)
+                #endif
                 AgentComposer(store: store)
             }
             .frame(maxHeight: .infinity)
@@ -170,19 +172,27 @@ struct AgentTypingBubble: View {
     }
 }
 
+#if os(macOS)
 /// The line above the composer that names the app and the model the agent runs with, as
-/// "Claude Code · Fable 5.1" with a chevron; a click opens the picker. The picture renderer
-/// cannot draw a popover, so a still picture shows the line alone.
+/// "Claude Code · Fable 5.1" with a chevron; a click opens the picker. Only on the Mac: the
+/// apps are command line tools installed there. What is installed is read once, as the picker
+/// opens, not on every pass while it is up. The picture renderer cannot draw a popover, so a
+/// still picture shows the line alone.
 struct AgentSetupLine: View {
     @ObservedObject var store: BudStore
     @Environment(\.stillPicture) private var still
     @State private var open = false
+    @State private var entries: [AgentApps.Entry] = []
 
     var body: some View {
+        let apps = store.agentApps
         HStack {
-            Button { open.toggle() } label: {
+            Button {
+                if !open { entries = apps.entries }
+                open.toggle()
+            } label: {
                 HStack(spacing: 3) {
-                    Text(store.agentChoice.label)
+                    Text(store.agentChoice.label(in: apps))
                         .textRole(.caption)
                         .lineLimit(1)
                     Image(systemName: "chevron.down")
@@ -195,13 +205,10 @@ struct AgentSetupLine: View {
             .buttonStyle(.plain)
             .help(AgentText.pick)
             .accessibilityLabel(AgentText.pick)
-            .accessibilityValue(store.agentChoice.label)
+            .accessibilityValue(store.agentChoice.label(in: apps))
             .accessibilityIdentifier("agent-setup")
             .popover(isPresented: still ? .constant(false) : $open, arrowEdge: .bottom) {
-                AgentSetupMenu(store: store, apps: store.agentApps.entries)
-                #if os(iOS)
-                .presentationCompactAdaptation(.popover)
-                #endif
+                AgentSetupMenu(store: store, entries: entries)
             }
             Spacer(minLength: 0)
         }
@@ -210,32 +217,34 @@ struct AgentSetupLine: View {
     }
 }
 
-/// The picker: the apps under App, each with whether it is installed and signed in, the ones
-/// not found dimmed; the chosen app's models under Model, each with a word on what it is for;
-/// a check beside what is chosen; and, while the chosen app is installed and signed in, a line
-/// saying the agent runs on this Mac with the person's own account.
+/// The picker: the apps under App, each with whether it is installed and, when a file can say,
+/// signed in, the ones not found dimmed; the chosen app's models under Model, each with a word
+/// on what it is for; a check beside what is chosen; and, while the chosen app is installed and
+/// signed in, a line saying the agent runs on this Mac with the person's own account.
 struct AgentSetupMenu: View {
     @ObservedObject var store: BudStore
-    let apps: [AgentApps.Entry]
+    /// What was installed as the picker opened.
+    let entries: [AgentApps.Entry]
 
     var body: some View {
+        let apps = store.agentApps
         let choice = store.agentChoice
-        let chosen = apps.first { $0.app.id == choice.app }
+        let chosen = entries.first { $0.app.id == choice.app }
         VStack(alignment: .leading, spacing: 1) {
             heading(AgentText.app)
-            ForEach(apps) { entry in
+            ForEach(entries) { entry in
                 row(
                     entry.app.name, note: entry.status.line, chosen: entry.app.id == choice.app,
                     enabled: entry.status.isInstalled, id: "agent-app-\(entry.app.id)"
-                ) { store.agentChoice.choose(entry.app) }
+                ) { store.agentChoice.choose(entry.app, in: apps) }
             }
             if let chosen {
                 heading(AgentText.model).padding(.top, 6)
-                ForEach(store.agentApps.models(for: chosen.app)) { model in
+                ForEach(apps.models(for: chosen.app)) { model in
                     row(
                         model.name, note: model.note, chosen: model.id == choice.model,
                         enabled: chosen.status.isInstalled, id: "agent-model-\(model.id)"
-                    ) { store.agentChoice.choose(model) }
+                    ) { store.agentChoice.choose(model, in: apps) }
                 }
                 if chosen.status == .installed(signedIn: true) {
                     Text(AgentText.runsHere)
@@ -293,6 +302,7 @@ struct AgentSetupMenu: View {
         .accessibilityIdentifier(id)
     }
 }
+#endif
 
 /// The field at the bottom: the This page chip while the page goes along, with its × to leave
 /// it out and a quiet one to bring it back; the words; Send. ↩ sends too and keeps the field,
