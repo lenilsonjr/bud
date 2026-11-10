@@ -110,7 +110,7 @@ struct TVFilesTab: View {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         ForEach(rows, id: \.id) { row in
-                            TVBudRow(row: row, lit: focused == .row(row.id)) { click(row) }
+                            TVBudRow(row: row, lit: focused == .row(row.id), now: store.now) { click(row) }
                                 .focused($focused, equals: .row(row.id))
                                 .budMenu(row.id, store: store, onAdd: { adding = TVAddTarget(id: row.id) }, onOpen: { onOpen(row.id) })
                         }
@@ -197,6 +197,7 @@ struct TVPageRow: View {
 struct TVBudRow: View {
     let row: TVFilesRow
     let lit: Bool
+    let now: Date
     let action: () -> Void
 
     private static let title = TextStyle(typeface: .text, size: 30, weight: 500)
@@ -222,7 +223,7 @@ struct TVBudRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if let label = TVFilesText.label(row.tag, now: store.now) {
+                if let label = TVFilesText.label(row.tag, now: now) {
                     Text(label)
                         .textStyle(Self.tag)
                         .lineLimit(1)
