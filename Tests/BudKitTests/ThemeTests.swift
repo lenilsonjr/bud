@@ -16,17 +16,86 @@ final class ThemeTests: XCTestCase {
         XCTAssertNil(Swatch(hex: "#GGGGGG"))
     }
 
+    func testSwatchWritesItselfBackAsTheDesignFileDoes() {
+        XCTAssertEqual(Swatch(hex: "#f7f9f3")?.hex, "#F7F9F3")
+        XCTAssertEqual(Swatch(hex: "1B3A2417")?.hex, "#1B3A2417")
+        XCTAssertEqual(Swatch(hex: "#FFFFFF00")?.hex, "#FFFFFF00", "Fully transparent still carries its alpha")
+        XCTAssertEqual(Swatch(hex: "#85857FFF")?.hex, "#85857F", "An opaque alpha is dropped")
+    }
+
     func testPaletteMatchesTheFoundationsBoard() {
-        XCTAssertEqual(Palette.window, Tone("#F7F9F3", "#0C140F"))
-        XCTAssertEqual(Palette.canvas, Tone("#EDF3E7", "#0F1912"))
-        XCTAssertEqual(Palette.card, Tone("#CDE3C1", "#21392A"))
-        XCTAssertEqual(Palette.cardLit, Tone("#8CCC8C", "#8CCC8C"))
-        XCTAssertEqual(Palette.hub, Tone("#24432B", "#24432B"), "The board keeps one hub green in both appearances")
-        XCTAssertEqual(Palette.text, Tone("#14281B", "#EEF5EA"))
-        XCTAssertEqual(Palette.leaf, Tone("#3B7A45", "#8CCC8C"))
+        XCTAssertEqual(Palette.window, Tone("#F7F9F3", "#141414"))
+        XCTAssertEqual(Palette.canvas, Tone("#EDF3E7", "#161616"))
+        XCTAssertEqual(Palette.card, Tone("#CDE3C1", "#222222"))
+        XCTAssertEqual(Palette.cardLit, Tone("#8CCC8C", "#5DBB68"))
+        XCTAssertEqual(Palette.hub, Tone("#24432B", "#262626"), "The hub is green by day and graphite by night")
+        XCTAssertEqual(Palette.text, Tone("#14281B", "#EDEDEB"))
+        XCTAssertEqual(Palette.leaf, Tone("#3B7A45", "#7FCB86"))
         XCTAssertEqual(Palette.amethyst, Tone("#5B2A9E", "#C3B2EE"))
         XCTAssertEqual(Palette.rose, Tone("#A23A59", "#EC9BB4"))
         XCTAssertNotEqual(Palette.line.light, Palette.line.dark, "Dark mirrors every token with its own value")
+    }
+
+    func testEveryTokenIsInTheTableUnderItsBoardName() {
+        XCTAssertEqual(Palette.tokens.count, 53)
+        XCTAssertEqual(Palette.tokens["ui-window"], Palette.window)
+        XCTAssertEqual(Palette.tokens["ui-text-3"], Palette.text3)
+        XCTAssertEqual(Palette.tokens["ui-card-lit-ink"], Palette.cardLitInk)
+        XCTAssertNil(Palette.tokens["ui-font"], "Only colours live in the table")
+    }
+
+    func testDarkModeIsGraphite() {
+        let graphite = [
+            "ui-window": "#141414", "ui-sidebar": "#141414", "ui-canvas": "#161616",
+            "ui-surface": "#1A1A1A", "ui-raised": "#242424",
+            "ui-line": "#FFFFFF14", "ui-line-strong": "#FFFFFF26",
+            "ui-text": "#EDEDEB", "ui-text-2": "#B5B5B0", "ui-text-3": "#85857F",
+            "ui-leaf": "#7FCB86", "ui-leaf-fill": "#5DBB68", "ui-on-leaf": "#0B160D",
+            "ui-card": "#222222", "ui-card-line": "#343434",
+            "ui-card-lit": "#5DBB68", "ui-card-lit-ink": "#0B160D",
+            "ui-hub": "#262626", "ui-hub-line": "#3A3A3A",
+        ]
+        for (name, hex) in graphite {
+            XCTAssertEqual(Palette.tokens[name]?.dark.hex, hex, name)
+        }
+    }
+
+    func testDarkSurfacesLinesAndTextCarryNoGreen() throws {
+        // Neutral means the three channels agree; a hair of warmth in the text is allowed, a
+        // tint of green is not. Green stays on the leaf, the lit card and the hub's accent.
+        let neutral = [
+            "ui-window", "ui-sidebar", "ui-canvas", "ui-surface", "ui-raised", "ui-glass",
+            "ui-line", "ui-line-strong", "ui-text", "ui-text-2", "ui-text-3",
+            "ui-card", "ui-card-line", "ui-card-ink", "ui-card-meta",
+            "ui-hub", "ui-hub-line", "ui-hub-ink", "ui-hub-meta",
+        ]
+        for name in neutral {
+            let swatch = try XCTUnwrap(Palette.tokens[name]).dark
+            XCTAssertLessThanOrEqual(swatch.green, max(swatch.red, swatch.blue) + 0.001, "\(name) leans green: \(swatch.hex)")
+        }
+        XCTAssertGreaterThan(Palette.leaf.dark.green, Palette.leaf.dark.red, "The leaf is still green")
+        XCTAssertGreaterThan(Palette.cardLit.dark.green, Palette.cardLit.dark.red, "So is the lit card")
+    }
+
+    func testLuminanceAndContrastFollowWCAG() throws {
+        let black = try XCTUnwrap(Swatch(hex: "#000000"))
+        let white = try XCTUnwrap(Swatch(hex: "#FFFFFF"))
+        XCTAssertEqual(black.luminance, 0)
+        XCTAssertEqual(white.luminance, 1, accuracy: 0.0001)
+        XCTAssertEqual(white.contrast(against: black), 21, accuracy: 0.0001)
+        XCTAssertEqual(black.contrast(against: white), 21, accuracy: 0.0001, "The ratio does not care which is on top")
+        let grey = try XCTUnwrap(Swatch(hex: "#777777"))
+        XCTAssertEqual(grey.luminance, 0.1845, accuracy: 0.0005)
+        XCTAssertEqual(white.contrast(against: grey), 4.48, accuracy: 0.01)
+    }
+
+    func testTheQuietestTextStillReadsOnEverySurfaceInTheDark() {
+        XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.surface.dark), 4.5)
+        XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.canvas.dark), 4.5)
+        XCTAssertGreaterThanOrEqual(Palette.text3.dark.contrast(against: Palette.window.dark), 4.5)
+        XCTAssertGreaterThanOrEqual(Palette.text.dark.contrast(against: Palette.surface.dark), 7)
+        XCTAssertGreaterThanOrEqual(Palette.onLeaf.dark.contrast(against: Palette.leafFill.dark), 4.5)
+        XCTAssertGreaterThanOrEqual(Palette.cardLitInk.dark.contrast(against: Palette.cardLit.dark), 4.5)
     }
 
     func testRadiiFollowTheBoard() {
