@@ -8,7 +8,9 @@ import Foundation
 /// A moment counts as timed when it is not midnight in the calendar's zone: a day picked in a
 /// vault file (`when: 2026-11-09`) is all-day, a calendar event's start is timed. A bud whose
 /// scheduled and due moments fall on the same day is one block from the first to the second;
-/// one with a moment only, or a due moment with no time, takes half an hour.
+/// one with a moment only, or a due moment with no time, takes half an hour. A bud whose two
+/// moments fall on different days is a bar in the all-day row whatever their times: a span
+/// is read by the day, and its hours are not drawn.
 public struct CalendarDays: Equatable, Sendable {
     public struct Day: Hashable, Sendable {
         /// Midnight at the start of the day, in the calendar's zone.
@@ -115,7 +117,7 @@ public struct CalendarDays: Equatable, Sendable {
             days.append(Day(
                 date: date,
                 number: calendar.component(.day, from: date),
-                weekday: symbols[(calendar.component(.weekday, from: date) - 1 + 7) % 7].uppercased(),
+                weekday: symbols[calendar.component(.weekday, from: date) - 1].uppercased(),
                 isToday: date == today,
                 isWeekend: calendar.isDateInWeekend(date)
             ))
@@ -128,28 +130,24 @@ public struct CalendarDays: Equatable, Sendable {
         }
         func daysBetween(_ a: Date, _ b: Date) -> Int { calendar.dateComponents([.day], from: a, to: b).day ?? 0 }
 
-        // The all-day row: spans first, longest first then by start, so the long ones keep the
-        // top lanes; then the one-day buds by column.
+        // The all-day row: the spans first, longest first, so the long ones keep the top lanes;
+        // then the one-day buds with no time, by day and title. The rest go to the hours.
         let shown = entries.filter(state.shows)
-        struct Lying { let entry: CalendarEntry; let start: Date; let end: Date; let span: Bool }
-        var lying: [Lying] = []
+        let spans = CalendarSpan.list(in: shown, state: state)
+        let spanned = Set(spans.map(\.entry.id))
+        var lying: [CalendarSpan] = spans
+        var oneDay: [CalendarSpan] = []
         var timed: [Block] = []
-        for entry in shown {
-            let dates = state.dates(of: entry)
-            guard let earliest = dates.min(), let latest = dates.max() else { continue }
-            if earliest < latest {
-                lying.append(Lying(entry: entry, start: earliest, end: latest, span: true))
-                continue
-            }
+        for entry in shown where !spanned.contains(entry.id) {
             // One day, or both moments on it: the due day wins the flag; the scheduled moment
             // places the block, the due moment ends it, or places it when there is none.
-            let day = earliest
+            guard let day = state.dates(of: entry).first else { continue }
             let whenAt = state.shows(.when) ? entry.whenAt : nil
             let dueAt = state.shows(.due) ? entry.dueAt : nil
             let timedWhen = whenAt.flatMap { Self.isTimed($0, calendar: calendar) ? $0 : nil }
             let timedDue = dueAt.flatMap { Self.isTimed($0, calendar: calendar) ? $0 : nil }
             guard let startAt = timedWhen ?? timedDue else {
-                lying.append(Lying(entry: entry, start: day, end: day, span: false))
+                oneDay.append(CalendarSpan(entry: entry, start: day, end: day))
                 continue
             }
             guard let column = column(of: day) else { continue }
@@ -159,38 +157,32 @@ public struct CalendarDays: Equatable, Sendable {
             let isDue = state.shows(.due) && entry.due == day && timedWhen == nil
             timed.append(Block(
                 entry: entry.id, title: entry.title, tone: entry.tone, column: column,
-                start: startMinutes, end: endMinutes ?? startMinutes + Self.blockLength,
+                start: startMinutes, end: endMinutes ?? min(24 * 60, startMinutes + Self.blockLength),
                 time: endMinutes.map { "\(Self.time(startMinutes))–\(Self.time($0))" } ?? Self.time(startMinutes),
                 lane: 0, lanes: 1, isDone: entry.isDone, isDue: isDue
             ))
         }
-        lying.sort { a, b in
-            if a.span != b.span { return a.span }
-            let (la, lb) = (daysBetween(a.start, a.end), daysBetween(b.start, b.end))
-            if la != lb { return la > lb }
-            return (a.start, a.entry.title) < (b.start, b.entry.title)
-        }
+        lying += oneDay.sorted { ($0.start, $0.entry.title) < ($1.start, $1.entry.title) }
         var bars: [Bar] = []
         var taken: [[ClosedRange<Int>]] = []
         for item in lying {
             let head = max(item.start, first)
             let tail = min(item.end, last)
             guard head <= tail, let from = column(of: head), let to = column(of: tail) else { continue }
-            var lane = 0
-            while taken.indices.contains(lane) && taken[lane].contains(where: { $0.overlaps(from...to) }) { lane += 1 }
-            if lane == taken.count { taken.append([]) }
-            taken[lane].append(from...to)
+            let lane = CalendarLanes.take(from...to, in: &taken)
             let entry = item.entry
-            let starts = entry.when.map { column(of: $0) != nil } ?? false
-            let ends = entry.due.map { column(of: $0) != nil } ?? false
+            // The arrow and the flag only for a day its switch shows.
+            let starts = state.shows(.when) && (entry.when.map { column(of: $0) != nil } ?? false)
+            let ends = state.shows(.due) && (entry.due.map { column(of: $0) != nil } ?? false)
+            let due = state.shows(.due) ? entry.due : nil
             let label: String
-            if !item.span {
+            if item.start == item.end {
                 label = entry.title
-            } else if let due = entry.due, count == 1 {
+            } else if let due, count == 1 {
                 label = "\(entry.title) · day \(daysBetween(item.start, first) + 1) of \(daysBetween(item.start, item.end) + 1), due \(DayText.short(due, calendar: calendar))"
-            } else if let due = entry.due, due > last {
+            } else if let due, due > last {
                 label = "\(entry.title) → \(DayText.short(due, calendar: calendar))"
-            } else if let due = entry.due, ends {
+            } else if let due, ends {
                 label = "\(entry.title) · due \(DayText.short(due, calendar: calendar))"
             } else {
                 label = entry.title

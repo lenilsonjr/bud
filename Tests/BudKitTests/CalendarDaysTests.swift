@@ -226,6 +226,20 @@ final class CalendarDaysTests: XCTestCase {
         XCTAssertEqual(name.lanes, 1, "Alone in the afternoon")
     }
 
+    func testABlockWithNoEndStopsAtMidnight() throws {
+        var tree = world()
+        let health = tree.children(of: rootID).first { $0.text == "Health reset" }!
+        let late = tree.add("Lights out", todo: true, under: health.id)
+        tree.setWhen(late.id, at(2026, 11, 3, 23, 50))
+        let plan = day(tree)
+        let block = try XCTUnwrap(plan.blocks.first { $0.title == "Lights out" })
+        XCTAssertEqual(block.start, 23 * 60 + 50)
+        XCTAssertEqual(block.end, 24 * 60, "Clamped to the day's end")
+        XCTAssertEqual(block.time, "23:50")
+        XCTAssertEqual(plan.lastHour, 24)
+        XCTAssertEqual(plan.position(ofMinutes: block.end), 1)
+    }
+
     func testTheHoursStretchToHoldAnEarlyOrLateBlock() {
         var tree = world()
         let health = tree.children(of: rootID).first { $0.text == "Health reset" }!
@@ -273,6 +287,38 @@ final class CalendarDaysTests: XCTestCase {
         XCTAssertEqual(due.time, "14:30")
         XCTAssertTrue(due.isDue)
         XCTAssertNil(noWhen.blocks.first { $0.title == "A walk before the first meeting" })
+        // A switch off takes its arrow or flag with it, not only its day.
+        let issue = try XCTUnwrap(week(tree, state: state).bars.first { $0.title == "Send the first issue" })
+        XCTAssertEqual(issue.from, 4, "On its due day, Friday")
+        XCTAssertEqual(issue.to, 4)
+        XCTAssertFalse(issue.starts, "The scheduled day is off, so no arrow though it is in the week")
+        XCTAssertTrue(issue.ends)
+        XCTAssertEqual(issue.label, "Send the first issue")
+        state = CalendarState()
+        state.toggle(.due)
+        let scheduled = try XCTUnwrap(week(tree, state: state).bars.first { $0.title == "Send the first issue" })
+        XCTAssertTrue(scheduled.starts)
+        XCTAssertFalse(scheduled.ends, "The due day is off, so no flag though it is in the week")
+    }
+
+    // MARK: The files
+
+    func testAFileWritesADayAtMidnightAndAMomentWithATime() throws {
+        XCTAssertEqual(DayText.fileDate(at(2026, 11, 4), calendar: calendar), "2026-11-04")
+        XCTAssertEqual(DayText.fileDate(at(2026, 11, 3, 14, 0), calendar: calendar), "2026-11-03T14:00:00Z")
+        var lisbon = calendar
+        lisbon.timeZone = TimeZone(identifier: "Europe/Lisbon")!
+        let evening = lisbon.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 23, minute: 30))!
+        XCTAssertEqual(DayText.fileDate(evening, calendar: lisbon), "2026-11-03T23:30:00Z", "Lisbon is on UTC in November")
+        var tokyo = calendar
+        tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        let morning = tokyo.date(from: DateComponents(year: 2026, month: 11, day: 4, hour: 0, minute: 30))!
+        XCTAssertEqual(DayText.fileDate(morning, calendar: tokyo), "2026-11-04T00:30:00+09:00", "The zone goes with it, so the first ten characters name the day it was set on")
+        XCTAssertEqual(DayText.fileDate(tokyo.startOfDay(for: morning), calendar: tokyo), "2026-11-04")
+        for written in ["2026-11-03T14:00:00Z", "2026-11-04T00:30:00+09:00"] {
+            let read = try XCTUnwrap(ISO8601DateFormatter().date(from: written), written)
+            XCTAssertEqual(DayText.fileDate(read, calendar: written.hasSuffix("Z") ? calendar : tokyo), written, "Reads back as written")
+        }
     }
 
     func testADoneBudShowsOnlyWithDoneOn() throws {
