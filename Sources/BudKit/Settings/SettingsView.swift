@@ -90,6 +90,7 @@ public struct SettingsView: View {
                 case .connectCalendar: ConnectCalendarSheet(sources: .shared, close: { local = nil })
                 case let .calendars(account): ConnectCalendarSheet(sources: .shared, account: account, close: { local = nil })
                 case .connectLinear: ConnectLinearSheet(sources: .shared, close: { local = nil })
+                case .connectGitHub: ConnectGitHubSheet(sources: .shared, close: { local = nil })
                 default: EmptyView()
                 }
             }

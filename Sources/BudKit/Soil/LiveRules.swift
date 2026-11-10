@@ -43,8 +43,8 @@ public enum LiveChange: Equatable, Sendable {
     case due(Date?)
     /// Linear: the body that says the issue's team and state.
     case body(String)
-    /// Mail: flagged is an open to-do, unflagged after that is done. Linear: completed or
-    /// cancelled is done, reopened is open again.
+    /// Mail: flagged is an open to-do, unflagged after that is done. Linear and GitHub: completed,
+    /// merged or cancelled is done, reopened is open again.
     case state(BudState)
     /// The bud's `from-state`; nil clears it.
     case mark(String?)
@@ -90,13 +90,14 @@ public enum LiveRules {
             changes.append(.state(item.todo ? .open : .done))
             mark = .some("\(item.todo ? "flagged" : "unflagged") \(stamp)")
         }
+        let tracked = kind == .linear || kind == .github
         if item.cancelled != last.cancelled {
             // An issue that went from cancelled to done is closed, not live.
-            mark = .some(item.cancelled ? "cancelled" : kind == .linear && !item.todo ? "closed \(stamp)" : nil)
+            mark = .some(item.cancelled ? "cancelled" : tracked && !item.todo ? "closed \(stamp)" : nil)
         } else if item.cancelled, bud.fromState != "cancelled" {
             mark = .some("cancelled")
         }
-        if kind == .linear {
+        if tracked {
             // The body follows the state only while it still says what was planted.
             if let detail = item.detail, let was = last.detail, detail != was,
                bud.body.trimmingCharacters(in: .whitespacesAndNewlines) == was {
