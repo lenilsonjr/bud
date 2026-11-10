@@ -15,18 +15,30 @@ struct SourcesSection: View {
             ForEach(sources.accounts) { account in
                 row(account)
             }
-            HStack(spacing: 8) {
-                Button { present(.connectMail(account: nil)) } label: {
-                    BudButtonLabel(title: "Connect mail…", systemImage: "envelope")
+            // One row where the card is wide, two rows of two on a phone, one a row where even
+            // two do not fit, so no label is cut short.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    mailButton
+                    calendarButton
+                    linearButton
+                    gitHubButton
                 }
-                Button { present(.connectCalendar) } label: {
-                    BudButtonLabel(title: "Connect calendar…", systemImage: "calendar")
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        mailButton
+                        calendarButton
+                    }
+                    HStack(spacing: 8) {
+                        linearButton
+                        gitHubButton
+                    }
                 }
-                Button { present(.connectLinear) } label: {
-                    BudButtonLabel(title: "Connect Linear…", systemImage: SoilView.symbol(.linear))
-                }
-                Button { present(.connectGitHub) } label: {
-                    BudButtonLabel(title: "Connect GitHub…", systemImage: SoilView.symbol(.github))
+                VStack(alignment: .leading, spacing: 8) {
+                    mailButton
+                    calendarButton
+                    linearButton
+                    gitHubButton
                 }
             }
             .buttonStyle(.budSecondary)
@@ -34,6 +46,30 @@ struct SourcesSection: View {
                 .textRole(.caption)
                 .foregroundStyle(Theme.text3)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var mailButton: some View {
+        Button { present(.connectMail(account: nil)) } label: {
+            BudButtonLabel(title: "Connect mail…", systemImage: "envelope")
+        }
+    }
+
+    private var calendarButton: some View {
+        Button { present(.connectCalendar) } label: {
+            BudButtonLabel(title: "Connect calendar…", systemImage: "calendar")
+        }
+    }
+
+    private var linearButton: some View {
+        Button { present(.connectLinear) } label: {
+            BudButtonLabel(title: "Connect Linear…", systemImage: SoilView.symbol(.linear))
+        }
+    }
+
+    private var gitHubButton: some View {
+        Button { present(.connectGitHub) } label: {
+            BudButtonLabel(title: "Connect GitHub…", systemImage: SoilView.symbol(.github))
         }
     }
 
