@@ -186,4 +186,15 @@ public enum AgentText {
     public static let addPage = "Send this page along"
     /// The thread before anything is said.
     public static let empty = "Nothing said yet."
+    /// The picker's two headings.
+    public static let app = "App"
+    public static let model = "Model"
+    /// Under an app's name in the picker.
+    public static let signedIn = "Installed · signed in"
+    public static let notSignedIn = "Installed · not signed in"
+    public static let notInstalled = "Not installed"
+    /// Under the picker while the chosen app is installed and signed in.
+    public static let runsHere = "Runs on this Mac with your own account"
+    /// The button that opens the picker.
+    public static let pick = "Pick the app and the model"
 }

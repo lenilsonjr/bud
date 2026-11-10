@@ -12,6 +12,7 @@ struct AgentPanel: View {
         PanelView(panel: .agent, store: store) {
             VStack(spacing: 0) {
                 AgentThread(conversation: store.agent) { store.agent.undo($0) }
+                AgentSetupLine(store: store)
                 AgentComposer(store: store)
             }
             .frame(maxHeight: .infinity)
@@ -166,6 +167,130 @@ struct AgentTypingBubble: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Agent is typing")
         .accessibilityIdentifier("agent-typing")
+    }
+}
+
+/// The line above the composer that names the app and the model the agent runs with, as
+/// "Claude Code · Fable 5.1" with a chevron; a click opens the picker. The picture renderer
+/// cannot draw a popover, so a still picture shows the line alone.
+struct AgentSetupLine: View {
+    @ObservedObject var store: BudStore
+    @Environment(\.stillPicture) private var still
+    @State private var open = false
+
+    var body: some View {
+        HStack {
+            Button { open.toggle() } label: {
+                HStack(spacing: 3) {
+                    Text(store.agentChoice.label)
+                        .textRole(.caption)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .textStyle(AgentPanelText.mark)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(Theme.text3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(AgentText.pick)
+            .accessibilityLabel(AgentText.pick)
+            .accessibilityValue(store.agentChoice.label)
+            .accessibilityIdentifier("agent-setup")
+            .popover(isPresented: still ? .constant(false) : $open, arrowEdge: .bottom) {
+                AgentSetupMenu(store: store, apps: store.agentApps.entries)
+                #if os(iOS)
+                .presentationCompactAdaptation(.popover)
+                #endif
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+    }
+}
+
+/// The picker: the apps under App, each with whether it is installed and signed in, the ones
+/// not found dimmed; the chosen app's models under Model, each with a word on what it is for;
+/// a check beside what is chosen; and, while the chosen app is installed and signed in, a line
+/// saying the agent runs on this Mac with the person's own account.
+struct AgentSetupMenu: View {
+    @ObservedObject var store: BudStore
+    let apps: [AgentApps.Entry]
+
+    var body: some View {
+        let choice = store.agentChoice
+        let chosen = apps.first { $0.app.id == choice.app }
+        VStack(alignment: .leading, spacing: 1) {
+            heading(AgentText.app)
+            ForEach(apps) { entry in
+                row(
+                    entry.app.name, note: entry.status.line, chosen: entry.app.id == choice.app,
+                    enabled: entry.status.isInstalled, id: "agent-app-\(entry.app.id)"
+                ) { store.agentChoice.choose(entry.app) }
+            }
+            if let chosen {
+                heading(AgentText.model).padding(.top, 6)
+                ForEach(store.agentApps.models(for: chosen.app)) { model in
+                    row(
+                        model.name, note: model.note, chosen: model.id == choice.model,
+                        enabled: chosen.status.isInstalled, id: "agent-model-\(model.id)"
+                    ) { store.agentChoice.choose(model) }
+                }
+                if chosen.status == .installed(signedIn: true) {
+                    Text(AgentText.runsHere)
+                        .textRole(.caption)
+                        .foregroundStyle(Theme.text3)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 8)
+                        .padding(.bottom, 3)
+                        .accessibilityIdentifier("agent-runs-here")
+                }
+            }
+        }
+        .padding(5)
+        .frame(width: 240, alignment: .leading)
+        .accessibilityIdentifier("agent-setup-menu")
+    }
+
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .textRole(.eyebrow)
+            .foregroundStyle(Theme.text3)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+
+    private func row(_ title: String, note: String, chosen: Bool, enabled: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .textRole(.body)
+                        .foregroundStyle(enabled ? Theme.text : Theme.text3)
+                    if !note.isEmpty {
+                        Text(note)
+                            .textRole(.caption)
+                            .foregroundStyle(Theme.text3)
+                    }
+                }
+                Spacer(minLength: 8)
+                if chosen {
+                    Image(systemName: "checkmark")
+                        .textRole(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(enabled ? Theme.leaf : Theme.text3)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityValue(chosen ? "Chosen" : "")
+        .accessibilityIdentifier(id)
     }
 }
 
