@@ -23,15 +23,13 @@ struct BudCommands: Commands {
         }
     }
 
-    @ViewBuilder private func item(_ command: Command) -> some View {
+    /// A row's item, with its key when a modified one, and with none while the sheet records a
+    /// key: a menu key equivalent, greyed out or not, is answered before any view hears it.
+    private func item(_ command: Command) -> some View {
         let key = Keys.key(for: command.id)
-        let button = Button(command.name) { store.perform(command.id) }
+        return Button(command.name) { store.perform(command.id) }
             .disabled(!store.allows(command.id))
-        if key.hasModifiers {
-            button.keyboardShortcut(key.shortcut)
-        } else {
-            button
-        }
+            .keyboardShortcut(key.hasModifiers && Keys.layout.recording == nil ? key.shortcut : nil)
     }
 }
 #endif

@@ -30,9 +30,30 @@ public struct Key: Hashable, Sendable {
         self.init(.letter(letter), modifiers)
     }
 
-    /// Whether a modifier is part of the key. A bare key is a letter in a text field, so only a
-    /// modified one can stand in a menu as its key equivalent.
-    public var hasModifiers: Bool { !modifiers.isEmpty }
+    /// Whether a modifier beyond Shift is part of the key. A bare key is a letter in a text
+    /// field, and Shift alone a capital, so only a modified one can stand in a menu as its key
+    /// equivalent.
+    public var hasModifiers: Bool { !modifiers.subtracting(.shift).isEmpty }
+
+    /// The key a Mac key event is, when the table can name it: the named keys by their key
+    /// code, the rest by the characters with the modifiers ignored, since the characters
+    /// themselves carry what Option made of the key (å for ⌥A). Nil for a key the table has no
+    /// name for: Delete, a function key, Home, a left or right arrow.
+    public init?(characters: String, keyCode: UInt16, modifiers: Modifiers) {
+        switch keyCode {
+        case 49: self.init(.space, modifiers)
+        case 53: self.init(.escape, modifiers)
+        case 36, 76: self.init(.return, modifiers)
+        case 48: self.init(.tab, modifiers)
+        case 126: self.init(.upArrow, modifiers)
+        case 125: self.init(.downArrow, modifiers)
+        default:
+            guard let character = characters.first, characters.count == 1,
+                  character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol
+            else { return nil }
+            self.init(.letter(character.lowercased().first ?? character), modifiers)
+        }
+    }
 
     /// The key the way the board draws it: ⌘K, ⇧⌘G, ⌥Space, Esc.
     public var label: String {

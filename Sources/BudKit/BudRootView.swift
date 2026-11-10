@@ -41,18 +41,18 @@ public struct BudRootView: View {
         .background(Theme.window.ignoresSafeArea())
         .background {
             // The window's keys, drawn nowhere: Go anywhere, the switch between the surfaces, and
-            // the shortcuts sheet. None while the sheet records a key, so the recorder hears it.
+            // the shortcuts sheet. They lose their keys while the sheet records one, so the
+            // recorder hears it.
             Group {
                 Button("") { store.perform(.goAnywhere) }
-                    .keyboardShortcut(Keys.shortcut(.goAnywhere))
+                    .keyboardShortcut(windowKey(.goAnywhere))
                 Button("") { store.perform(.canvas) }
-                    .keyboardShortcut(Keys.shortcut(.canvas))
+                    .keyboardShortcut(windowKey(.canvas))
                 Button("") { store.perform(.files) }
-                    .keyboardShortcut(Keys.shortcut(.files))
+                    .keyboardShortcut(windowKey(.files))
                 Button("") { store.perform(.shortcuts) }
-                    .keyboardShortcut(Keys.shortcut(.shortcuts))
+                    .keyboardShortcut(windowKey(.shortcuts))
             }
-            .disabled(Keys.layout.recording != nil)
             .opacity(0)
         }
         .textRole(.body)
@@ -74,6 +74,11 @@ public struct BudRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.refreshLens() }
         }
+    }
+
+    /// A window key's shortcut, or none while the shortcuts sheet records a key.
+    private func windowKey(_ id: Command.ID) -> KeyboardShortcut? {
+        Keys.layout.recording == nil ? Keys.shortcut(id) : nil
     }
 
     /// The help button at the bottom right of the window, on the Mac only: the sheet under it
