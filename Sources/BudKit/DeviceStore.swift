@@ -70,8 +70,8 @@ public final class DeviceStore: ObservableObject {
     public var onRotationFinished: ((RotationResult) -> Void)?
 
     private var peers: Peers
-    /// Where the store reads the time; a picture hands it a fixed moment.
-    let now: @Sendable () -> Date
+    /// Where the store, and the bud store over it, read the time; a picture hands it a fixed moment.
+    public let now: @Sendable () -> Date
     private var listening: Task<Void, Never>?
     private var renewing: Task<Void, Never>?
     private var renewingRequest: Task<Void, Never>?

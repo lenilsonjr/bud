@@ -232,6 +232,8 @@ public struct OrbitCanvas: View {
     /// The sources under the soil line, and the item in hand above them. A compact width gets the
     /// soil as a sheet instead.
     @ViewBuilder private func soil(size: CGSize) -> some View {
+        let now = store.now
+        let roots = store.roots(now: now)
         if !store.sources.isEmpty, compact {
             VStack {
                 Spacer(minLength: 0)
@@ -239,7 +241,7 @@ public struct OrbitCanvas: View {
                     HStack(spacing: 6) {
                         Text("Soil").textRole(.label)
                         Image(systemName: "chevron.up").font(.system(size: 10, weight: .semibold))
-                        if store.roots().contains(where: \.leaf) {
+                        if roots.contains(where: \.leaf) {
                             Circle().fill(Theme.leaf).frame(width: 6, height: 6)
                         }
                     }
@@ -263,8 +265,8 @@ public struct OrbitCanvas: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 SoilView(
-                    roots: store.roots(),
-                    now: store.now,
+                    roots: roots,
+                    now: now,
                     folded: store.soilFolded,
                     device: BudStore.deviceName,
                     onFold: { withAnimation(.spring(duration: 0.35, bounce: 0.1)) { store.soilFolded.toggle() } },

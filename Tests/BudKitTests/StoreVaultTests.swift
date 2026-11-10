@@ -14,6 +14,22 @@ final class StoreVaultTests: XCTestCase {
 
     private func titles(_ records: [BudRecord]) -> Set<String> { Set(records.map(\.title)) }
 
+    /// The store reads the time from its device store: the seed, a capture and `now` all agree.
+    func testAStoreOnAFixedClockSeedsCapturesAndReadsThatMoment() throws {
+        let clock: @Sendable () -> Date = { Tree.stillNow }
+        let devices = DeviceStore(peers: MemoryPeers(now: clock), now: clock)
+        let store = BudStore(fileURL: nil, devices: devices)
+        XCTAssertEqual(store.now, Tree.stillNow)
+        let seed = Tree.seed(now: Tree.stillNow)
+        XCTAssertEqual(store.tree.buds.map(\.id), seed.buds.map(\.id))
+        XCTAssertEqual(store.tree.buds.map(\.created), seed.buds.map(\.created))
+        XCTAssertEqual(store.tree.today(on: store.now).due.map(\.text), ["Verify the address"])
+        let captured = try XCTUnwrap(store.capture("Call the printer", source: "mac"))
+        XCTAssertEqual(captured.created, Tree.stillNow)
+        XCTAssertEqual(store.tree.bud(captured.id)?.created, Tree.stillNow)
+        XCTAssertTrue(store.isFresh(captured.id))
+    }
+
     func testTheStoreLoadsTheSnapshotIntoItsTree() async {
         let (store, vault) = await loaded()
         let records = try? await vault.snapshot()
