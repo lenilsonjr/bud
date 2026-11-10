@@ -918,15 +918,6 @@ public final class BudStore: ObservableObject {
     public enum Pick: Hashable, Sendable {
         case bud(UUID)
         case destination(Destination)
-
-        /// Whether going there moves the canvas, which the palette animates: a bud is centered
-        /// and Everything is the root; a place or a lens just opens in Files.
-        public var movesTheCanvas: Bool {
-            switch self {
-            case .bud: return true
-            case .destination(let destination): return destination == .everything
-            }
-        }
     }
 
     /// Where Go anywhere lands on the row chosen, from the window or the desktop alike: a bud
@@ -935,8 +926,6 @@ public final class BudStore: ObservableObject {
         switch pick {
         case .bud(let id): go(to: id, inFiles: inFiles)
         case .destination(let destination): go(to: destination, inFiles: inFiles)
-        }
-    }
         }
     }
 
