@@ -108,29 +108,29 @@ public struct CustomRange: Hashable, Codable, Sendable {
     }
 }
 
-/// One row of the picker's presets: its line, its symbol and the range it picks.
+/// One row of the picker's presets: its line, its symbol and the range it picks. A thread's
+/// row is told apart by the thread's id, so two threads named alike are two rows.
 public struct RangePreset: Hashable, Identifiable, Sendable {
+    public let id: String
     public let title: String
     /// The SF Symbol before the line.
     public let symbol: String
     public let range: CustomRange
 
-    public var id: String { title }
-
     /// The presets for today and the threads: Next 3 months, This half, then one "Until … is
     /// due" for each thread due this month or later, nearest first.
-    public static func all(now: Date, threads: [(title: String, due: Date?)], calendar: Calendar = .current) -> [RangePreset] {
+    public static func all(now: Date, threads: [(id: UUID, title: String, due: Date?)], calendar: Calendar = .current) -> [RangePreset] {
         var out = [
-            RangePreset(title: "Next 3 months", symbol: "calendar", range: .nextThreeMonths(from: now, calendar: calendar)),
-            RangePreset(title: "This half", symbol: "calendar", range: .thisHalf(from: now, calendar: calendar)),
+            RangePreset(id: "next-three-months", title: "Next 3 months", symbol: "calendar", range: .nextThreeMonths(from: now, calendar: calendar)),
+            RangePreset(id: "this-half", title: "This half", symbol: "calendar", range: .thisHalf(from: now, calendar: calendar)),
         ]
         let month = YearMonth(containing: now, calendar: calendar)
         let due = threads
-            .compactMap { thread in thread.due.map { (title: thread.title, due: $0) } }
+            .compactMap { thread in thread.due.map { (id: thread.id, title: thread.title, due: $0) } }
             .filter { YearMonth(containing: $0.due, calendar: calendar) >= month }
             .sorted { ($0.due, $0.title) < ($1.due, $1.title) }
         for thread in due {
-            out.append(RangePreset(title: "Until \(thread.title) is due", symbol: "flag", range: .until(thread.due, from: now, calendar: calendar)))
+            out.append(RangePreset(id: "until-\(thread.id.uuidString)", title: "Until \(thread.title) is due", symbol: "flag", range: .until(thread.due, from: now, calendar: calendar)))
         }
         return out
     }
@@ -186,21 +186,4 @@ public struct RangePick: Equatable, Sendable {
 
     /// "Show 4 months", "Show 1 month"; "Show" while nothing is picked.
     public var showLine: String { range.map { "Show \($0.lengthLine)" } ?? "Show" }
-}
-
-extension CalendarRange {
-    /// The title with the custom range's own months when it is the range and one is picked:
-    /// "Nov 2026 – Feb 2027"; else the range's title for the date.
-    public func title(for date: Date, custom: CustomRange?, calendar: Calendar = .current) -> String {
-        if self == .custom, let custom { return custom.title(calendar: calendar) }
-        return title(for: date, calendar: calendar)
-    }
-
-    /// A step of the custom range moves by its own length once it has one.
-    public func shift(_ date: Date, by steps: Int, custom: CustomRange?, calendar: Calendar = .current) -> Date {
-        if self == .custom, let custom {
-            return calendar.date(byAdding: .month, value: steps * custom.months, to: date) ?? date
-        }
-        return shift(date, by: steps, calendar: calendar)
-    }
 }

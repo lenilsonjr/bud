@@ -16,29 +16,31 @@ public enum CalendarRange: String, CaseIterable, Codable, Sendable {
     }
 
     /// What one step of the chevrons moves: "month" in "Previous month". A custom range steps by
-    /// its own length; until it has one, by a month.
+    /// its own length.
     public var stepName: String {
         self == .custom ? "range" : rawValue.lowercased()
     }
 
-    /// The date `steps` of this range away: a day, a week, a month, three months or a year each.
-    public func shift(_ date: Date, by steps: Int, calendar: Calendar = .current) -> Date {
+    /// The date `steps` of this range away: a day, a week, a month, three months or a year each;
+    /// the custom range's own months, three until one is picked.
+    public func shift(_ date: Date, by steps: Int, custom: CustomRange? = nil, calendar: Calendar = .current) -> Date {
         let (component, count): (Calendar.Component, Int) = {
             switch self {
             case .day: return (.day, steps)
             case .week: return (.weekOfYear, steps)
-            case .month, .custom: return (.month, steps)
+            case .month: return (.month, steps)
             case .quarter: return (.month, 3 * steps)
             case .year: return (.year, steps)
+            case .custom: return (.month, steps * (custom?.months ?? CalendarState.defaultCustomMonths))
             }
         }()
         return calendar.date(byAdding: component, value: count, to: date) ?? date
     }
 
     /// The title over the grid for the date it shows: "Tuesday, 3 November 2026", "2 Nov – 8 Nov
-    /// 2026", "November 2026", "Q4 2026", "2026". The formats are written out, so the title reads
-    /// the same on every platform and matches the board.
-    public func title(for date: Date, calendar: Calendar = .current) -> String {
+    /// 2026", "November 2026", "Q4 2026", "2026", "Nov 2026 – Jan 2027". The formats are written
+    /// out, so the title reads the same on every platform and matches the board.
+    public func title(for date: Date, custom: CustomRange? = nil, calendar: Calendar = .current) -> String {
         switch self {
         case .day:
             let weekday = DayText.formatter(format: "EEEE", calendar: calendar).string(from: date)
@@ -48,8 +50,11 @@ public enum CalendarRange: String, CaseIterable, Codable, Sendable {
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
             let short = DayText.formatter(format: "d MMM", calendar: calendar)
             return "\(short.string(from: start)) – \(short.string(from: end)) \(calendar.component(.year, from: end))"
-        case .month, .custom:
+        case .month:
             return DayText.formatter(format: "MMMM yyyy", calendar: calendar).string(from: date)
+        case .custom:
+            let range = custom ?? CustomRange(from: YearMonth(containing: date, calendar: calendar), months: CalendarState.defaultCustomMonths)
+            return range.title(calendar: calendar)
         case .quarter:
             let quarter = (calendar.component(.month, from: date) - 1) / 3 + 1
             return "Q\(quarter) \(calendar.component(.year, from: date))"
@@ -84,6 +89,8 @@ public enum CalendarShow: String, CaseIterable, Codable, Sendable {
 public struct CalendarState: Equatable, Codable, Sendable {
     /// The switches on at first: everything but Done, as the board draws its toggles.
     public static let defaultShown: Set<CalendarShow> = [.when, .due, .routines]
+    /// How many months Custom shows until a range is picked: the next three.
+    public static let defaultCustomMonths = 3
 
     public var range: CalendarRange = .month
     public var layout: CalendarLayout = .calendar
@@ -91,16 +98,16 @@ public struct CalendarState: Equatable, Codable, Sendable {
     public var hiddenThreads: Set<UUID> = []
     /// The switches that are on.
     public var shown: Set<CalendarShow> = CalendarState.defaultShown
-    /// The first and last month the picker was given; nil until it is, when Custom shows the
-    /// next three months.
-    public var custom: CustomRange? = nil
+    /// How many months the custom range spans. Where it starts is the day the calendar looks
+    /// at, as for every range, so Today, the chevrons and the picker all move the one date.
+    public var customMonths: Int = CalendarState.defaultCustomMonths
 
-    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown, custom: CustomRange? = nil) {
+    public init(range: CalendarRange = .month, layout: CalendarLayout = .calendar, hiddenThreads: Set<UUID> = [], shown: Set<CalendarShow> = CalendarState.defaultShown, customMonths: Int = CalendarState.defaultCustomMonths) {
         self.range = range
         self.layout = layout
         self.hiddenThreads = hiddenThreads
         self.shown = shown
-        self.custom = custom
+        self.customMonths = max(customMonths, 1)
     }
 
     /// A state saved before a field existed still loads: each has its default.
@@ -110,7 +117,7 @@ public struct CalendarState: Equatable, Codable, Sendable {
         layout = try c.decodeIfPresent(CalendarLayout.self, forKey: .layout) ?? .calendar
         hiddenThreads = try c.decodeIfPresent(Set<UUID>.self, forKey: .hiddenThreads) ?? []
         shown = try c.decodeIfPresent(Set<CalendarShow>.self, forKey: .shown) ?? Self.defaultShown
-        custom = try c.decodeIfPresent(CustomRange.self, forKey: .custom)
+        customMonths = max(try c.decodeIfPresent(Int.self, forKey: .customMonths) ?? Self.defaultCustomMonths, 1)
     }
 
     public func shows(_ show: CalendarShow) -> Bool { shown.contains(show) }

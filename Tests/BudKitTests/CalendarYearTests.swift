@@ -64,10 +64,10 @@ final class CalendarYearTests: XCTestCase {
         XCTAssertEqual(range.shifted(by: 1), CustomRange(first: ym(2027, 3), last: ym(2027, 6)))
         XCTAssertEqual(range.shifted(by: -1), CustomRange(first: ym(2026, 7), last: ym(2026, 10)))
         XCTAssertEqual(CalendarRange.custom.title(for: now, custom: range, calendar: calendar), "Nov 2026 – Feb 2027")
-        XCTAssertEqual(CalendarRange.custom.title(for: now, custom: nil, calendar: calendar), "November 2026", "Until a range is picked, the month")
+        XCTAssertEqual(CalendarRange.custom.title(for: now, custom: nil, calendar: calendar), "Nov 2026 – Jan 2027", "Until a range is picked, the next three months")
         XCTAssertEqual(CalendarRange.month.title(for: now, custom: range, calendar: calendar), "November 2026", "Only Custom reads the range")
         XCTAssertEqual(CalendarRange.custom.shift(now, by: 1, custom: range, calendar: calendar), date(2027, 3, 3).addingTimeInterval(10 * 3600), "Four months on")
-        XCTAssertEqual(CalendarRange.custom.shift(now, by: -1, custom: nil, calendar: calendar), CalendarRange.month.shift(now, by: -1, calendar: calendar))
+        XCTAssertEqual(CalendarRange.custom.shift(now, by: -1, custom: nil, calendar: calendar), CalendarRange.quarter.shift(now, by: -1, calendar: calendar))
         XCTAssertEqual(CalendarRange.year.shift(now, by: 1, custom: range, calendar: calendar), CalendarRange.year.shift(now, by: 1, calendar: calendar))
     }
 
@@ -82,16 +82,18 @@ final class CalendarYearTests: XCTestCase {
     }
 
     func testThePickerListsTheTwoFixedPresetsThenOnePerThreadDueAhead() {
-        let threads: [(title: String, due: Date?)] = [
-            ("Moving to Lisbon", date(2027, 2, 10)),
-            ("Q4 roadmap", nil),
-            ("Last year's push", date(2026, 10, 1)),
-            ("Health reset", date(2026, 12, 1)),
+        let threads: [(id: UUID, title: String, due: Date?)] = [
+            (UUID(), "Moving to Lisbon", date(2027, 2, 10)),
+            (UUID(), "Q4 roadmap", nil),
+            (UUID(), "Last year's push", date(2026, 10, 1)),
+            (UUID(), "Health reset", date(2026, 12, 1)),
+            (UUID(), "Health reset", date(2026, 12, 1)),
         ]
         let presets = RangePreset.all(now: now, threads: threads, calendar: calendar)
-        XCTAssertEqual(presets.map(\.title), ["Next 3 months", "This half", "Until Health reset is due", "Until Moving to Lisbon is due"], "Nearest due first; a due day gone by is not a preset")
-        XCTAssertEqual(presets.map(\.symbol), ["calendar", "calendar", "flag", "flag"])
-        XCTAssertEqual(presets[3].range, CustomRange(first: ym(2026, 11), last: ym(2027, 2)))
+        XCTAssertEqual(presets.map(\.title), ["Next 3 months", "This half", "Until Health reset is due", "Until Health reset is due", "Until Moving to Lisbon is due"], "Nearest due first; a due day gone by is not a preset")
+        XCTAssertEqual(presets.map(\.symbol), ["calendar", "calendar", "flag", "flag", "flag"])
+        XCTAssertEqual(Set(presets.map(\.id)).count, presets.count, "Two threads named alike are two rows")
+        XCTAssertEqual(presets[4].range, CustomRange(first: ym(2026, 11), last: ym(2027, 2)))
         XCTAssertEqual(presets[2].range.months, 2)
         XCTAssertEqual(RangePreset.all(now: now, threads: [], calendar: calendar).count, 2)
     }
@@ -214,14 +216,15 @@ final class CalendarYearTests: XCTestCase {
 
     // MARK: Kept
 
-    func testTheStateKeepsTheCustomRangeAndLoadsWithoutOne() throws {
-        let range = CustomRange(first: ym(2026, 11), last: ym(2027, 2))
-        let state = CalendarState(range: .custom, custom: range)
+    func testTheStateKeepsTheCustomLengthAndLoadsWithoutOne() throws {
+        let state = CalendarState(range: .custom, customMonths: 4)
         let data = try JSONEncoder().encode(state)
         XCTAssertEqual(try JSONDecoder().decode(CalendarState.self, from: data), state)
         let old = try JSONDecoder().decode(CalendarState.self, from: Data(#"{"range":"Custom"}"#.utf8))
         XCTAssertEqual(old.range, .custom)
-        XCTAssertNil(old.custom, "A state saved before the picker has no range")
-        XCTAssertNil(CalendarState().custom)
+        XCTAssertEqual(old.customMonths, 3, "A state saved before the picker shows the next three months")
+        XCTAssertEqual(CalendarState().customMonths, 3)
+        XCTAssertEqual(CalendarState(customMonths: 0).customMonths, 1, "At least one month")
+        XCTAssertEqual(try JSONDecoder().decode(CalendarState.self, from: Data(#"{"customMonths":-2}"#.utf8)).customMonths, 1)
     }
 }

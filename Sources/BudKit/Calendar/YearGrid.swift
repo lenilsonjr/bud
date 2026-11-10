@@ -1,6 +1,6 @@
 import Foundation
 
-/// One month as the year draws it: the name, the weekday letters, six rows of seven cells with
+/// One month as the year draws it: the name and six rows of seven cells from `CalendarMonth`,
 /// the days before and after the month left empty, each day shaded by the long bud crossing it
 /// and dotted by a bud on it. Pure, so a test reads it on any platform.
 public struct SmallMonth: Equatable, Sendable {
@@ -51,70 +51,57 @@ public struct YearGrid: Equatable, Sendable {
 
     /// The months of a custom range.
     public init(range: CustomRange, entries: [CalendarEntry], state: CalendarState, now: Date, calendar: Calendar = .current) {
-        let symbols = calendar.shortWeekdaySymbols
-        weekdays = (0..<CalendarMonth.columns).map { String(symbols[(calendar.firstWeekday - 1 + $0) % 7].prefix(1)).uppercased() }
         let today = calendar.startOfDay(for: now)
         let thisMonth = YearMonth(containing: now, calendar: calendar)
         let gridStart = range.start(calendar: calendar)
-        let gridEnd = range.end(calendar: calendar)
+        let gridLast = calendar.date(byAdding: .day, value: -1, to: range.end(calendar: calendar)) ?? gridStart
 
         // The long buds, longest first, each writing its tone on every day it crosses inside
         // the grid: a shorter one crossing the same day writes last and shows.
         let shown = entries.filter(state.shows)
+        let spans = CalendarSpan.list(in: shown, state: state)
         var shade: [Date: ThreadTone] = [:]
-        let spans: [(entry: CalendarEntry, start: Date, end: Date)] = shown.compactMap { entry in
-            let dates = state.dates(of: entry)
-            guard let start = dates.min(), let end = dates.max(), start < end else { return nil }
-            return (entry, start, end)
-        }.sorted { a, b in
-            let la = a.end.timeIntervalSince(a.start), lb = b.end.timeIntervalSince(b.start)
-            if la != lb { return la > lb }
-            return (a.start, a.entry.title) < (b.start, b.entry.title)
-        }
         for span in spans {
             var day = max(span.start, gridStart)
-            let last = min(span.end, gridEnd)
-            while day <= last, day < gridEnd {
+            let stop = min(span.end, gridLast)
+            while day <= stop {
                 shade[day] = span.entry.tone
-                day = calendar.date(byAdding: .day, value: 1, to: day) ?? gridEnd
+                day = calendar.date(byAdding: .day, value: 1, to: day) ?? stop.addingTimeInterval(1)
             }
         }
-        // The dots: a bud on one day, or a long bud on the day it is due; the first bud in
-        // reading order keeps the day.
+        // The dots: a long bud on the day it is due, a bud with one day on that day; the first
+        // bud in reading order keeps the day.
+        let spanned = Dictionary(spans.map { ($0.entry.id, $0) }, uniquingKeysWith: { a, _ in a })
         var dots: [Date: ThreadTone] = [:]
         for entry in shown {
-            let dates = state.dates(of: entry)
-            guard let start = dates.min(), let end = dates.max() else { continue }
             let day: Date
-            if start == end {
-                day = start
-            } else if let due = entry.due, state.shows(.due) {
+            if spanned[entry.id] != nil {
+                guard let due = entry.due, state.shows(.due) else { continue }
                 day = due
             } else {
-                continue
+                guard let first = state.dates(of: entry).first else { continue }
+                day = first
             }
             if dots[day] == nil { dots[day] = entry.tone }
         }
 
-        months = range.all.map { month in
-            let start = month.start(calendar: calendar)
-            let offset = (calendar.component(.weekday, from: start) - calendar.firstWeekday + 7) % 7
-            let count = calendar.range(of: .day, in: .month, for: start)?.count ?? 30
-            var weeks: [[SmallMonth.Day?]] = []
-            for row in 0..<CalendarMonth.rows {
-                weeks.append((0..<CalendarMonth.columns).map { column in
-                    let number = row * CalendarMonth.columns + column - offset + 1
-                    guard number >= 1, number <= count else { return nil }
-                    let date = calendar.date(byAdding: .day, value: number - 1, to: start) ?? start
-                    return SmallMonth.Day(
-                        date: date, number: number, isToday: date == today, isPast: date < today,
-                        shade: shade[date], dot: dots[date]
-                    )
-                })
-            }
-            return SmallMonth(
-                month: month, title: month.text("MMMM", calendar: calendar), weeks: weeks,
-                isCurrent: month == thisMonth, isPast: month < thisMonth
+        let lattices = range.all.map { CalendarMonth(containing: $0.start(calendar: calendar), now: now, calendar: calendar) }
+        weekdays = (lattices.first?.weekdays ?? []).map { String($0.prefix(1)) }
+        months = zip(range.all, lattices).map { month, lattice in
+            SmallMonth(
+                month: month,
+                title: month.text("MMMM", calendar: calendar),
+                weeks: lattice.weeks.map { week in
+                    week.map { day in
+                        guard day.inMonth else { return nil }
+                        return SmallMonth.Day(
+                            date: day.date, number: day.number, isToday: day.isToday, isPast: day.date < today,
+                            shade: shade[day.date], dot: dots[day.date]
+                        )
+                    }
+                },
+                isCurrent: month == thisMonth,
+                isPast: month < thisMonth
             )
         }
     }
