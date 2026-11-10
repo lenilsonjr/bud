@@ -1,11 +1,13 @@
 //! bud-core: a vault is a folder of Markdown files; SQLite is the index that follows it.
 //!
 //! The files are the only truth (ADR-001). This crate opens a vault folder, walks it into an
-//! index kept outside the vault, and answers the queries the views need. The only write into the
+//! index kept outside the vault (the buds, and the pictures they embed), and answers the queries
+//! the views need. The only write into the
 //! vault are the edits in [`Vault::create`], [`Vault::set_body`], [`Vault::set_properties`],
 //! [`Vault::rename`], [`Vault::move_to`], [`Vault::trash`] and [`Vault::restore`]: each changes
 //! the file first and the index row after.
 
+mod attachments;
 mod edit;
 mod frontmatter;
 mod links;
@@ -29,7 +31,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-pub use links::Link;
+pub use attachments::Attachment;
+pub use links::{Embed, Link};
 pub use peer::{
     Identity, JoinRequest, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr,
     Relay, RotateReport, RotationOutcome, Ticket,
@@ -40,7 +43,7 @@ pub use tags::{TagCount, TagEdit, TagOrigin};
 pub use watch::{VaultListener, Watch};
 
 const SCHEMA: &str = include_str!("schema.sql");
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -180,7 +183,7 @@ impl Bud {
     }
 }
 
-/// What a rescan did.
+/// What a rescan did, counting the rows of buds and of attachments alike.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ScanReport {
     pub added: usize,
@@ -227,7 +230,7 @@ impl Vault {
             // Issued tickets are short-lived, so an older shape of their table is dropped too.
             conn.execute_batch(
                 "DROP TABLE IF EXISTS buds; DROP TABLE IF EXISTS buds_fts; DROP TABLE IF EXISTS links; DROP TABLE IF EXISTS bud_tags;
-                 DROP TABLE IF EXISTS tickets_issued;",
+                 DROP TABLE IF EXISTS attachments; DROP TABLE IF EXISTS tickets_issued;",
             )?;
         }
         conn.execute_batch(SCHEMA)?;
@@ -262,6 +265,7 @@ impl Vault {
 
     /// Walk the folder and bring the index up to date. Files whose modification time did not
     /// change since the last scan are not read again. Rows for files that are gone are removed.
+    /// Pictures follow the same rule, by their size and modification time.
     pub fn rescan(&mut self) -> Result<ScanReport> {
         let found = scan::walk(&self.root)?;
         let mut conn = lock(&self.conn);
@@ -270,10 +274,15 @@ impl Vault {
             let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
             rows.collect::<std::result::Result<_, _>>()?
         };
+        let known_pictures: HashMap<String, (i64, i64)> = {
+            let mut stmt = conn.prepare("SELECT path, size, mtime FROM attachments")?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
         let mut report = ScanReport::default();
         let tx = conn.transaction()?;
-        let mut seen = std::collections::HashSet::with_capacity(found.len());
-        for item in &found {
+        let mut seen = std::collections::HashSet::with_capacity(found.buds.len());
+        for item in &found.buds {
             seen.insert(item.path.clone());
             match known.get(&item.path) {
                 Some((mtime, parent)) if *mtime == item.mtime && *parent == item.parent => continue,
@@ -285,6 +294,24 @@ impl Vault {
         for path in known.keys() {
             if !seen.contains(path) {
                 tx.execute("DELETE FROM buds WHERE path = ?1", params![path])?;
+                report.removed += 1;
+            }
+        }
+        let mut seen = std::collections::HashSet::with_capacity(found.pictures.len());
+        for picture in &found.pictures {
+            seen.insert(picture.path.clone());
+            match known_pictures.get(&picture.path) {
+                Some(&(size, mtime)) if size == picture.size as i64 && mtime == picture.mtime => {
+                    continue
+                }
+                Some(_) => report.updated += 1,
+                None => report.added += 1,
+            }
+            attachments::index(&tx, picture)?;
+        }
+        for path in known_pictures.keys() {
+            if !seen.contains(path) {
+                tx.execute("DELETE FROM attachments WHERE path = ?1", params![path])?;
                 report.removed += 1;
             }
         }

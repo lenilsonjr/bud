@@ -1,9 +1,9 @@
-//! Walk a vault folder and say which buds are in it, without reading any file body.
+//! Walk a vault folder and say which buds and pictures are in it, without reading any file body.
 //!
 //! The rules are ADR-002's: a Markdown file is a bud; a folder with the same name beside it holds
 //! its children; a folder with no such file is a bud of its own; `Inbox/`, `Archive/` and
-//! `.trash/` at the root are places, not buds; other dot folders and non-Markdown files are
-//! skipped.
+//! `.trash/` at the root are places, not buds; other dot folders are skipped. A picture file is
+//! an attachment, found by its extension; any other file is skipped.
 
 use crate::Place;
 use std::path::{Component, Path, PathBuf};
@@ -23,16 +23,37 @@ pub struct Found {
     pub mtime: i64,
 }
 
+/// A picture the walk found: an attachment, before any bud is read for an embed of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Picture {
+    /// Relative to the vault root, `/`-separated.
+    pub path: String,
+    /// The file name alone, as an embed names it.
+    pub name: String,
+    pub size: u64,
+    pub mtime: i64,
+}
+
+/// What a walk found: the buds, and the pictures beside them.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Walked {
+    pub buds: Vec<Found>,
+    pub pictures: Vec<Picture>,
+}
+
 pub(crate) const RESERVED: [&str; 4] = ["Inbox", "Archive", "Warehouse", ".trash"];
 
-pub fn walk(root: &Path) -> std::io::Result<Vec<Found>> {
+/// The extensions, in lower case, of the files that are pictures.
+const PICTURES: [&str; 7] = ["png", "jpg", "jpeg", "gif", "heic", "webp", "svg"];
+
+pub fn walk(root: &Path) -> std::io::Result<Walked> {
     walk_under(root, Path::new(""))
 }
 
 /// Walk `start`, a path relative to `root`, and everything below it. The start itself is
-/// included when it is a bud. An empty `start` is the whole vault.
-pub fn walk_under(root: &Path, start: &Path) -> std::io::Result<Vec<Found>> {
-    let mut found = Vec::new();
+/// included when it is a bud or a picture. An empty `start` is the whole vault.
+pub fn walk_under(root: &Path, start: &Path) -> std::io::Result<Walked> {
+    let mut found = Walked::default();
     let base = start.components().count();
     let walker = WalkDir::new(root.join(start))
         .min_depth(if base == 0 { 1 } else { 0 })
@@ -48,7 +69,8 @@ pub fn walk_under(root: &Path, start: &Path) -> std::io::Result<Vec<Found>> {
         let entry = entry?;
         let relative = entry.path().strip_prefix(root).unwrap_or(entry.path());
         let file_type = entry.file_type();
-        let mtime = mtime_of(&entry.metadata()?);
+        let meta = entry.metadata()?;
+        let mtime = mtime_of(&meta);
         if let Some(item) = classify(
             root,
             relative,
@@ -56,7 +78,11 @@ pub fn walk_under(root: &Path, start: &Path) -> std::io::Result<Vec<Found>> {
             file_type.is_file(),
             mtime,
         ) {
-            found.push(item);
+            found.buds.push(item);
+        } else if file_type.is_file() {
+            if let Some(picture) = classify_picture(relative, meta.len(), mtime) {
+                found.pictures.push(picture);
+            }
         }
     }
     Ok(found)
@@ -77,6 +103,25 @@ pub fn probe(root: &Path, relative: &Path) -> Option<Found> {
         file_type.is_file(),
         mtime_of(&meta),
     )
+}
+
+/// The picture at `relative` right now, by the same rules as the walk: none when it is missing,
+/// ignored or not a picture.
+pub fn probe_picture(root: &Path, relative: &Path) -> Option<Picture> {
+    if is_ignored(relative) {
+        return None;
+    }
+    let meta = std::fs::symlink_metadata(root.join(relative)).ok()?;
+    if !meta.file_type().is_file() {
+        return None;
+    }
+    classify_picture(relative, meta.len(), mtime_of(&meta))
+}
+
+/// True for a file name with a picture's extension, in any case.
+pub fn is_picture(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| PICTURES.contains(&ext.to_ascii_lowercase().as_str()))
 }
 
 /// True for a path the scan never looks at: any dot entry, except `.trash` at the root.
@@ -142,6 +187,16 @@ fn classify(
     } else {
         None
     }
+}
+
+fn classify_picture(relative: &Path, size: u64, mtime: i64) -> Option<Picture> {
+    let name = relative.file_name()?.to_string_lossy().to_string();
+    is_picture(&name).then(|| Picture {
+        path: relative_string(relative),
+        name,
+        size,
+        mtime,
+    })
 }
 
 /// The bud that owns the entries of `dir`: `dir.md` when it exists, else the folder itself, and

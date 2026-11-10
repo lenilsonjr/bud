@@ -1,7 +1,7 @@
 //! Follow the vault folder: a `notify` watcher feeds a thread that debounces events, reindexes
 //! only the paths a batch touched, and tells the listener once per batch (ADR-001 §4).
 
-use crate::{index_found, lock, scan, Error, Result};
+use crate::{attachments, index_found, lock, scan, Error, Result};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::{params, Connection};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -195,6 +195,13 @@ fn reindex_path(
             sync_dir(tx, &context.root, relative, changed)?;
         }
         Ok(meta) if meta.is_file() => {
+            if scan::is_picture(&rel) {
+                if let Some(picture) = scan::probe_picture(&context.root, relative) {
+                    attachments::index(tx, &picture)?;
+                    changed.insert(rel.clone());
+                }
+                return Ok(());
+            }
             if !rel.ends_with(".md") {
                 return Ok(());
             }
@@ -210,7 +217,7 @@ fn reindex_path(
         Ok(_) => return Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             let removed = remove_under(tx, &rel)?;
-            if rel.ends_with(".md") {
+            if rel.ends_with(".md") || scan::is_picture(&rel) {
                 // Only a file's row changes the report; a folder's rows are listed by their own.
                 if removed.contains(&rel) {
                     changed.insert(rel.clone());
@@ -233,8 +240,8 @@ fn sync_dir(
 ) -> Result<()> {
     let rel = scan::relative_string(relative);
     let found = scan::walk_under(root, relative)?;
-    let mut seen = HashSet::with_capacity(found.len());
-    for item in &found {
+    let mut seen = HashSet::with_capacity(found.buds.len());
+    for item in &found.buds {
         seen.insert(item.path.clone());
         let known: Option<(i64, Option<String>)> = tx
             .query_row(
@@ -267,18 +274,50 @@ fn sync_dir(
             changed.insert(path);
         }
     }
+    let mut seen = HashSet::with_capacity(found.pictures.len());
+    for picture in &found.pictures {
+        seen.insert(picture.path.clone());
+        let known: Option<(i64, i64)> = tx
+            .query_row(
+                "SELECT size, mtime FROM attachments WHERE path = ?1",
+                params![picture.path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        if known == Some((picture.size as i64, picture.mtime)) {
+            continue;
+        }
+        attachments::index(tx, picture)?;
+        changed.insert(picture.path.clone());
+    }
+    let mut stmt = tx.prepare(
+        "SELECT path FROM attachments WHERE path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/'",
+    )?;
+    let indexed: Vec<String> = stmt
+        .query_map(params![rel], |row| row.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    drop(stmt);
+    for path in indexed {
+        if !seen.contains(&path) {
+            tx.execute("DELETE FROM attachments WHERE path = ?1", params![path])?;
+            changed.insert(path);
+        }
+    }
     Ok(())
 }
 
-/// Delete the row at `rel` and every row below it; return the paths deleted.
+/// Delete the rows at `rel` and every row below it, buds and attachments alike; return the paths
+/// deleted.
 fn remove_under(tx: &Connection, rel: &str) -> Result<Vec<String>> {
     let mut stmt = tx.prepare(
         "DELETE FROM buds WHERE path = ?1 OR substr(path, 1, length(?1) + 1) = ?1 || '/'
          RETURNING path",
     )?;
-    let removed = stmt
+    let mut removed: Vec<String> = stmt
         .query_map(params![rel], |row| row.get(0))?
         .collect::<std::result::Result<_, _>>()?;
+    drop(stmt);
+    removed.extend(attachments::remove_under(tx, rel)?);
     Ok(removed)
 }
 

@@ -40,14 +40,27 @@ CREATE TRIGGER IF NOT EXISTS buds_fts_update AFTER UPDATE OF title, body ON buds
     INSERT INTO buds_fts(rowid, title, body) VALUES (new.rowid, new.title, new.body);
 END;
 
--- Every [[link]] written in a body, under the rowid of the bud it is written in: an upsert keeps
--- the rowid, and so does a rename or a move, so the links follow their bud. The target is the
--- text between the brackets, resolved when it is read (links module).
+-- Every picture file in the folder: its path, its file name, its size in bytes and its
+-- modification time. Derived from the folder like `buds` and never written back (ADR-001); a bud
+-- that embeds one is found in `links` (attachments module).
+CREATE TABLE IF NOT EXISTS attachments (
+    path  TEXT PRIMARY KEY NOT NULL,
+    name  TEXT NOT NULL,
+    size  INTEGER NOT NULL,
+    mtime INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attachments_name ON attachments(name COLLATE NOCASE);
+
+-- Every [[link]] and every embed (`![[photo.png]]`, `![](photo.png)`) written in a body, under
+-- the rowid of the bud it is written in: an upsert keeps the rowid, and so does a rename or a
+-- move, so the links follow their bud. `kind` is `link` or `embed`. The target is the text as
+-- written, resolved when it is read (links module).
 CREATE TABLE IF NOT EXISTS links (
     source   INTEGER NOT NULL,
     target   TEXT NOT NULL,
     label    TEXT,
-    position INTEGER NOT NULL
+    position INTEGER NOT NULL,
+    kind     TEXT NOT NULL DEFAULT 'link'
 );
 CREATE INDEX IF NOT EXISTS links_source ON links(source);
 CREATE INDEX IF NOT EXISTS links_target ON links(target COLLATE NOCASE);
