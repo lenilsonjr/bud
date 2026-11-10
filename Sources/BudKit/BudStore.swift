@@ -84,6 +84,14 @@ public final class BudStore: ObservableObject {
     /// The cards' pictures, decoded once each and kept by the bud's id; a bud not here has not
     /// been asked for. Nothing is published for a load that changes nothing.
     @Published public private(set) var pictures: [UUID: BoardPictureState] = [:]
+    /// Which app runs the agent and with which model. Kept on this device only: another Mac
+    /// has its own installs.
+    @Published public var agentChoice = AgentChoice.read(from: .standard) {
+        didSet { agentChoice.write(to: .standard) }
+    }
+    /// What is installed on this Mac, read from PATH and the home directory when the picker
+    /// opens.
+    public var agentApps = AgentApps()
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
