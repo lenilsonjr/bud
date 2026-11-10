@@ -142,17 +142,14 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
     }
 
     /// The saved lenses after a tag rename: each that asks for the tag asks for the new name.
-    /// Where the rename makes a lens ask what a lens it did not touch asks already, the untouched
-    /// one stays, the first by name of them, and every changed lens asking it goes into it; only
-    /// where every lens asking one question was changed does the first by name stay. Lenses the
-    /// rename did not touch never go, and a lens this build cannot read takes no part.
+    /// None goes: where the rename makes lenses ask one question, they all stay, and the rename
+    /// says which.
     public static func afterTagRename(_ lenses: [SavedLens], from: String, to: String) -> TagRename {
         var out = TagRename()
         var now: [SavedLens] = []
         var changed: Set<UUID> = []
         for lens in lenses {
             if let renamed = lens.renamingTag(from, to: to) {
-                out.asked += 1
                 out.renamed.append((lens, renamed))
                 changed.insert(lens.id)
                 now.append(renamed)
@@ -160,7 +157,7 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
                 now.append(lens)
             }
         }
-        // Each readable question a changed lens now asks, with every lens asking it.
+        // Each readable question a changed lens now asks, when more than one lens asks it.
         let readable = sorted(now).filter { $0.foreign == nil }
         var questions: [LensQuery] = []
         for lens in readable where changed.contains(lens.id) && !questions.contains(lens.query) {
@@ -168,31 +165,25 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         }
         for question in questions {
             let asking = readable.filter { $0.query == question }
-            let untouched = asking.filter { !changed.contains($0.id) }
-            let stays = untouched.isEmpty ? [asking[0]] : untouched
-            for lens in asking where !stays.contains(where: { $0.id == lens.id }) {
-                let before = lenses.first { $0.id == lens.id } ?? lens
-                out.merged.append((before, stays[0]))
-                out.renamed.removeAll { $0.after.id == lens.id }
-            }
+            if asking.count > 1 { out.alike.append(asking) }
         }
         return out
     }
 
-    /// What a tag rename does to the saved lenses: each renamed lens before and after, and each
-    /// that goes, as it was before, with the lens it now asks the same as.
+    /// What a tag rename does to the saved lenses: each renamed lens before and after, and the
+    /// lenses that now ask one question, by name, a list for each question.
     public struct TagRename {
         public var renamed: [(before: SavedLens, after: SavedLens)] = []
-        public var merged: [(gone: SavedLens, into: SavedLens)] = []
+        public var alike: [[SavedLens]] = []
         /// How many lenses asked for the tag.
-        public var asked = 0
+        public var asked: Int { renamed.count }
     }
 
     /// The tag rename's toast: what it reached among the buds and the saved lenses, and the
-    /// lenses that went because another now asks the same.
-    /// When the vault refused the lenses' writes, it says so instead of naming them.
+    /// lenses that now ask the same. When the vault refused the lenses' writes, it says so
+    /// instead of naming them.
     public static func tagRenameMessage(
-        from: String, to: String, buds: Int, lenses: Int, merged: [(gone: SavedLens, into: SavedLens)], lensesRefused: Bool = false
+        from: String, to: String, buds: Int, lenses: Int, alike: [[SavedLens]] = [], lensesRefused: Bool = false
     ) -> String {
         func count(_ n: Int, _ one: String, _ many: String) -> String { n == 1 ? "1 \(one)" : "\(n) \(many)" }
         if lensesRefused {
@@ -204,8 +195,11 @@ public struct SavedLens: Identifiable, Hashable, Sendable {
         if lenses > 0 { reached.append(count(lenses, "saved lens", "saved lenses")) }
         var message = "Renamed #\(from) to #\(to)"
         if !reached.isEmpty { message += " in " + reached.joined(separator: " and ") }
-        if !merged.isEmpty {
-            message += ", and merged " + merged.map { "\($0.gone.name) into \($0.into.name)" }.joined(separator: " and ")
+        for group in alike {
+            let names = group.map(\.name)
+            let listed = names.count == 2 ? names.joined(separator: " and ")
+                : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+            message += "; \(listed) now ask the same"
         }
         return message
     }
