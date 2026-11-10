@@ -9,11 +9,11 @@ struct BoardView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
     @Environment(\.stillPicture) private var still
-    @Environment(\.stillNow) private var stillNow
     @State private var showsCancelled = false
 
     private var board: Board { store.board }
-    private var now: Date { stillNow ?? Date() }
+    /// The store's clock, so a still picture reads the same day each time it is made.
+    private var now: Date { store.now }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -180,19 +180,6 @@ struct BoardColumnView: View {
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(tone)
             .frame(width: 14, height: 14)
-    }
-}
-
-/// The day a still picture is drawn on, so "Today" and "Due Fri" read the same each time it is
-/// made; nil in the app, which reads the clock.
-struct StillNowKey: EnvironmentKey {
-    static let defaultValue: Date? = nil
-}
-
-extension EnvironmentValues {
-    var stillNow: Date? {
-        get { self[StillNowKey.self] }
-        set { self[StillNowKey.self] = newValue }
     }
 }
 #endif

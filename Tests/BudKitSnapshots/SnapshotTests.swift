@@ -918,7 +918,7 @@ final class SnapshotTests: XCTestCase {
         }
         let folder = URL(fileURLWithPath: dir, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let now = Date(timeIntervalSince1970: 1_794_000_000)
+        let now = Tree.stillNow
         let day: TimeInterval = 86_400
         var tree = Tree.seed(now: now)
         let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
@@ -945,12 +945,13 @@ final class SnapshotTests: XCTestCase {
         let vault = MemoryVault(tree: tree)
         let png = try picture()
         await vault.keepPicture("living-room.png", png)
-        let store = BudStore(vault: vault, tree: tree)
+        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock)
+        let store = BudStore(vault: vault, tree: tree, devices: devices)
         await store.settle()
         store.center = newsletter.id
         store.surface = .board
         for scheme in [ColorScheme.light, .dark] {
-            let view = BudRootView(store: store).frame(width: 1440, height: 900).environment(\.stillNow, now)
+            let view = BudRootView(store: store).frame(width: 1440, height: 900)
             let data = try render(view, scheme: scheme)
             let file = folder.appendingPathComponent("board-\(scheme == .dark ? "dark" : "light").png")
             try data.write(to: file)
