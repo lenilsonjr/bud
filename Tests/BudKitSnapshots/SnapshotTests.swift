@@ -792,6 +792,53 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    /// Add column on the newsletter board, the picker open beside the slot: the search line,
+    /// On this board with the three columns checked, Other tags from the rest of the vault, and
+    /// New tag column. The renderer cannot draw a popover, so the picker is drawn as a plain
+    /// view over the board where the popover would sit. Then the ⋯ menu of a tag column.
+    func testRendersTheBoardWithThePickerOpen() async throws {
+        let folder = try pictureFolder()
+        let now = stillClock()
+        var tree = Tree.seed(now: now)
+        let newsletter = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let kids = tree.children(of: newsletter.id)
+        tree.addTag(kids[0].id, "researching")
+        tree.addTag(kids[1].id, "waiting")
+        tree.addTag(kids[2].id, "doing")
+        tree.addTag(tree.children(of: kids[1].id)[0].id, "doing")
+        let roadmap = try XCTUnwrap(tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
+        for (i, bud) in ([roadmap] + tree.children(of: roadmap.id)).enumerated() {
+            tree.addTag(bud.id, "someday")
+            if i < 2 { tree.addTag(bud.id, "blocked") }
+            if i < 1 { tree.addTag(bud.id, "this-week") }
+        }
+        let vault = MemoryVault(tree: tree)
+        let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock)
+        let store = BudStore(vault: vault, tree: tree, devices: devices)
+        await store.settle()
+        store.center = newsletter.id
+        store.surface = .board
+        // The slot stands after the three tag columns: the page's 24 pt, four columns of 232
+        // and their 12 pt gaps; the picker hangs under it.
+        let picker = BoardColumnPicker(store: store, id: newsletter.id)
+            .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Theme.line))
+            .shadow(color: Theme.shadowStrong.opacity(0.4), radius: 16, y: 10)
+        for scheme in [ColorScheme.light, .dark] {
+            let view = BudRootView(store: store)
+                .frame(width: 1440, height: 900)
+                .overlay(alignment: .topLeading) { picker.offset(x: 24 + 4 * 244 - 110, y: 132) }
+            let data = try render(view, scheme: scheme)
+            let file = folder.appendingPathComponent("board-add-column-\(scheme == .dark ? "dark" : "light").png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        let edit = BoardColumnEdit(columns: store.boardColumns(of: newsletter.id)) { _, _ in }
+        let menu = BoardColumnMenu(tag: "waiting", edit: edit).padding(24).background(Theme.raised)
+        try render(menu, scheme: .light).write(to: folder.appendingPathComponent("board-column-menu-light.png"))
+    }
+
+
     /// A small picture drawn here, so the fixtures carry no file: two washes of the kit.
     private func picture() throws -> Data {
         let image = NSImage(size: NSSize(width: 240, height: 120), flipped: false) { rect in
