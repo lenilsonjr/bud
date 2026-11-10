@@ -122,6 +122,7 @@ struct InsidePanel: View {
     @State private var adding = false
     @State private var line = ""
     @FocusState private var lineFocused: Bool
+    @Environment(\.compact) private var compact
 
     var body: some View {
         if let bud = store.tree.bud(id) {
@@ -161,7 +162,7 @@ struct InsidePanel: View {
     }
 
     private func open() {
-        if store.panels.isCollapsed(.inside) { store.panels.toggle(.inside) }
+        if store.isPanelCollapsed(.inside, compact: compact) { store.togglePanel(.inside, compact: compact) }
         adding = true
     }
 
