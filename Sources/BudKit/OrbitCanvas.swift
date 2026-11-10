@@ -264,6 +264,7 @@ public struct OrbitCanvas: View {
                 Spacer(minLength: 0)
                 SoilView(
                     roots: store.roots(),
+                    now: store.now,
                     folded: store.soilFolded,
                     device: BudStore.deviceName,
                     onFold: { withAnimation(.spring(duration: 0.35, bounce: 0.1)) { store.soilFolded.toggle() } },

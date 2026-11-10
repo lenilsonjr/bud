@@ -52,7 +52,7 @@ struct TrashPage: View {
                 Text(branch.head.text)
                     .textRole(.body)
                     .foregroundStyle(Theme.text)
-                Text(Self.caption(branch))
+                Text(Self.caption(branch, now: store.now))
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
             }

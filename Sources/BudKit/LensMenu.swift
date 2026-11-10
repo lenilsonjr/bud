@@ -160,7 +160,7 @@ struct LensMenu: View {
 
     private func row(_ facet: LensFacet) -> some View {
         let ticked = store.canvasFacets.contains(facet)
-        let count = facet.query.hits(store.tree, links: store.links).count
+        let count = facet.query.hits(store.tree, links: store.links, on: store.now).count
         return Button {
             withAnimation(.easeOut(duration: 0.35)) {
                 if ticked { store.canvasFacets.removeAll { $0 == facet } } else { store.canvasFacets.append(facet) }
@@ -200,7 +200,7 @@ struct LensMenu: View {
             if store.canvasFacets.isEmpty {
                 Text("Tick rows to light what matches")
             } else {
-                let hits = store.canvasLens?.hits(store.tree, links: store.links).count ?? 0
+                let hits = store.canvasLens?.hits(store.tree, links: store.links, on: store.now).count ?? 0
                 Text(Self.footerText(hits: hits, rows: store.canvasFacets.count))
                 Spacer()
                 Button("Clear") {

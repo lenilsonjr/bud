@@ -71,7 +71,7 @@ struct PhoneSoilSheet: View {
             }
             .buttonStyle(.budSecondary)
         } else {
-            let items = Root.order(root.account.items, kind: root.account.kind, now: Date())
+            let items = Root.order(root.account.items, kind: root.account.kind, now: store.now)
             MaybeScroll {
                 VStack(spacing: 6) {
                     ForEach(items) { item in
@@ -90,7 +90,7 @@ struct PhoneSoilSheet: View {
     private func row(_ item: SourceItem, in account: SourceAccount) -> some View {
         let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         return HStack(spacing: 10) {
-            if Root.needsYou(item, kind: account.kind, now: Date()) {
+            if Root.needsYou(item, kind: account.kind, now: store.now) {
                 Circle().fill(Theme.leaf).frame(width: 6, height: 6)
             }
             VStack(alignment: .leading, spacing: 2) {

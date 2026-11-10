@@ -51,7 +51,7 @@ struct TVSettingsTab: View {
                             .foregroundStyle(Theme.text2)
                     }
                     ForEach(DevicesText.ordered(devices.devices)) { device in
-                        TVDeviceRow(device: device, now: Date(), lit: focused == device.id)
+                        TVDeviceRow(device: device, now: devices.now(), lit: focused == device.id)
                             .focused($focused, equals: device.id)
                             .contextMenu {
                                 if !device.isThisDevice {

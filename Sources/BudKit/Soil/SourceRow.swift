@@ -7,13 +7,21 @@ struct SourceRow: View {
     let mark: SourceMark?
     /// The ink of a live row: the card's own meta colour.
     let fallback: Color
+    /// The store's clock, read in a still picture in place of the ticking timeline.
+    let now: Date
+    #if os(tvOS)
+    private let still = false
+    #else
+    @Environment(\.stillPicture) private var still
+    #endif
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            let status = SourceRowText.status(mark, now: context.date)
+            let at = still ? now : context.date
+            let status = SourceRowText.status(mark, now: at)
             HStack(spacing: 4) {
                 Image(systemName: Self.symbol(status))
-                Text(SourceRowText.card(from: from, mark: mark, now: context.date))
+                Text(SourceRowText.card(from: from, mark: mark, now: at))
                     .lineLimit(1)
             }
             .textRole(.caption)
@@ -61,19 +69,27 @@ struct FromMark: View {
 struct SourcePageRow: View {
     let from: String
     let mark: SourceMark?
+    /// The store's clock, read in a still picture in place of the ticking timeline.
+    let now: Date
     @Environment(\.openURL) private var openURL
+    #if os(tvOS)
+    private let still = false
+    #else
+    @Environment(\.stillPicture) private var still
+    #endif
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
+            let at = still ? now : context.date
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(SourceRowText.title(from: from))
                         .textRole(.label)
                         .foregroundStyle(Theme.text)
                     HStack(spacing: 6) {
-                        SourceRow(from: from, mark: mark, fallback: Theme.text2)
+                        SourceRow(from: from, mark: mark, fallback: Theme.text2, now: now)
                         Text("·").textRole(.caption).foregroundStyle(Theme.text3)
-                        Text(SourceRowText.synced(mark, now: context.date))
+                        Text(SourceRowText.synced(mark, now: at))
                             .textRole(.caption)
                             .foregroundStyle(Theme.text3)
                     }

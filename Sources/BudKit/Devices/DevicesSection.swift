@@ -68,7 +68,7 @@ struct DevicesSection: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, device in
                 if index > 0 { Theme.line.frame(height: 1) }
                 DeviceRow(
-                    device: device, now: Date(), onRemove: { present(.removeDevice(id: device.id)) },
+                    device: device, now: devices.now(), onRemove: { present(.removeDevice(id: device.id)) },
                     onPairAgain: { present(.showTicket) })
             }
         }

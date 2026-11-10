@@ -333,9 +333,9 @@ public struct Tree: Codable, Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func add(_ text: String, todo: Bool, under parent: UUID, id: UUID = UUID()) -> Bud {
+    public mutating func add(_ text: String, todo: Bool, under parent: UUID, id: UUID = UUID(), created: Date = Date()) -> Bud {
         let last = children(of: parent).last?.order ?? 0
-        let bud = Bud(id: id, text: text, state: todo ? .open : nil, parent: parent, order: last + 1)
+        let bud = Bud(id: id, text: text, state: todo ? .open : nil, parent: parent, order: last + 1, created: created)
         buds.append(bud)
         return bud
     }
@@ -539,42 +539,60 @@ public struct Tree: Codable, Equatable, Sendable {
         children(of: rootID).filter(\.isDone)
     }
 
-    /// A small world to start from.
+    /// The moment a still picture of the seed world is taken: a Tuesday morning, so "today",
+    /// "tomorrow" and overdue read the same on every run.
+    public static let stillNow = Date(timeIntervalSince1970: 1_793_700_000)
+
     /// A small fictional world: a newsletter being launched, with a few bodies, two due dates,
     /// one scheduled day and one pinned bud, so every lens and picture has something to show.
-    public static func seed() -> Tree {
+    /// Its days are told from `now`, and its ids and order are the same every time, so two
+    /// seeds made at the same moment are equal.
+    public static func seed(now: Date = Date()) -> Tree {
         var t = Tree()
         let day: TimeInterval = 86_400
-        let newsletter = t.add("Launch the newsletter", todo: true, under: rootID)
+        var made = 0
+        // 5eed…0001, 5eed…0002 and so on: fixed ids, in the order the buds are made.
+        func nextID() -> UUID {
+            made += 1
+            return UUID(uuidString: String(format: "5eed0000-0000-4000-8000-%012d", made))!
+        }
+        // Made a second apart over the minute before now, so the newest is still the last one.
+        func add(_ text: String, todo: Bool, under parent: UUID) -> Bud {
+            t.add(text, todo: todo, under: parent, id: nextID(), created: now.addingTimeInterval(Double(made) - 60))
+        }
+        func capture(_ line: String, source: String, created: Date) -> Bud {
+            t.capture(line, source: source, created: created, id: nextID())
+        }
+        let newsletter = add("Launch the newsletter", todo: true, under: rootID)
         t.setBody(newsletter.id, "A monthly letter for the garden club: one story, one tip, one date.\n\nFirst issue goes out when the name and the sender are settled.")
         t.setPinned(newsletter.id, true)
-        let name = t.add("Pick a name", todo: true, under: newsletter.id)
-        t.setDue(name.id, Date().addingTimeInterval(2 * day))
-        t.add("Shortlist three candidates", todo: true, under: name.id)
-        t.add("Ask two readers which one lands", todo: true, under: name.id)
-        let short = t.add("Short names read better in the inbox", todo: false, under: name.id)
+        let name = add("Pick a name", todo: true, under: newsletter.id)
+        t.setDue(name.id, now.addingTimeInterval(2 * day))
+        _ = add("Shortlist three candidates", todo: true, under: name.id)
+        _ = add("Ask two readers which one lands", todo: true, under: name.id)
+        let short = add("Short names read better in the inbox", todo: false, under: name.id)
         t.setBody(short.id, "Most inboxes cut the sender name at about twenty characters.")
-        let sender = t.add("Set up the sender", todo: true, under: newsletter.id)
-        t.add("Domain records are in the shared doc", todo: false, under: sender.id)
-        let verify = t.add("Verify the address", todo: true, under: sender.id)
-        t.setDue(verify.id, Date().addingTimeInterval(-1 * day))
-        let design = t.add("Design notes", todo: false, under: newsletter.id)
-        t.add("Warm, not corporate", todo: false, under: design.id)
-        t.add("First issue outline", todo: false, under: newsletter.id)
-        let roadmap = t.add("Q4 roadmap", todo: true, under: rootID)
-        t.add("Review the onboarding flow", todo: true, under: roadmap.id)
-        t.add("Launch notes", todo: false, under: roadmap.id)
-        let language = t.add("Learn a language", todo: true, under: rootID)
-        t.add("Ten minutes a day", todo: true, under: language.id)
-        let health = t.add("Health reset", todo: true, under: rootID)
-        let walk = t.add("A walk before the first meeting", todo: true, under: health.id)
-        t.setWhen(walk.id, Date())
-        t.add("Routines", todo: false, under: rootID)
-        t.add("Gift ideas", todo: false, under: rootID)
-        t.add("Side project", todo: false, under: rootID)
-        let printer = t.capture("Ask the printer about paper samples", source: "mac", created: Date().addingTimeInterval(-1 * day))
-        t.add("Three paper weights to compare", todo: false, under: printer.id)
-        t.capture("A recipe to try for the first issue", source: "iphone")
+        let sender = add("Set up the sender", todo: true, under: newsletter.id)
+        _ = add("Domain records are in the shared doc", todo: false, under: sender.id)
+        let verify = add("Verify the address", todo: true, under: sender.id)
+        t.setDue(verify.id, now.addingTimeInterval(-1 * day))
+        let design = add("Design notes", todo: false, under: newsletter.id)
+        _ = add("Warm, not corporate", todo: false, under: design.id)
+        _ = add("First issue outline", todo: false, under: newsletter.id)
+        let roadmap = add("Q4 roadmap", todo: true, under: rootID)
+        _ = add("Review the onboarding flow", todo: true, under: roadmap.id)
+        _ = add("Launch notes", todo: false, under: roadmap.id)
+        let language = add("Learn a language", todo: true, under: rootID)
+        _ = add("Ten minutes a day", todo: true, under: language.id)
+        let health = add("Health reset", todo: true, under: rootID)
+        let walk = add("A walk before the first meeting", todo: true, under: health.id)
+        t.setWhen(walk.id, now)
+        _ = add("Routines", todo: false, under: rootID)
+        _ = add("Gift ideas", todo: false, under: rootID)
+        _ = add("Side project", todo: false, under: rootID)
+        let printer = capture("Ask the printer about paper samples", source: "mac", created: now.addingTimeInterval(-1 * day))
+        _ = add("Three paper weights to compare", todo: false, under: printer.id)
+        _ = capture("A recipe to try for the first issue", source: "iphone", created: now)
         return t
     }
 }

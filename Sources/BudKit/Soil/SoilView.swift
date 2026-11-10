@@ -6,6 +6,8 @@ import SwiftUI
 /// up through the line is planted where it lands; nothing here is written before that.
 struct SoilView: View {
     let roots: [Root]
+    /// The moment the roots were read at, so the leaf dots agree with them.
+    let now: Date
     let folded: Bool
     /// The device word for a locked root: "Sign in on this Mac".
     let device: String
@@ -120,7 +122,7 @@ struct SoilView: View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                if Root.needsYou(item, kind: account.kind, now: Date()) {
+                if Root.needsYou(item, kind: account.kind, now: now) {
                     Circle().fill(Theme.leaf).frame(width: 6, height: 6)
                 }
                 Text(item.title).textRole(.cardTitle).foregroundStyle(Theme.cardInk).lineLimit(1)

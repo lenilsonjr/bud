@@ -309,7 +309,7 @@ struct SourcePanel: View {
             PanelView(panel: .source, store: store, meta: bud.from.map(SourceRowText.name) ?? "Written in Bud") {
                 Group {
                     if let from = bud.from {
-                        SourcePageRow(from: from, mark: store.mark(of: bud))
+                        SourcePageRow(from: from, mark: store.mark(of: bud), now: store.now)
                     } else {
                         Text(text ?? "Reading the file…")
                             .textRole(.mono)

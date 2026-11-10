@@ -31,7 +31,7 @@ struct TVReadScreen: View {
     private static let eyebrow = TextStyle(typeface: .text, size: 20, weight: 700, tracking: 1.6, uppercase: true)
 
     private var id: UUID { stack.last ?? start }
-    private var rows: [TVFilesRow] { TVFilesText.rows(.everything, in: store.tree, inside: id) }
+    private var rows: [TVFilesRow] { TVFilesText.rows(.everything, in: store.tree, inside: id, on: store.now) }
 
     var body: some View {
         Group {
@@ -117,7 +117,7 @@ struct TVReadScreen: View {
                     .foregroundStyle(Theme.text2)
                 if let from = bud.from {
                     // Read-only here: the TV shows where the bud came from and nothing to open.
-                    SourcePageRow(from: from, mark: store.mark(of: bud))
+                    SourcePageRow(from: from, mark: store.mark(of: bud), now: store.now)
                 }
             }
             .padding(.horizontal, 24)
