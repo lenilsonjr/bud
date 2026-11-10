@@ -123,6 +123,9 @@ public final class BudStore: ObservableObject {
     /// it live last saw it.
     @Published public var marks: [String: SourceMark] = [:]
 
+    /// A recorded key changes what every view binds and what the menu bar lists, and they all
+    /// read the store, so the layout's changes go out as the store's.
+    private var keyFeed: AnyCancellable?
     private var soilFeed: AnyCancellable?
 
     private var liveFeed: AnyCancellable?
@@ -254,6 +257,7 @@ public final class BudStore: ObservableObject {
         self.links = LinkGraph(tree)
         self.center = rootID
         self.layout = LayoutEngine.layout(of: tree, center: rootID)
+        keyFeed = Keys.layout.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         self.devices.onSyncFinished = { [weak self] summary in
             // A sync writes the files itself, which the vault's watch does not report.
             Task { @MainActor in
@@ -972,11 +976,12 @@ public final class BudStore: ObservableObject {
     }
 
     /// Whether a command can run now: a card over the window takes every key, the shortcuts
-    /// sheet letting only its own through to close it, then the scope must hold on what the
-    /// window shows. New under this needs a target as well, which the
-    /// canvas always has and Files only on a bud's page; Close or reopen needs a to-do's page.
+    /// sheet letting only its own through to close it, and not even that while a row records,
+    /// since the recorder hears every key, then the scope must hold on what the window shows.
+    /// New under this needs a target as well, which the canvas always has and Files only on a
+    /// bud's page; Close or reopen needs a to-do's page.
     public func allows(_ id: Command.ID) -> Bool {
-        guard modal == nil || (modal == .shortcuts && id == .shortcuts) else { return false }
+        guard modal == nil || (modal == .shortcuts && id == .shortcuts && Keys.layout.recording == nil) else { return false }
         switch id {
         case .newUnderThis: return surface == .canvas || page != nil
         case .closeOrReopen: return page.flatMap { tree.bud($0) }?.isTodo == true

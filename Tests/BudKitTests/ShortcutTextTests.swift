@@ -4,10 +4,23 @@ import XCTest
 final class ShortcutTextTests: XCTestCase {
     func testTheSheetsWords() {
         XCTAssertEqual(ShortcutText.title, "Keyboard shortcuts")
-        XCTAssertEqual(ShortcutText.note, "Every key the app answers to.")
+        XCTAssertEqual(ShortcutText.note, "Click a key to record a new one.")
         XCTAssertEqual(ShortcutText.systemWideTitle, "From any app")
         XCTAssertEqual(ShortcutText.systemWideCaption, "On the Mac, with any app in front.")
         XCTAssertEqual(Command.Scope.allCases.map(ShortcutText.groupTitle), ["Everywhere", "On the canvas", "In Files", "On a page"])
+    }
+
+    func testTheRecordersWords() {
+        XCTAssertEqual(ShortcutText.recording, "Press keys…")
+        XCTAssertEqual(ShortcutText.recordingHint, "Esc cancels.")
+        XCTAssertEqual(ShortcutText.bareKeyRefused, "Hold ⌘, ⌥ or ⌃ with it: alone it would type.")
+        XCTAssertEqual(ShortcutText.taken(by: Command.of(.soil), key: Key("j", .command)), "Soil already answers to ⌘J.")
+        XCTAssertEqual(ShortcutText.wanted(by: Command.of(.goAnywhere)), "Go anywhere wants this key.")
+        XCTAssertEqual(ShortcutText.reset, "Reset")
+        XCTAssertEqual(ShortcutText.resetAll, "Reset all")
+        XCTAssertNil(ShortcutText.changed(0), "The footer goes while every row has its default")
+        XCTAssertEqual(ShortcutText.changed(1), "1 key changed from the defaults")
+        XCTAssertEqual(ShortcutText.changed(2), "2 keys changed from the defaults")
     }
 
     func testTheSystemWideKeysComeLastInTheirOwnGroupMarkedMac() throws {

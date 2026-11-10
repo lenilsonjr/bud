@@ -41,7 +41,7 @@ public struct BudRootView: View {
         .background(Theme.window.ignoresSafeArea())
         .background {
             // The window's keys, drawn nowhere: Go anywhere, the switch between the surfaces, and
-            // the shortcuts sheet.
+            // the shortcuts sheet. None while the sheet records a key, so the recorder hears it.
             Group {
                 Button("") { store.perform(.goAnywhere) }
                     .keyboardShortcut(Keys.shortcut(.goAnywhere))
@@ -52,6 +52,7 @@ public struct BudRootView: View {
                 Button("") { store.perform(.shortcuts) }
                     .keyboardShortcut(Keys.shortcut(.shortcuts))
             }
+            .disabled(Keys.layout.recording != nil)
             .opacity(0)
         }
         .textRole(.body)

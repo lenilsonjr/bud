@@ -36,7 +36,7 @@ final class CommandTests: XCTestCase {
             XCTAssertEqual(command.scope, scope)
             XCTAssertEqual(command.key, key)
             XCTAssertEqual(command.inPlace, inPlace.contains(id), "\(id) acts where it is bound or through the store")
-            XCTAssertEqual(Keys.key(for: id), key, "The binding reads the default until a user layer comes")
+            XCTAssertEqual(Keys.key(for: id), key, "The binding reads the default while nothing is recorded over it")
         }
     }
 
@@ -253,6 +253,19 @@ final class CommandStoreTests: XCTestCase {
         store.modal = .settings
         XCTAssertFalse(store.perform(.shortcuts), "Another card keeps every key")
         XCTAssertEqual(store.modal, .settings)
+    }
+
+    func testTheSheetsOwnKeyIsTheRecordersWhileARowRecords() {
+        let (store, _) = store()
+        defer { Keys.layout.cancelRecording() }
+        store.perform(.shortcuts)
+        Keys.layout.startRecording(.soil)
+        XCTAssertFalse(store.allows(.shortcuts))
+        XCTAssertFalse(store.perform(.shortcuts))
+        XCTAssertEqual(store.modal, .shortcuts)
+        Keys.layout.cancelRecording()
+        XCTAssertTrue(store.perform(.shortcuts))
+        XCTAssertNil(store.modal)
     }
 
     func testCloseOrReopenTicksThePage() throws {

@@ -31,6 +31,30 @@ extension Key {
     }
 
     public var shortcut: KeyboardShortcut { KeyboardShortcut(equivalent, modifiers: eventModifiers) }
+
+    /// The key a press is, with the modifiers held, when the table can name it: a letter, a
+    /// number or a sign, or one of the named keys. Nil for the rest, a function key or Delete.
+    public init?(_ press: KeyPress) {
+        let base: Base
+        switch press.key {
+        case .space: base = .space
+        case .escape: base = .escape
+        case .return: base = .return
+        case .tab: base = .tab
+        case .upArrow: base = .upArrow
+        case .downArrow: base = .downArrow
+        default:
+            let character = press.key.character
+            guard character.isLetter || character.isNumber || character.isPunctuation || character.isSymbol else { return nil }
+            base = .letter(character.lowercased().first ?? character)
+        }
+        var modifiers: Modifiers = []
+        if press.modifiers.contains(.control) { modifiers.insert(.control) }
+        if press.modifiers.contains(.option) { modifiers.insert(.option) }
+        if press.modifiers.contains(.shift) { modifiers.insert(.shift) }
+        if press.modifiers.contains(.command) { modifiers.insert(.command) }
+        self.init(base, modifiers)
+    }
 }
 
 extension Keys {
