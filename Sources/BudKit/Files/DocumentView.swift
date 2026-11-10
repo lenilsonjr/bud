@@ -4,8 +4,9 @@ import SwiftUI
 import GameController
 #endif
 
-/// A bud as its own file: the doc bar with its path, the properties the lenses read, the body,
-/// and what is inside it. The body autosaves half a second after the last keystroke.
+/// Every bud's page, the one Files opens whatever the bud holds: the page bar with its path, the
+/// title, and the body as rendered Markdown. What is inside stays in the sidebar's tree. The
+/// body autosaves half a second after the last keystroke.
 struct DocumentView: View {
     let id: UUID
     @ObservedObject var store: BudStore
@@ -13,7 +14,6 @@ struct DocumentView: View {
     @State private var editing = false
     @State private var dirty = false
     @State private var saver: Task<Void, Never>?
-    @State private var enrich = ""
     /// The `[[` picker's highlighted row, and the open `[[` it was closed on with Esc.
     @State private var pick = 0
     @State private var closedAt: Int?
@@ -35,11 +35,7 @@ struct DocumentView: View {
                         }
                         TagRow(bud: bud, store: store)
                     }
-                    properties(bud)
                     bodyEditor
-                    inside(bud)
-                    LinkedFrom(id: id, store: store)
-                    enrichField(bud)
                 }
                 .pageColumn()
             }
@@ -80,10 +76,23 @@ struct DocumentView: View {
             }
             .onChange(of: editing) { _, _ in closedAt = nil; armed = false }
             .onDisappear { flush() }
+        } else if id == rootID {
+            // Everything is no file of its own: its title, and the threads are in the sidebar.
+            MaybeScroll {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(store.tree.title(of: rootID))
+                        .textRole(.title)
+                        .foregroundStyle(Theme.text)
+                    Text("Pick a thread in the sidebar.")
+                        .textRole(.body)
+                        .foregroundStyle(Theme.text3)
+                }
+                .pageColumn()
+            }
         }
     }
 
-    // MARK: doc bar
+    // MARK: page bar
 
     private func docBar(_ bud: Bud) -> some View {
         HStack(spacing: 12) {
@@ -93,6 +102,11 @@ struct DocumentView: View {
                 .truncationMode(.head)
                 .foregroundStyle(Theme.text3)
             Spacer()
+            if editing {
+                Text(Self.editingHint)
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text3)
+            }
             HStack(spacing: 4) {
                 Image(systemName: dirty ? "circle.dotted" : "checkmark.circle.fill")
                     .foregroundStyle(dirty ? Theme.text3 : Theme.leaf)
@@ -100,18 +114,6 @@ struct DocumentView: View {
                     .foregroundStyle(Theme.text3)
             }
             .textRole(.caption)
-            if store.tree.hasChildren(id) {
-                Button {
-                    flush()
-                    store.documentOf = nil
-                } label: {
-                    Image(systemName: "list.bullet.indent")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.leaf)
-                .help("Show the outline")
-                .accessibilityIdentifier("document-outline")
-            }
             Button {
                 flush()
                 withAnimation(.spring(duration: 0.8, bounce: 0.12)) { store.center = id }
@@ -125,42 +127,11 @@ struct DocumentView: View {
         }
     }
 
-    // MARK: properties
-
-    private func properties(_ bud: Bud) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let from = bud.from {
-                PropertyRow(name: "Source") { SourcePageRow(from: from, mark: store.mark(of: bud)) }
-            }
-            PropertyRow(name: "State", from: owner(bud, .state)) {
-                if bud.isTodo {
-                    Segmented(selection: Binding(get: { bud.isDone }, set: { _ in store.tick(id) }), options: [false, true]) { $0 ? "Done" : "Open" }
-                } else {
-                    Button("Make a to-do") { store.update(id, text: bud.text, todo: true) }
-                        .buttonStyle(.bordered)
-                        .textRole(.label)
-                }
-            }
-            PropertyRow(name: "When", from: owner(bud, .when)) { DateField(label: "When", date: bud.when) { store.setWhen(id, $0) } }
-            PropertyRow(name: "Due", from: owner(bud, .due)) { DateField(label: "Due", date: bud.due) { store.setDue(id, $0) } }
-            PropertyRow(name: "Pinned") {
-                Button(bud.pinned ? "Pinned" : "Pin", systemImage: bud.pinned ? "pin.fill" : "pin") { store.setPinned(id, !bud.pinned) }
-                    .buttonStyle(.bordered)
-                    .textRole(.label)
-            }
-        }
-    }
-
-    /// The planted bud's `from` key when its source owns this field.
-    private func owner(_ bud: Bud, _ field: SourceRowText.Field) -> String? {
-        guard let from = bud.from, SourceRowText.owns(field, from: from) else { return nil }
-        return from
-    }
-
     // MARK: body
 
     /// Reading, the body is a page: headings, bullets, bold, links; a click opens the plain
-    /// editor with the source in its place, and the page returns when the editor loses focus.
+    /// editor with the source in its place, and the page returns when the editor loses focus
+    /// or Esc is pressed with no picker open.
     @ViewBuilder private var bodyEditor: some View {
         if editing {
             VStack(alignment: .leading, spacing: 8) {
@@ -177,7 +148,12 @@ struct DocumentView: View {
                     .scrollDismissesKeyboard(.never)
                     #endif
                     .onKeyPress(keys: [.upArrow, .downArrow, .return, .tab, .escape]) { press in
-                        press.modifiers.isEmpty && pickerKey(press.key) ? .handled : .ignored
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        if pickerKey(press.key) { return .handled }
+                        guard press.key == .escape else { return .ignored }
+                        editing = false
+                        flush()
+                        return .handled
                     }
                 #if !os(iOS)
                 if let picker = linkPicker { pickerList(picker) }
@@ -202,8 +178,10 @@ struct DocumentView: View {
 
     #if os(iOS)
     static let emptyBody = "Nothing written yet. Tap to write."
+    static let editingHint = "Editing · Done to read"
     #else
     static let emptyBody = "Nothing written yet. Click to write."
+    static let editingHint = "Editing · esc to read"
     #endif
 
     // MARK: link picker
@@ -274,80 +252,6 @@ struct DocumentView: View {
         guard dirty else { return }
         store.setBody(id, draft)
         dirty = false
-    }
-
-    // MARK: inside
-
-    private func inside(_ bud: Bud) -> some View {
-        let kids = store.tree.children(of: id)
-        let shown = kids.filter { !$0.isDone }
-        let hidden = kids.count - shown.count
-        return VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Text("INSIDE · \(kids.count)")
-                    .textRole(.eyebrow)
-                    .foregroundStyle(Theme.text3)
-                if hidden > 0 {
-                    Text("\(hidden) closed hidden")
-                        .textRole(.caption)
-                        .foregroundStyle(Theme.text3)
-                }
-            }
-            .padding(.bottom, 4)
-            ForEach(shown) { child in
-                Button { store.center = child.id } label: {
-                    PageRow(bud: child, tree: store.tree)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func enrichField(_ bud: Bud) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .foregroundStyle(Theme.text3)
-            TextField("Enrich \(bud.text)…", text: $enrich)
-                .textFieldStyle(.plain)
-                .onSubmit {
-                    store.add(enrich, todo: store.tree.suggestsTodo(under: id), under: id)
-                    enrich = ""
-                }
-        }
-        .textRole(.body)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-    }
-}
-
-/// The buds whose body links to a page, each with where it lives and the sentence the link
-/// sits in; a click goes to that bud. Nothing is drawn while no bud links here. A view of its
-/// own, so typing in the page's body does not read every bud again.
-struct LinkedFrom: View {
-    let id: UUID
-    @ObservedObject var store: BudStore
-
-    var body: some View {
-        let links = store.tree.backlinks(to: id)
-        if !links.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("LINKED FROM · \(links.count)")
-                        .textRole(.eyebrow)
-                        .foregroundStyle(Theme.text3)
-                    Spacer()
-                    Text("Rename keeps these links")
-                        .textRole(.caption)
-                        .foregroundStyle(Theme.text3)
-                }
-                ForEach(links) { link in
-                    Button { store.center = link.from } label: {
-                        BacklinkRow(link: link, tree: store.tree)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
     }
 }
 
@@ -446,53 +350,6 @@ struct LinkPickerList: View {
         .padding(.vertical, 6)
         .background(picked ? Theme.leafSoft : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         .contentShape(Rectangle())
-    }
-}
-
-/// One "Linked from" row: the linking bud and where it lives, the sentence below with the link
-/// marked in leaf.
-struct BacklinkRow: View {
-    let link: Backlink
-    let tree: Tree
-
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.uturn.backward")
-                    .foregroundStyle(Theme.leaf)
-                Text(tree.title(of: link.from))
-                    .textRole(.label)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Theme.text)
-                Text(tree.trail(of: link.from).joined(separator: " › "))
-                    .textRole(.caption)
-                    .foregroundStyle(Theme.text3)
-                    .lineLimit(1)
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(Theme.text3)
-            }
-            Text(marked)
-                .textRole(.body)
-                .foregroundStyle(Theme.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
-        .background(Theme.raised, in: shape)
-        .overlay(shape.stroke(Theme.line, lineWidth: 1))
-        .contentShape(shape)
-    }
-
-    private var marked: AttributedString {
-        var text = AttributedString(link.sentence)
-        guard link.mark.upperBound <= text.characters.count, !link.mark.isEmpty else { return text }
-        let lower = text.index(text.startIndex, offsetByCharacters: link.mark.lowerBound)
-        let upper = text.index(lower, offsetByCharacters: link.mark.count)
-        text[lower..<upper].foregroundColor = Theme.leaf
-        text[lower..<upper].backgroundColor = Theme.leafSoft
-        return text
     }
 }
 
@@ -634,61 +491,6 @@ struct RenderedBody: View {
             .lineSpacing(14 * 0.55)
             .foregroundStyle(Theme.text)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// A day in a property row: "No day" and Set while empty; the pistil tag the Today lens uses
-/// once set, a click on it opens the calendar, Clear beside it.
-struct DateField: View {
-    let label: String
-    let date: Date?
-    let set: (Date?) -> Void
-    @State private var picking = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if let date {
-                Button { picking.toggle() } label: {
-                    DateTag(label: label, date: date)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $picking) {
-                    DatePicker("", selection: Binding(get: { date }, set: { set($0) }), displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                        .padding(12)
-                }
-                Button("Clear") { set(nil) }
-                    .buttonStyle(.budGhost)
-            } else {
-                Text("No day")
-                    .textRole(.label)
-                    .foregroundStyle(Theme.text3)
-                Button("Set") { set(Calendar.current.startOfDay(for: Date())) }
-                    .buttonStyle(.budGhost)
-            }
-        }
-    }
-}
-
-/// One property of the document: its name in the gutter, its control beside it.
-struct PropertyRow<Control: View>: View {
-    let name: String
-    /// The `from` key of the source that owns this field, which marks it.
-    var from: String? = nil
-    @ViewBuilder let control: () -> Control
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(name)
-                .textRole(.label)
-                .foregroundStyle(Theme.text2)
-                .frame(width: 64, alignment: .leading)
-            control()
-            if let from { FromMark(from: from) }
-            Spacer()
-        }
     }
 }
 #endif
