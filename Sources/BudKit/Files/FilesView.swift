@@ -128,7 +128,7 @@ struct FilesView: View {
     }
 }
 
-/// The page for where you are: a lens, a place, or the bud's page, the same one for every bud.
+/// The page for where you are: a lens, a saved lens, a place, or the bud's page, the same one for every bud.
 /// A bud's page has its own bar; the others get the sidebar toggle above them.
 struct FilesPage: View {
     @ObservedObject var store: BudStore
@@ -154,6 +154,8 @@ struct FilesPage: View {
         Group {
             if let lens = store.lens {
                 LensPage(store: store, lens: lens)
+            } else if let id = store.savedLens, let lens = store.saved(id) {
+                SavedLensPage(store: store, lens: lens)
             } else if let place = store.place {
                 switch place {
                 case .inbox: InboxPage(store: store)

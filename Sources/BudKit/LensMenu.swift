@@ -3,13 +3,17 @@ import SwiftUI
 
 /// The rows a lens can tick: the built-in questions, then the tags in use, the sources buds came
 /// from, and the buds picked under "Linked to…", each with how many buds answer it alone. Ticked rows combine, and the canvas lights the answer while the menu is
-/// open. The footer counts the buds that answer every ticked row.
+/// open. The footer counts the buds that answer every ticked row and keeps them as a saved
+/// lens; the saved lenses sit on top, each a tap from asking its question again.
 struct LensMenu: View {
     @ObservedObject var store: BudStore
     /// Whether "Linked to…" has opened its search.
     @State private var linking = false
     @State private var linkQuery = ""
     @FocusState private var typing: Bool
+    /// The name "Save lens…" is asking for; nil while it is not asking.
+    @State private var naming: String? = nil
+    @FocusState private var typingName: Bool
 
     /// The tags the menu offers: the most used, up to this many.
     static let tagLimit = 8
@@ -19,6 +23,7 @@ struct LensMenu: View {
     var body: some View {
         let tags = store.tree.tagCounts().prefix(Self.tagLimit).map { LensFacet.tag($0.tag) }
         VStack(alignment: .leading, spacing: 2) {
+            if !store.savedLenses.isEmpty { saved }
             section("Built in", LensFacet.builtIns)
             if !tags.isEmpty { section("Tags", Array(tags)) }
             let sources = Array(Self.sources(in: store.tree).prefix(Self.tagLimit))
@@ -29,6 +34,7 @@ struct LensMenu: View {
         }
         .padding(8)
         .frame(width: 300, alignment: .leading)
+        .onChange(of: store.canvasFacets.isEmpty) { _, empty in if empty { naming = nil } }
         .accessibilityIdentifier("lens-menu")
     }
 
@@ -41,6 +47,49 @@ struct LensMenu: View {
                 .padding(.top, 6)
                 .padding(.bottom, 2)
             ForEach(facets, id: \.self) { facet in row(facet) }
+        }
+    }
+
+    /// The saved lenses by name; a tap ticks a lens's rows in place of what was ticked, and the
+    /// one the canvas asks now is marked.
+    private var saved: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Saved")
+                .textRole(.eyebrow)
+                .foregroundStyle(Theme.text3)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+            ForEach(store.savedLenses) { lens in
+                let on = store.canvasLens == lens.query
+                let count = lens.query.hits(store.tree, links: store.links, on: store.now).count
+                Button {
+                    withAnimation(.easeOut(duration: 0.35)) { store.applyLens(lens.id) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: on ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                            .foregroundStyle(on ? Theme.leaf : Theme.text2)
+                            .frame(width: 16)
+                        Text(lens.name)
+                            .lineLimit(1)
+                            .fontWeight(on ? .semibold : .regular)
+                            .foregroundStyle(Theme.text)
+                        Spacer(minLength: 8)
+                        Text("\(count)")
+                            .textRole(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.text3)
+                    }
+                    .textRole(.body)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(on ? Theme.leafSoft : .clear, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(lens.name), \(count == 1 ? "1 bud" : "\(count) buds")")
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
         }
     }
 
@@ -196,23 +245,77 @@ struct LensMenu: View {
     }
 
     @ViewBuilder private var footer: some View {
-        HStack {
-            if store.canvasFacets.isEmpty {
-                Text("Tick rows to light what matches")
-            } else {
-                let hits = store.canvasLens?.hits(store.tree, links: store.links, on: store.now).count ?? 0
-                Text(Self.footerText(hits: hits, rows: store.canvasFacets.count))
-                Spacer()
-                Button("Clear") {
-                    withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets = [] }
+        if let naming {
+            nameField(naming)
+        } else {
+            HStack {
+                if store.canvasFacets.isEmpty {
+                    Text("Tick rows to light what matches")
+                } else {
+                    let hits = store.canvasLens?.hits(store.tree, links: store.links, on: store.now).count ?? 0
+                    Text(Self.footerText(hits: hits, rows: store.canvasFacets.count))
+                    Spacer()
+                    if canSave {
+                        Button("Save lens…") {
+                            naming = SavedLens.suggestedName(store.canvasFacets.map(store.facetName))
+                        }
+                        .buttonStyle(.budGhost)
+                        .accessibilityIdentifier("lens-save")
+                    }
+                    Button("Clear") {
+                        withAnimation(.easeOut(duration: 0.35)) { store.canvasFacets = [] }
+                    }
+                    .buttonStyle(.budGhost)
                 }
-                .buttonStyle(.budGhost)
             }
+            .textRole(.caption)
+            .foregroundStyle(Theme.leaf)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
         }
-        .textRole(.caption)
-        .foregroundStyle(Theme.leaf)
+    }
+
+    /// A lens is worth keeping while something is ticked, no saved lens asks the same, and the
+    /// rows do not ask for two things nothing can be at once.
+    private var canSave: Bool {
+        guard let lens = store.canvasLens, !lens.never else { return false }
+        return !store.savedLenses.contains { $0.query == lens }
+    }
+
+    /// The name for the lens being kept, filled with the ticked rows' names; return keeps it.
+    private func nameField(_ name: String) -> some View {
+        HStack(spacing: 6) {
+            TextField("Name this lens", text: Binding(get: { naming ?? name }, set: { naming = $0 }))
+                .textFieldStyle(.plain)
+                .focused($typingName)
+                .onSubmit(save)
+                .accessibilityIdentifier("lens-save-name")
+            Button("Save", action: save)
+                .buttonStyle(.budGhost)
+                .disabled(SavedLens.clean(name) == nil)
+            Button {
+                naming = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Theme.text3)
+                    .contentShape(Rectangle().inset(by: -6))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .accessibilityLabel("Stop naming the lens")
+        }
+        .textRole(.body)
         .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .padding(.vertical, 5)
+        .background(Theme.raised, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).stroke(Theme.leafLine, lineWidth: 1))
+        // A hop past the field's first frame, which a popover would otherwise drop.
+        .task { typingName = true }
+    }
+
+    private func save() {
+        guard let name = naming, store.saveLens(name) != nil else { return }
+        naming = nil
     }
 
     /// "13 matches" for one row; "2 match both" or "1 matches all" for more.

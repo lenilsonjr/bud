@@ -42,11 +42,14 @@ public final class BudStore: ObservableObject {
                 relayout()
                 lens = nil
                 place = nil
+                savedLens = nil
             }
         }
     }
     /// The place Files shows instead of the center's page; a change of center or lens clears it.
-    @Published public var place: Place? = nil
+    @Published public var place: Place? = nil {
+        didSet { if place != nil { savedLens = nil } }
+    }
     /// Whether Files shows the Inbox.
     public var inboxOpen: Bool {
         get { place == .inbox }
@@ -57,8 +60,25 @@ public final class BudStore: ObservableObject {
     @Published public var searching = false
     /// The lens Files shows instead of the center's page; a change of center clears it.
     @Published public var lens: Lens? = nil {
-        didSet { if lens != nil { place = nil } }
+        didSet {
+            if lens != nil {
+                place = nil
+                savedLens = nil
+            }
+        }
     }
+    /// The saved lens Files shows instead of the center's page, by its id; a change of center,
+    /// lens or place clears it.
+    @Published public var savedLens: UUID? = nil {
+        didSet {
+            if savedLens != nil {
+                lens = nil
+                place = nil
+            }
+        }
+    }
+    /// The lenses the person named and kept, sorted by name, as the vault holds them.
+    @Published public private(set) var savedLenses: [SavedLens] = []
     /// The rows ticked in the canvas lens menu, in the order they were ticked; they set
     /// `canvasLens` to the question they ask together.
     @Published public var canvasFacets: [LensFacet] = [] {
@@ -303,6 +323,7 @@ public final class BudStore: ObservableObject {
                 await self?.reloadTriggers()
                 await self?.reloadLayout()
                 await self?.reloadBoards()
+                await self?.reloadLenses()
             }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
@@ -315,6 +336,7 @@ public final class BudStore: ObservableObject {
             await self?.reloadTriggers()
             await self?.reloadLayout()
             await self?.reloadBoards()
+            await self?.reloadLenses()
             await self?.startWatching()
         }
     }
@@ -897,6 +919,7 @@ public final class BudStore: ObservableObject {
         center = id
         lens = nil
         place = nil
+        savedLens = nil
         surface = .files
     }
 
@@ -1042,7 +1065,7 @@ public final class BudStore: ObservableObject {
 
     /// The bud whose page Files shows; nil on the canvas, a lens, a place or Everything.
     public var page: UUID? {
-        guard surface == .files, lens == nil, place == nil, center != rootID, tree.bud(center) != nil else { return nil }
+        guard surface == .files, lens == nil, place == nil, savedLens == nil, center != rootID, tree.bud(center) != nil else { return nil }
         return center
     }
 
@@ -1366,6 +1389,88 @@ extension BudStore {
     /// the app.
     public func forgetPictures() {
         if !pictures.isEmpty { pictures = [:] }
+    }
+}
+
+// MARK: saved lenses
+
+extension BudStore {
+    /// One saved lens, while the vault still holds it.
+    public func saved(_ id: UUID) -> SavedLens? {
+        savedLenses.first { $0.id == id }
+    }
+
+    /// Keeps the canvas lens, or `query`, under a name, and offers to take it back. Nothing is
+    /// kept for an empty name, for no question, or for one nothing can answer.
+    @discardableResult
+    public func saveLens(_ name: String, query: LensQuery? = nil) -> SavedLens? {
+        guard let name = SavedLens.clean(name), let query = query ?? canvasLens, !query.isEmpty, !query.never else { return nil }
+        let lens = SavedLens(name: name, query: query)
+        keep(lens)
+        toasts.show(Undoable(message: "Saved \(name)", systemImage: "line.3.horizontal.decrease.circle") { [weak self] in
+            Task { @MainActor in self?.drop(lens.id) }
+        })
+        return lens
+    }
+
+    /// Gives a saved lens a new name and offers the old one back.
+    public func renameLens(_ id: UUID, to name: String) {
+        guard var lens = saved(id), let name = SavedLens.clean(name), name != lens.name else { return }
+        let before = lens
+        lens.name = name
+        keep(lens)
+        toasts.show(Undoable(message: "Renamed \(before.name) to \(name)", systemImage: "line.3.horizontal.decrease.circle") { [weak self] in
+            Task { @MainActor in
+                // Back only while the lens is still there under the new name.
+                guard let self, self.saved(id)?.name == name else { return }
+                self.keep(before)
+            }
+        })
+    }
+
+    /// Lets a saved lens go and offers to keep it again, under the same id.
+    public func deleteLens(_ id: UUID) {
+        guard let lens = saved(id) else { return }
+        drop(id)
+        toasts.show(Undoable(message: "Deleted \(lens.name)") { [weak self] in
+            Task { @MainActor in self?.keep(lens) }
+        })
+    }
+
+    /// Asks the canvas a saved lens's question: its rows are ticked in place of what was.
+    public func applyLens(_ id: UUID) {
+        guard let lens = saved(id) else { return }
+        canvasFacets = LensFacet.facets(of: lens.query) { tree.bud($0)?.text ?? "" }
+    }
+
+    /// The Files view on a saved lens.
+    public func open(saved id: UUID) {
+        guard saved(id) != nil else { return }
+        savedLens = id
+        surface = .files
+    }
+
+    /// Reads every saved lens from the vault, once the writes queued here have landed: after a
+    /// sync brought another device's. A page on a lens that is gone closes.
+    public func reloadLenses() async {
+        await settle()
+        guard let stored = try? await vault.shared(.lenses) else { return }
+        let loaded = SavedLens.read(stored)
+        if loaded != savedLenses { savedLenses = loaded }
+        if let open = savedLens, saved(open) == nil { savedLens = nil }
+    }
+
+    private func keep(_ lens: SavedLens) {
+        savedLenses = SavedLens.sorted(savedLenses.filter { $0.id != lens.id } + [lens])
+        guard let text = lens.text else { return }
+        write { vault in try await vault.setShared(.lenses, lens.id.uuidString, text) }
+    }
+
+    private func drop(_ id: UUID) {
+        guard saved(id) != nil else { return }
+        savedLenses.removeAll { $0.id == id }
+        if savedLens == id { savedLens = nil }
+        write { vault in try await vault.setShared(.lenses, id.uuidString, nil) }
     }
 }
 

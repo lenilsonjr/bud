@@ -62,6 +62,46 @@ struct LensPage: View {
     }
 }
 
+/// A saved lens's page: what its question finds across every thread, grouped by thread, with
+/// any due date beside each hit.
+struct SavedLensPage: View {
+    @ObservedObject var store: BudStore
+    let lens: SavedLens
+
+    var body: some View {
+        MaybeScroll {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SAVED LENS · ACROSS ALL THREADS")
+                        .textRole(.eyebrow)
+                        .foregroundStyle(Theme.text3)
+                    Text(lens.name)
+                        .textRole(.title)
+                        .foregroundStyle(Theme.text)
+                }
+                let groups = lens.query.hitsByThread(store.tree, links: store.links, on: store.now)
+                ForEach(groups, id: \.thread.id) { group in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(group.thread.text.uppercased())
+                            .textRole(.eyebrow)
+                            .foregroundStyle(Theme.text3)
+                            .padding(.bottom, 4)
+                        ForEach(group.hits) { bud in
+                            ListRow(bud: bud, store: store, tag: bud.due.map { ("Due", $0) })
+                        }
+                    }
+                }
+                if groups.isEmpty {
+                    Text("Nothing matches this lens right now.")
+                        .textRole(.body)
+                        .foregroundStyle(Theme.text3)
+                }
+            }
+            .pageColumn()
+        }
+    }
+}
+
 /// One row of a lens: the breadcrumb above the title, the box or dot, a date tag in pistil.
 /// A click selects the bud in Files; ⌘-click centers it on the canvas.
 struct ListRow: View {

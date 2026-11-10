@@ -603,5 +603,87 @@ final class StoreVaultTests: XCTestCase {
         record = try await vault.snapshot().first { $0.from == "linear:ENG-41" }
         XCTAssertEqual(record?.state, .done)
     }
+
+    /// Waits for an undo's hop to the main actor and the write it queued.
+    private func undo(_ store: BudStore, until done: () -> Bool) async {
+        store.toasts.current?.action.undo?()
+        for _ in 0..<100 where !done() { await Task.yield() }
+        await store.settle()
+    }
+
+    func testASavedLensReachesTheVaultAndAnotherDeviceReadsIt() async throws {
+        let (mac, vault) = await loaded()
+        XCTAssertNil(mac.saveLens("Open things"), "Nothing ticked: nothing to keep")
+        mac.canvasFacets = [.openTodos, .tag("launch")]
+        XCTAssertNil(mac.saveLens("   "), "No name")
+        let lens = try XCTUnwrap(mac.saveLens(" Launch to-dos "))
+        XCTAssertEqual(lens.name, "Launch to-dos")
+        XCTAssertEqual(mac.savedLenses, [lens], "Shown at once")
+        XCTAssertEqual(mac.toasts.current?.action.message, "Saved Launch to-dos")
+        await mac.settle()
+        let stored = try await vault.shared(.lenses)
+        XCTAssertEqual(stored, [lens.id.uuidString: #"{"name":"Launch to-dos","query":{"kind":"todo","state":"open","tags":["launch"]}}"#])
+
+        let phone = BudStore(vault: vault)
+        await phone.reloadLenses()
+        XCTAssertEqual(phone.savedLenses, [lens])
+        phone.applyLens(lens.id)
+        XCTAssertEqual(Set(phone.canvasFacets), [.openTodos, .tag("launch")])
+        XCTAssertEqual(phone.canvasLens, lens.query)
+        phone.open(saved: lens.id)
+        XCTAssertEqual(phone.savedLens, lens.id)
+        XCTAssertEqual(phone.surface, .files)
+        XCTAssertNil(phone.page)
+        phone.lens = .today
+        XCTAssertNil(phone.savedLens, "Another lens takes the page")
+    }
+
+    func testUndoTakesASavedLensBack() async throws {
+        let (store, vault) = await loaded()
+        let lens = try XCTUnwrap(store.saveLens("Pinned", query: .pinnedBuds))
+        await store.settle()
+        await undo(store) { store.savedLenses.isEmpty }
+        XCTAssertEqual(store.savedLenses, [])
+        let stored = try await vault.shared(.lenses)
+        XCTAssertNil(stored[lens.id.uuidString])
+    }
+
+    func testRenamingAndDeletingASavedLensEachOfferTheirUndo() async throws {
+        let (store, vault) = await loaded()
+        let errands = try XCTUnwrap(store.saveLens("Errands", query: .todos))
+        let today = try XCTUnwrap(store.saveLens("Today", query: .today))
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Errands", "Today"])
+
+        store.renameLens(errands.id, to: "Weekend")
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Today", "Weekend"], "Sorted by name")
+        XCTAssertEqual(store.toasts.current?.action.message, "Renamed Errands to Weekend")
+        await store.settle()
+        await undo(store) { store.saved(errands.id)?.name == "Errands" }
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Errands", "Today"])
+
+        store.open(saved: today.id)
+        store.deleteLens(today.id)
+        XCTAssertEqual(store.savedLenses.map(\.name), ["Errands"])
+        XCTAssertNil(store.savedLens, "The page on a deleted lens closes")
+        XCTAssertEqual(store.toasts.current?.action.message, "Deleted Today")
+        await store.settle()
+        var stored = try await vault.shared(.lenses)
+        XCTAssertEqual(Set(stored.keys), [errands.id.uuidString])
+        await undo(store) { store.saved(today.id) != nil }
+        XCTAssertEqual(store.saved(today.id), today, "Back under the same id")
+        stored = try await vault.shared(.lenses)
+        XCTAssertEqual(Set(stored.keys), [errands.id.uuidString, today.id.uuidString])
+    }
+
+    func testALensDeletedOnAnotherDeviceGoesAndItsPageCloses() async throws {
+        let (mac, vault) = await loaded()
+        let lens = try XCTUnwrap(mac.saveLens("Pinned", query: .pinnedBuds))
+        await mac.settle()
+        mac.open(saved: lens.id)
+        try await vault.setShared(.lenses, lens.id.uuidString, nil)
+        await mac.reloadLenses()
+        XCTAssertEqual(mac.savedLenses, [])
+        XCTAssertNil(mac.savedLens)
+    }
 }
 #endif
