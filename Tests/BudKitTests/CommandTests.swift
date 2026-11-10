@@ -10,6 +10,8 @@ final class CommandTests: XCTestCase {
             .undo: ("Undo", .everywhere, Key("z", .command)),
             .canvas: ("Canvas", .everywhere, Key("1", .command)),
             .files: ("Files", .everywhere, Key("2", .command)),
+            .board: ("Board", .everywhere, Key("3", .command)),
+            .calendar: ("Calendar", .everywhere, Key("4", .command)),
             .shortcuts: ("Keyboard shortcuts", .everywhere, Key("/", .command)),
             .newUnderThis: ("New under this", .everywhere, Key("n")),
             .rowDown: ("Next row", .everywhere, Key(.downArrow)),
@@ -56,7 +58,7 @@ final class CommandTests: XCTestCase {
 
     func testTheMenuBarListsTheRowsTheStorePerformsUnderTheScopesThatHaveOne() {
         let listed = Command.menuScopes.flatMap(Command.menu(in:))
-        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .canvas, .files, .shortcuts, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
+        XCTAssertEqual(listed.map(\.id), [.goAnywhere, .capture, .canvas, .files, .board, .calendar, .shortcuts, .newUnderThis, .open, .back, .nextMatch, .previousMatch, .soil, .closeOrReopen, .read])
         XCTAssertTrue(listed.allSatisfy { !$0.inPlace })
         XCTAssertEqual(Command.menuScopes, [.everywhere, .canvas, .document], "Files has no row of its own yet")
     }
@@ -235,10 +237,39 @@ final class CommandStoreTests: XCTestCase {
         XCTAssertTrue(store.searching)
         store.perform(.files)
         XCTAssertEqual(store.surface, .files)
+        store.perform(.board)
+        XCTAssertEqual(store.surface, .board)
+        store.perform(.calendar)
+        XCTAssertEqual(store.surface, .calendar)
         store.perform(.canvas)
         XCTAssertEqual(store.surface, .canvas)
         store.perform(.capture)
         XCTAssertEqual(store.modal, .capture)
+    }
+
+    func testSwitchingThroughEveryViewKeepsTheCenter() {
+        let (store, bud) = store()
+        store.center = bud
+        let switches: [(Command.ID, Surface)] = [(.files, .files), (.board, .board), (.calendar, .calendar), (.canvas, .canvas)]
+        XCTAssertEqual(switches.map { $0.1 }, Array(Surface.allCases.dropFirst()) + [.canvas], "The test walks every view and comes back")
+        for (command, surface) in switches {
+            XCTAssertTrue(store.perform(command))
+            XCTAssertEqual(store.surface, surface)
+            XCTAssertEqual(store.center, bud, "\(surface) keeps the center")
+        }
+    }
+
+    func testAViewNotBuiltYetHasNoPageAndTakesNoCanvasOrDocumentKey() {
+        let (store, bud) = store()
+        store.openAsFile(bud)
+        store.perform(.board)
+        XCTAssertNil(store.page, "A quiet page is no bud's page")
+        XCTAssertFalse(store.allows(.open))
+        XCTAssertFalse(store.allows(.read))
+        XCTAssertFalse(store.allows(.newUnderThis))
+        XCTAssertTrue(store.allows(.goAnywhere))
+        store.perform(.files)
+        XCTAssertEqual(store.page, bud, "Back in Files the same bud is the page")
     }
 
     func testKeyboardShortcutsOpensTheSheetAndAgainClosesIt() {

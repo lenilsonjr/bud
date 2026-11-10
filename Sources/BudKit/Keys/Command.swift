@@ -78,14 +78,14 @@ public struct Key: Hashable, Sendable {
 /// One thing the app does on a key: a row of the one table every key is bound through. A later
 /// sheet shows the table; a later recorder changes what each row answers to.
 public struct Command: Hashable, Identifiable, Sendable {
-    /// Where a command fires. Everywhere is the window; the canvas and Files are the two
-    /// surfaces; a document is a bud's own page in Files.
+    /// Where a command fires. Everywhere is the window; the canvas and Files are the views with
+    /// keys of their own; a document is a bud's own page in Files.
     public enum Scope: String, CaseIterable, Sendable {
         case everywhere = "Everywhere", canvas = "Canvas", files = "Files", document = "Document"
     }
 
     public enum ID: String, CaseIterable, Sendable {
-        case goAnywhere, capture, undo, canvas, files, shortcuts, newUnderThis
+        case goAnywhere, capture, undo, canvas, files, board, calendar, shortcuts, newUnderThis
         case rowDown, rowUp, choose, openInFiles, close
         case open, back, nextMatch, previousMatch, soil, nest, rise
         case closeOrReopen, read, linkAsTyped
@@ -110,6 +110,8 @@ public struct Command: Hashable, Identifiable, Sendable {
         Command(id: .undo, name: "Undo", scope: .everywhere, key: Key("z", .command), inPlace: true),
         Command(id: .canvas, name: "Canvas", scope: .everywhere, key: Key("1", .command)),
         Command(id: .files, name: "Files", scope: .everywhere, key: Key("2", .command)),
+        Command(id: .board, name: "Board", scope: .everywhere, key: Key("3", .command)),
+        Command(id: .calendar, name: "Calendar", scope: .everywhere, key: Key("4", .command)),
         Command(id: .shortcuts, name: "Keyboard shortcuts", scope: .everywhere, key: Key("/", .command)),
         Command(id: .newUnderThis, name: "New under this", scope: .everywhere, key: Key("n")),
         Command(id: .rowDown, name: "Next row", scope: .everywhere, key: Key(.downArrow), inPlace: true),

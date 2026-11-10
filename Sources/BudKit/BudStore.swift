@@ -6,12 +6,6 @@ import SwiftUI
 import UIKit
 #endif
 
-/// The two ways of looking at the same tree.
-public enum Surface: String, CaseIterable, Sendable {
-    case canvas = "Canvas"
-    case files = "Files"
-}
-
 /// A query across every thread, shown as a page in Files.
 public enum Lens: String, CaseIterable, Sendable {
     case today = "Today", todos = "To-dos", pinned = "Pinned"
@@ -1021,6 +1015,8 @@ public final class BudStore: ObservableObject {
         case .capture: modal = .capture
         case .canvas: surface = .canvas
         case .files: surface = .files
+        case .board: surface = .board
+        case .calendar: surface = .calendar
         case .shortcuts: modal = modal == .shortcuts ? nil : .shortcuts
         case .newUnderThis: modal = .adding(under: bud ?? page ?? center)
         case .open: guard bud != nil else { return false }

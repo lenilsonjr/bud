@@ -1,9 +1,9 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// One bar across the top of the window: the mark, Canvas | Files, where you are, the next
-/// step, Go anywhere, the zoom and Capture. On the Mac it leaves room for the window controls
-/// and drags the window.
+/// One bar across the top of the window: the mark, the view switch (Canvas, Files, Board,
+/// Calendar), where you are, the next step, Go anywhere, the zoom and Capture. On the Mac it
+/// leaves room for the window controls and drags the window.
 struct TopBar: View {
     @ObservedObject var store: BudStore
     let onAdd: () -> Void
@@ -11,6 +11,7 @@ struct TopBar: View {
     @Environment(\.compact) private var compact
     @Environment(\.stillPicture) private var still
     @State private var lensOpen = false
+    @State private var switching = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,7 +34,11 @@ struct TopBar: View {
             Image(systemName: "leaf.fill")
                 .textRole(.heading)
                 .foregroundStyle(Theme.leaf)
-            Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
+            if compact {
+                viewSwitch
+            } else {
+                Segmented(selection: $store.surface, options: Surface.allCases) { $0.rawValue }
+            }
             if compact {
                 // The place name takes whatever the buttons leave, so it never clips early.
                 lastCrumb.frame(maxWidth: .infinity, alignment: .leading)
@@ -107,6 +112,66 @@ struct TopBar: View {
             }
             .frame(height: 36)
             .padding(.bottom, 6)
+        }
+    }
+
+    /// On a narrow bar the four views fold into one button: the view you are in, and a popover
+    /// listing all four, the current one ticked. The picture renderer cannot draw a popover, so a
+    /// still picture shows the button alone.
+    private var viewSwitch: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+        return Button { switching.toggle() } label: {
+            HStack(spacing: 4) {
+                Text(store.surface.rawValue)
+                    .foregroundStyle(Theme.text)
+                Image(systemName: "chevron.down")
+                    .textRole(.caption)
+                    .foregroundStyle(Theme.text2)
+            }
+            .textRole(.label)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(shape.fill(Theme.raised).shadow(color: .black.opacity(0.08), radius: 1, y: 1))
+            .overlay(shape.stroke(Theme.lineStrong, lineWidth: 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help("Switch the view")
+        .accessibilityLabel("View: \(store.surface.rawValue)")
+        .accessibilityIdentifier("view-switch")
+        .popover(isPresented: still ? .constant(false) : $switching, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Surface.allCases, id: \.self) { surface in
+                    let on = surface == store.surface
+                    Button {
+                        switching = false
+                        withAnimation(.easeOut(duration: 0.15)) { store.surface = surface }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Theme.leaf)
+                                .opacity(on ? 1 : 0)
+                            Text(surface.rawValue)
+                                .fontWeight(on ? .semibold : .regular)
+                                .foregroundStyle(Theme.text)
+                            Spacer(minLength: 8)
+                        }
+                        .textRole(.body)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+            .frame(width: 180, alignment: .leading)
+            #if os(iOS)
+            .presentationCompactAdaptation(.popover)
+            #endif
         }
     }
 
