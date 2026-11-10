@@ -189,7 +189,9 @@ public enum AgentText {
     /// The picker's two headings.
     public static let app = "App"
     public static let model = "Model"
-    /// Under an app's name in the picker.
+    /// Under an app's name in the picker. "Installed" alone when no file says whether the app
+    /// is signed in.
+    public static let installed = "Installed"
     public static let signedIn = "Installed · signed in"
     public static let notSignedIn = "Installed · not signed in"
     public static let notInstalled = "Not installed"
