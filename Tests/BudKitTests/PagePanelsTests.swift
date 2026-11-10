@@ -134,9 +134,10 @@ final class PagePanelsStoreTests: XCTestCase {
         let bud = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.isTodo && $0.due == nil && $0.when == nil && !$0.pinned })
         store.setBody(bud.id, "Ask the host first.")
         store.setPinned(bud.id, true)
-        let text = try XCTUnwrap(await store.fileText(of: bud.id))
+        let text = await store.fileText(of: bud.id)
         XCTAssertEqual(text, "---\nstate: open\npinned: true\n---\nAsk the host first.")
-        XCTAssertNil(await store.fileText(of: UUID()))
+        let unknown = await store.fileText(of: UUID())
+        XCTAssertNil(unknown)
     }
 }
 #endif
