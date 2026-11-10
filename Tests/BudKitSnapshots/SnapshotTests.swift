@@ -947,7 +947,7 @@ final class SnapshotTests: XCTestCase {
         store.setDue(name.id, at(3, 14, 30))
         let roadmap = try bud("Q4 roadmap")
         let budget = try XCTUnwrap(store.add("Budget review", todo: true, under: roadmap.id))
-        store.setWhen(budget.id, at(3, 10, 30))
+        store.setWhen(budget.id, at(3, 10, 15))
         store.setDue(budget.id, at(3, 11, 30))
         let lesson = try bud("Ten minutes a day")
         store.setWhen(lesson.id, at(3, 18, 0))
@@ -971,7 +971,8 @@ final class SnapshotTests: XCTestCase {
         store.calendarState = CalendarState(range: .day)
         let day = store.dayPlan
         XCTAssertEqual(day.bars.map(\.label), ["Review the onboarding flow · day 2 of 22, due 23 Nov", "Send the first issue · day 1 of 4, due 6 Nov", "Verify the address"])
-        XCTAssertEqual(day.blocks.map(\.time), ["10:00", "10:30–11:30", "14:00–14:30", "18:00–19:00"])
+        XCTAssertEqual(day.blocks.map(\.time), ["10:00", "10:15–11:30", "14:00–14:30", "18:00–19:00"])
+        XCTAssertEqual(day.blocks.prefix(2).map(\.lanes), [2, 2], "The walk and the review overlap, so they share the column")
         XCTAssertEqual(day.now?.minutes, 10 * 60)
         let dayFile = folder.appendingPathComponent("calendar-day-light.png")
         try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .light).write(to: dayFile)
