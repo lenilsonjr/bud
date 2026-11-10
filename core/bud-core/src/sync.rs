@@ -919,6 +919,17 @@ impl Vault {
         self.set_shared("triggers", id, trigger)
     }
 
+    /// How the panels around a page are arranged, as the app wrote it: one layout for the
+    /// vault, so every replica shows the same.
+    pub fn layout(&self) -> Result<Vec<(String, String)>> {
+        self.shared("layout")
+    }
+
+    /// Keep one entry of the layout; none drops it.
+    pub fn set_layout(&mut self, key: &str, layout: Option<&str>) -> Result<()> {
+        self.set_shared("layout", key, layout)
+    }
+
     /// A map of text the tree document carries beside the buds, sorted by key.
     fn shared(&self, name: &str) -> Result<Vec<(String, String)>> {
         let tree = self.load_tree()?;

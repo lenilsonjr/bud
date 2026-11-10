@@ -44,11 +44,16 @@ public struct PanelLayout: Equatable, Codable, Sendable {
     }
 
     /// Reads a layout another build may have written: a panel this build does not know is
-    /// skipped, the known ones keep their order, and a known panel on neither side is hidden.
+    /// skipped, the known ones keep their order, one listed twice keeps its first place, and a
+    /// known panel on neither side is hidden.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        left = try container.decode([String].self, forKey: .left).compactMap(PagePanel.init(rawValue:))
-        right = try container.decode([String].self, forKey: .right).compactMap(PagePanel.init(rawValue:))
+        var seen: Set<PagePanel> = []
+        let once = { (names: [String]) -> [PagePanel] in
+            names.compactMap(PagePanel.init(rawValue:)).filter { seen.insert($0).inserted }
+        }
+        left = try once(container.decode([String].self, forKey: .left))
+        right = try once(container.decode([String].self, forKey: .right))
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -73,6 +78,17 @@ public struct PanelLayout: Equatable, Codable, Sendable {
 
     /// The panels neither sidebar holds, in their usual order.
     public var hidden: [PagePanel] { PagePanel.allCases.filter { side(of: $0) == nil } }
+
+    /// Whether a page shows a panel: the page's own panels go with a bud's page alone, so a
+    /// lens, a place and Everything show the file tree only.
+    public static func shows(_ panel: PagePanel, onBudPage: Bool) -> Bool {
+        onBudPage || panel == .files
+    }
+
+    /// The panels a side shows on the page.
+    public func shown(on side: PanelSide, onBudPage: Bool) -> [PagePanel] {
+        panels(on: side).filter { Self.shows($0, onBudPage: onBudPage) }
+    }
 
     /// Puts a panel on a side at a place in that sidebar, taking it from wherever it was; a
     /// place past the end puts it last.
@@ -205,6 +221,17 @@ public struct PanelDrag: Equatable, Sendable {
         self.point = point
         self.drop = drop
     }
+
+    /// Where the drop line is drawn on a panel; none for a gap beside the panel in hand, where
+    /// a drop changes nothing.
+    public func line(on target: PagePanel, in layout: PanelLayout) -> PanelDrop.Line? {
+        guard let drop else { return nil }
+        if layout.side(of: panel) == drop.side, let i = layout.panels(on: drop.side).firstIndex(of: panel),
+           drop.gap == i || drop.gap == i + 1 {
+            return nil
+        }
+        return drop.line(on: target, in: layout)
+    }
 }
 
 /// The ⋯ menu on a panel's header, top to bottom, in three groups: moving it, folding or hiding
@@ -227,14 +254,15 @@ public enum PanelMenuItem: CaseIterable, Sendable {
         }
     }
 
-    /// Whether it does anything from here: the last panel shown cannot hide, since the menu to
-    /// show the others would go with it.
-    public func isEnabled(for panel: PagePanel, in state: PanelState) -> Bool {
+    /// Whether it does anything from here: the last panel the page shows cannot hide, since the
+    /// menu to show the others would go with it.
+    public func isEnabled(for panel: PagePanel, in state: PanelState, onBudPage: Bool = true) -> Bool {
         switch self {
         case .moveToOtherSide, .collapse: return true
         case .moveUp: return state.layout.canMoveUp(panel)
         case .moveDown: return state.layout.canMoveDown(panel)
-        case .hide: return state.layout.left.count + state.layout.right.count > 1
+        case .hide:
+            return PanelSide.allCases.reduce(0) { $0 + state.layout.shown(on: $1, onBudPage: onBudPage).count } > 1
         case .showHidden: return !state.layout.hidden.isEmpty
         case .reset: return state.layout != .standard
         }

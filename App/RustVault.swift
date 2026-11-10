@@ -55,6 +55,7 @@ final class RustVault: BudKit.Vault {
         case .sources: entries = try core.sources()
         case .leases: entries = try core.leases()
         case .triggers: entries = try core.triggers()
+        case .layout: entries = try core.layout()
         }
         return Dictionary(entries.map { ($0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
     }
@@ -64,6 +65,7 @@ final class RustVault: BudKit.Vault {
         case .sources: try core.setSource(id: key, settings: value)
         case .leases: try core.setLease(id: key, lease: value)
         case .triggers: try core.setTrigger(id: key, trigger: value)
+        case .layout: try core.setLayout(key: key, layout: value)
         }
     }
     func rename(_ path: String, to title: String) async throws -> String { try core.rename(path: path, newTitle: title) }

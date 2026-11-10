@@ -128,11 +128,41 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(PanelLayout.self, from: written), layout)
     }
 
-    func testTheLastPanelShownCannotHide() {
+    func testTheLastPanelThePageShowsCannotHide() {
         var state = PanelState(layout: PanelLayout(left: [.files], right: []))
         XCTAssertFalse(PanelMenuItem.hide.isEnabled(for: .files, in: state))
         state.layout.move(.inside, to: .left, at: 1)
         XCTAssertTrue(PanelMenuItem.hide.isEnabled(for: .files, in: state))
+        XCTAssertFalse(PanelMenuItem.hide.isEnabled(for: .files, in: state, onBudPage: false), "A lens shows the tree alone")
+        XCTAssertFalse(PanelMenuItem.hide.isEnabled(for: .files, in: PanelState(), onBudPage: false))
+        XCTAssertTrue(PanelMenuItem.hide.isEnabled(for: .files, in: PanelState(), onBudPage: true))
+        XCTAssertEqual(PanelLayout.standard.shown(on: .right, onBudPage: false), [])
+        XCTAssertEqual(PanelLayout.standard.shown(on: .right, onBudPage: true), PanelLayout.standard.right)
+        var arranged = PanelLayout.standard
+        arranged.move(.files, to: .right, at: 2)
+        XCTAssertEqual(arranged.shown(on: .right, onBudPage: false), [.files])
+        XCTAssertEqual(arranged.shown(on: .left, onBudPage: false), [])
+    }
+
+    func testALayoutListingAPanelTwiceKeepsItsFirstPlaceOnly() throws {
+        let text = "{\"left\":[\"files\",\"inside\",\"files\"],\"right\":[\"inside\",\"source\",\"source\"]}"
+        let layout = try JSONDecoder().decode(PanelLayout.self, from: Data(text.utf8))
+        XCTAssertEqual(layout.left, [.files, .inside])
+        XCTAssertEqual(layout.right, [.source])
+        XCTAssertEqual(layout.side(of: .inside), .left)
+    }
+
+    func testNoDropLineForAGapBesideThePanelInHand() {
+        let layout = PanelLayout.standard
+        let above = PanelDrag(panel: .inside, point: .zero, drop: PanelDrop(side: .right, gap: 1))
+        let below = PanelDrag(panel: .inside, point: .zero, drop: PanelDrop(side: .right, gap: 2))
+        XCTAssertNil(above.line(on: .inside, in: layout), "Its own gap")
+        XCTAssertNil(below.line(on: .whereItLives, in: layout), "The gap after it")
+        let further = PanelDrag(panel: .inside, point: .zero, drop: PanelDrop(side: .right, gap: 3))
+        XCTAssertEqual(further.line(on: .linkedFrom, in: layout), .above)
+        let across = PanelDrag(panel: .files, point: .zero, drop: PanelDrop(side: .right, gap: 1))
+        XCTAssertEqual(across.line(on: .inside, in: layout), .above, "From the other side every gap counts")
+        XCTAssertNil(PanelDrag(panel: .inside, point: .zero).line(on: .inside, in: layout))
     }
 
     func testResetLayoutRestoresTheStandardLayoutAndLeavesTheFolds() {
