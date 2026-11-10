@@ -13,17 +13,22 @@ struct TopBar: View {
     @State private var lensOpen = false
     @State private var switching = false
 
-    /// The width under which the four segments give way to the folded switch: a narrow Mac
-    /// window or an iPad held upright, where the bar's buttons leave no room for four names.
-    static let foldWidth: CGFloat = 900
-
     var body: some View {
         VStack(spacing: 0) {
-            // The bar reads its own width, so a still picture folds the switch the same way.
-            GeometryReader { geo in bar(folded: compact || geo.size.width < Self.foldWidth) }
-                .frame(height: 52)
+            if compact {
+                bar(folded: true)
+            } else {
+                // The four segments while the bar fits at its full width; where they would push
+                // the buttons out, a narrow Mac window or an iPad held upright, the folded
+                // switch. The fit is measured, so a still picture folds the same way.
+                ViewThatFits(in: .horizontal) {
+                    bar(folded: false)
+                    bar(folded: true)
+                }
+            }
             if compact && store.surface == .canvas && !store.canvasFacets.isEmpty { compactChips }
         }
+        .task { await store.devices.start() }
         .frame(maxWidth: .infinity)
         .background(Theme.window)
         .overlay(alignment: .bottom) { Theme.line.frame(height: 1) }
@@ -100,7 +105,6 @@ struct TopBar: View {
             .accessibilityLabel("Settings")
             #endif
         }
-        .task { await store.devices.start() }
         .padding(.leading, compact ? 12 : leadingInset)
         .padding(.trailing, compact ? 8 : 14)
         .frame(maxWidth: .infinity)
