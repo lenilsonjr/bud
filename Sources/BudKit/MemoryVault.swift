@@ -103,17 +103,16 @@ public actor MemoryVault: Vault {
         maps[map, default: [:]][key] = value
     }
 
-    /// The pictures the vault holds, by file name: what an embed names. Nothing on disk; a
-    /// test or a picture of the app puts one here.
+    /// The first picture of each bud, by the bud's path: what a vault on disk reads through its
+    /// index. Nothing is read from a body here; a test puts a picture on a bud.
     private var pictures: [String: Data] = [:]
 
-    public func keepPicture(_ name: String, _ data: Data?) {
-        pictures[name] = data
+    public func keepPicture(_ data: Data?, of path: String) {
+        pictures[path] = data
     }
 
     public func picture(of path: String) async throws -> Data? {
-        guard let bud = tree.bud(try known(path)), let name = BudLinks.firstPicture(in: bud.body) else { return nil }
-        return pictures[name]
+        pictures[path]
     }
 
     public func setFromState(_ path: String, _ state: String?) async throws {

@@ -81,6 +81,9 @@ public final class BudStore: ObservableObject {
     /// Which tag columns each bud's board shows, by the bud's id, as the vault holds them. A bud
     /// with no entry shows the tags in use inside it.
     @Published public var boards: [UUID: BoardColumns] = [:]
+    /// The cards' pictures, decoded once each and kept by the bud's id; a bud not here has not
+    /// been asked for. Nothing is published for a load that changes nothing.
+    @Published public private(set) var pictures: [UUID: BoardPictureState] = [:]
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
@@ -1290,10 +1293,32 @@ extension BudStore {
         if loaded != boards { boards = loaded }
     }
 
-    /// The first picture a bud embeds, as the vault holds it.
-    public func picture(of id: UUID) async -> Data? {
+    /// What is known of a bud's picture; `.unknown` until `loadPicture` has asked the vault.
+    public func pictureState(of id: UUID) -> BoardPictureState {
+        pictures[id] ?? .unknown
+    }
+
+    /// Asks the vault for the bud's first picture once and keeps the answer, picture or none,
+    /// decoded no larger than a card's slot; asking again changes nothing. A card calls it
+    /// when it appears unknown.
+    public func loadPicture(of id: UUID) async {
+        guard pictures[id] == nil else { return }
         await pending?.value
-        return try? await vault.picture(of: path(id))
+        let data = try? await vault.picture(of: path(id))
+        guard pictures[id] == nil else { return }
+        pictures[id] = data.flatMap { BoardPicture.decode($0) }.map { .picture($0) } ?? BoardPictureState.none
+    }
+
+    /// Puts a picture in the cache without asking the vault: a still picture fills it before
+    /// the page is drawn, since the drawing cannot wait for a load. Nil keeps "none".
+    public func keepPicture(_ picture: BoardPicture?, of id: UUID) {
+        pictures[id] = picture.map { .picture($0) } ?? BoardPictureState.none
+    }
+
+    /// Forgets the pictures, so the cards ask the vault again: after its files changed under
+    /// the app.
+    public func forgetPictures() {
+        if !pictures.isEmpty { pictures = [:] }
     }
 }
 

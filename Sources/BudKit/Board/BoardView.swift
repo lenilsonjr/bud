@@ -11,14 +11,15 @@ struct BoardView: View {
     @Environment(\.stillPicture) private var still
     @State private var showsCancelled = false
 
-    private var board: Board { store.board }
-    /// The store's clock, so a still picture reads the same day each time it is made.
-    private var now: Date { store.now }
-
     var body: some View {
+        // Built once a render: the store's board is read from the whole tree.
+        let board = store.board
+        let pictures = BoardCardContext(states: store.pictures, now: store.now) { [weak store] id in
+            await store?.loadPicture(of: id)
+        }
         VStack(alignment: .leading, spacing: 16) {
-            head
-            columns
+            head(board)
+            columns(board, pictures: pictures)
         }
         .padding(.top, 20)
         .padding(.horizontal, compact ? 16 : 24)
@@ -28,7 +29,7 @@ struct BoardView: View {
     }
 
     /// The bud's title with "Everything inside · 17" beside it.
-    private var head: some View {
+    private func head(_ board: Board) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(board.title)
                 .textRole(.title)
@@ -43,13 +44,13 @@ struct BoardView: View {
     }
 
     /// The columns side by side, scrolling sideways when the window is narrower than they are.
-    @ViewBuilder private var columns: some View {
+    @ViewBuilder private func columns(_ board: Board, pictures: BoardCardContext) -> some View {
         let row = HStack(alignment: .top, spacing: 12) {
             ForEach(board.columns) { column in
-                BoardColumnView(column: column, store: store, now: now)
+                BoardColumnView(column: column, pictures: pictures)
                     .frame(width: column.kind == .done ? 220 : 232)
             }
-            cancelled
+            cancelled(board, pictures: pictures)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         if still {
@@ -60,9 +61,9 @@ struct BoardView: View {
     }
 
     /// Cancelled: a 40 pt stub with its count until shown, then a column like Done.
-    @ViewBuilder private var cancelled: some View {
+    @ViewBuilder private func cancelled(_ board: Board, pictures: BoardCardContext) -> some View {
         if showsCancelled {
-            BoardColumnView(column: board.cancelled, store: store, now: now) { showsCancelled = false }
+            BoardColumnView(column: board.cancelled, pictures: pictures) { showsCancelled = false }
                 .frame(width: 220)
         } else {
             Button { showsCancelled = true } label: {
@@ -88,12 +89,21 @@ struct BoardView: View {
     }
 }
 
+/// What the cards need of the store, read once a render and handed down, so a card does not
+/// watch the store: the pictures known so far, the day, and how to ask for a picture.
+struct BoardCardContext {
+    var states: [UUID: BoardPictureState]
+    var now: Date
+    var load: (UUID) async -> Void
+
+    func state(of id: UUID) -> BoardPictureState { states[id] ?? .unknown }
+}
+
 /// One column: its header, then its cards top to bottom. Open, Done and Cancelled sit on the
 /// sidebar tone with an eyebrow and a glyph; a tag column is a hairline around its tag chip.
 struct BoardColumnView: View {
     let column: BoardColumn
-    @ObservedObject var store: BudStore
-    let now: Date
+    let pictures: BoardCardContext
     /// Folds Cancelled back behind its stub; nil on the other columns.
     var onHide: (() -> Void)? = nil
     @Environment(\.stillPicture) private var still
@@ -128,7 +138,9 @@ struct BoardColumnView: View {
     private var cards: some View {
         LazyVStack(alignment: .leading, spacing: 8) {
             ForEach(column.cards) { card in
-                BoardCardView(card: card, store: store, now: now)
+                BoardCardView(card: card, picture: pictures.state(of: card.id), now: pictures.now) {
+                    await pictures.load(card.id)
+                }
             }
         }
     }

@@ -764,7 +764,8 @@ final class SnapshotTests: XCTestCase {
 
     /// The board of the newsletter thread at the design's size, on a fixed day: Open, the three
     /// tag columns in the order they are met, Done, and Cancelled folded to its stub. One card
-    /// carries a picture, one a when, two a due, one a tag beyond its column's.
+    /// carries a picture, put on the store before the drawing; one a when, two a due, one a tag
+    /// beyond its column's.
     func testRendersTheBoard() async throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
@@ -786,7 +787,7 @@ final class SnapshotTests: XCTestCase {
         tree.addTag(senderKids[0].id, "doing")
         tree.toggle(senderKids[1].id)
         let board = tree.add("Living room board", todo: false, under: design.id)
-        tree.setBody(board.id, "![[living-room.png]]\n\nThe sofa goes by the window.")
+        tree.setBody(board.id, "The sofa goes by the window.")
         let marta = tree.add("Ask the printer about a proof", todo: true, under: design.id)
         tree.addTag(marta.id, "doing")
         tree.setWhen(marta.id, now)
@@ -796,11 +797,13 @@ final class SnapshotTests: XCTestCase {
         let cancelled = try XCTUnwrap(tree.buds.firstIndex { $0.id == quote.id })
         tree.buds[cancelled].fromState = "cancelled"
         let vault = MemoryVault(tree: tree)
-        let png = try picture()
-        await vault.keepPicture("living-room.png", png)
         let devices = DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: clock), now: clock)
         let store = BudStore(vault: vault, tree: tree, devices: devices)
         await store.settle()
+        // The renderer draws at once and never runs a card's load, so the picture is kept on
+        // the store first, decoded as a load would keep it.
+        let png = try picture()
+        store.keepPicture(try XCTUnwrap(BoardPicture.decode(png)), of: board.id)
         store.center = newsletter.id
         store.surface = .board
         for scheme in [ColorScheme.light, .dark] {
