@@ -73,6 +73,8 @@ public final class BudStore: ObservableObject {
     @Published public var zoom: CGFloat = 1
     /// Whether Files shows its sidebar; follows the window shape until the bar button decides.
     @Published public var sidebar = SidebarVisibility()
+    /// The panels around the page: which are folded and which sidebar the page bar hid.
+    @Published public var panels = PanelState()
     /// The size of the area below the bar, so the bar button knows what the toggle flips.
     /// Not published: it changes on every frame of a resize and nothing draws from it.
     public var surfaceSize: CGSize = .zero

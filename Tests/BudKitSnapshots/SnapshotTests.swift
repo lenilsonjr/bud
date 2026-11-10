@@ -200,6 +200,41 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    /// The page between its two sidebars: the file tree on the left; Properties, Inside, Where it
+    /// lives, Linked from and Source (folded) on the right, reading and then editing, where both
+    /// stay. Then the right sidebar hidden from the page bar and Inside folded.
+    func testRendersThePageWithPanels() throws {
+        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
+            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
+        }
+        let folder = URL(fileURLWithPath: dir, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = BudStore(fileURL: nil)
+        let name = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Pick a name" })
+        let roadmap = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Q4 roadmap" })
+        store.setBody(name.id, "## What matters\n\nShort, warm, and easy to say out loud. Nothing with **club** in it.\n\n- Ask two readers\n- Check the domain is free")
+        store.setBody(roadmap.id, "Settle [[Pick a name]] before the launch notes.")
+        store.addTag(name.id, "brand")
+        if let done = store.tree.children(of: name.id).first(where: { $0.isTodo }) { store.toggle(done.id) }
+        store.openAsFile(name.id)
+        for (mode, editing) in [("reading", false), ("editing", true)] {
+            for scheme in [ColorScheme.light, .dark] {
+                let view = BudRootView(store: store).frame(width: size.width, height: size.height).environment(\.stillEditing, editing)
+                let data = try render(view, scheme: scheme)
+                let file = folder.appendingPathComponent("page-panels-\(mode)-\(scheme == .dark ? "dark" : "light").png")
+                try data.write(to: file)
+                XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+            }
+        }
+        store.panels.toggle(.right)
+        store.panels.toggle(.inside)
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("page-panels-right-hidden-light.png"))
+        store.panels = PanelState()
+        store.panels.toggle(.left)
+        store.panels.toggle(.inside)
+        try render(store: store, scheme: .light).write(to: folder.appendingPathComponent("page-panels-left-hidden-light.png"))
+    }
+
     func testRendersPlantedBuds() throws {
         guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
             throw XCTSkip("BUD_SNAPSHOT_DIR is not set")

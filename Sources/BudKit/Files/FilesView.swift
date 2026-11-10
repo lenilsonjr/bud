@@ -1,14 +1,13 @@
 #if canImport(SwiftUI) && !os(tvOS)
 import SwiftUI
 
-/// The Files view: the sidebar with Places, Lenses and the tree, and the page of the selected
-/// bud. The selection is the store's center, so Canvas and Files always agree on where you are.
-/// Drawn as two panes rather than a split view so it looks the same everywhere and in pictures.
+/// The Files view: the page between two sidebars of panels, the file tree on the left and the
+/// page's own panels on the right. The selection is the store's center, so Canvas and Files
+/// always agree on where you are. Drawn as panes rather than a split view so it looks the same
+/// everywhere and in pictures.
 struct FilesView: View {
     @ObservedObject var store: BudStore
     @Environment(\.compact) private var compact
-
-    static let sidebarWidth: CGFloat = 264
 
     var body: some View {
         if compact {
@@ -16,30 +15,43 @@ struct FilesView: View {
         } else {
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    if sidebarShown(in: geo.size) {
-                        Sidebar(store: store)
-                            .frame(width: Self.sidebarWidth)
-                            .background(Theme.sidebar)
+                    if sidebarShown(.left, in: geo.size) {
+                        PanelSidebar(store: store, side: .left)
                         Rectangle()
                             .fill(Theme.line)
                             .frame(width: 1)
                     }
                     FilesPage(store: store)
+                    if sidebarShown(.right, in: geo.size) {
+                        Rectangle()
+                            .fill(Theme.line)
+                            .frame(width: 1)
+                        PanelSidebar(store: store, side: .right)
+                    }
                 }
-                .animation(.easeOut(duration: 0.2), value: sidebarShown(in: geo.size))
+                .animation(.easeOut(duration: 0.2), value: sidebarShown(.left, in: geo.size))
+                .animation(.easeOut(duration: 0.2), value: sidebarShown(.right, in: geo.size))
                 .onAppear { sync(geo.size) }
                 .onChange(of: geo.size) { _, now in sync(now) }
             }
         }
     }
 
-    /// The Mac always shows the sidebar; only iOS collapses it, and only iOS has the button.
-    private func sidebarShown(in size: CGSize) -> Bool {
+    /// A sidebar shows unless the page bar hid it. The right one is the page's own panels, so
+    /// it goes with a bud's page alone: a lens, a place and Everything have none. The Mac always
+    /// has room; iOS folds both away in a narrow window, and the bar button brings them back.
+    private func sidebarShown(_ side: PanelSide, in size: CGSize) -> Bool {
+        guard store.panels.shows(side) else { return false }
+        if side == .right && !showsBudPage { return false }
         #if os(iOS)
-        store.sidebar.isShown(in: size)
+        return store.sidebar.isShown(in: size)
         #else
-        true
+        return true
         #endif
+    }
+
+    private var showsBudPage: Bool {
+        store.lens == nil && store.place == nil && store.tree.bud(store.center) != nil
     }
 
     private func sync(_ size: CGSize) {

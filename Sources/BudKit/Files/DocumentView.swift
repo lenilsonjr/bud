@@ -4,9 +4,10 @@ import SwiftUI
 import GameController
 #endif
 
-/// Every bud's page, the one Files opens whatever the bud holds: the page bar with its path, the
-/// title, and the body as rendered Markdown. What is inside stays in the sidebar's tree. The
-/// body autosaves half a second after the last keystroke.
+/// Every bud's page, the one Files opens whatever the bud holds: the page bar with its path and
+/// the two sidebar toggles, the title, and the body as rendered Markdown. What is inside, the
+/// properties and the links are the panels beside it. The body autosaves half a second after
+/// the last keystroke.
 struct DocumentView: View {
     let id: UUID
     @ObservedObject var store: BudStore
@@ -20,6 +21,11 @@ struct DocumentView: View {
     /// Whether the last edit was typed at the open `[[`, so ↩, ⇥ and the arrows are the picker's.
     @State private var armed = false
     @FocusState private var bodyFocused: Bool
+    @Environment(\.compact) private var compact
+    @Environment(\.stillEditing) private var stillEditing
+
+    /// Whether the editor is open: a click opened it, or a still picture asks for it.
+    private var isEditing: Bool { editing || stillEditing }
 
     var body: some View {
         if let bud = store.tree.bud(id) {
@@ -33,7 +39,8 @@ struct DocumentView: View {
                         if let from = bud.from, SourceRowText.owns(.title, from: from) {
                             FromMark(from: from)
                         }
-                        TagRow(bud: bud, store: store)
+                        // On a phone the tags stay under the title; elsewhere they are a property.
+                        if compact { TagRow(bud: bud, store: store) }
                     }
                     bodyEditor
                 }
@@ -83,13 +90,14 @@ struct DocumentView: View {
 
     private func docBar(_ bud: Bud) -> some View {
         HStack(spacing: 12) {
+            if !compact { sidebarToggle(.left) }
             Text(store.tree.filePath(of: id))
                 .textRole(.mono)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .foregroundStyle(Theme.text3)
             Spacer()
-            if editing {
+            if isEditing {
                 Text(Self.editingHint)
                     .textRole(.caption)
                     .foregroundStyle(Theme.text3)
@@ -111,7 +119,25 @@ struct DocumentView: View {
             .buttonStyle(.plain)
             .foregroundStyle(Theme.leaf)
             .help("Show on the canvas")
+            if !compact { sidebarToggle(.right) }
         }
+    }
+
+    /// Hides a sidebar of panels or brings it back; both stay put while editing.
+    private func sidebarToggle(_ side: PanelSide) -> some View {
+        let shown = store.panels.shows(side)
+        return Button {
+            withAnimation(.easeOut(duration: 0.2)) { store.panels.toggle(side) }
+        } label: {
+            Image(systemName: side == .left ? "sidebar.left" : "sidebar.right")
+                .foregroundStyle(shown ? Theme.text2 : Theme.text3)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
+        .accessibilityLabel(shown ? "Hide the \(side.rawValue) sidebar" : "Show the \(side.rawValue) sidebar")
+        .accessibilityIdentifier("sidebar-\(side.rawValue)-toggle")
     }
 
     // MARK: body
@@ -120,7 +146,7 @@ struct DocumentView: View {
     /// editor with the source in its place, and the page returns when the editor loses focus
     /// or Esc is pressed with no picker open.
     @ViewBuilder private var bodyEditor: some View {
-        if editing {
+        if isEditing {
             VStack(alignment: .leading, spacing: 8) {
                 TextEditor(text: $draft)
                     .textRole(.body)
