@@ -1097,6 +1097,53 @@ final class SnapshotTests: XCTestCase {
         }
     }
 
+    /// The timeline of the month, the quarter and the year, each on the still clock with the
+    /// month picture's spanning buds and one more that runs past the month's end, so the month
+    /// draws a bar flat at its edge and the quarter draws it whole. Then the month with its
+    /// first thread folded to its header.
+    func testRendersTheTimelines() throws {
+        let folder = try pictureFolder()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.firstWeekday = 2
+        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        defer { store.calendarState = CalendarState() }
+        let day: TimeInterval = 86_400
+        let newsletter = try XCTUnwrap(store.tree.children(of: rootID).first { $0.text == "Launch the newsletter" })
+        let issue = try XCTUnwrap(store.add("Send the first issue", todo: true, under: newsletter.id))
+        store.setWhen(issue.id, store.now.addingTimeInterval(3 * day))
+        store.setDue(issue.id, store.now.addingTimeInterval(20 * day))
+        let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
+        store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
+        store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
+        let minutes = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Ten minutes a day" })
+        store.setWhen(minutes.id, store.now.addingTimeInterval(7 * day))
+        store.setDue(minutes.id, store.now.addingTimeInterval(45 * day))
+        store.calendarState = CalendarState(range: .month, layout: .timeline)
+        store.surface = .calendar
+        let month = try XCTUnwrap(store.timeline)
+        XCTAssertEqual(month.threads.map(\.title), ["Launch the newsletter", "Q4 roadmap", "Learn a language", "Health reset"])
+        XCTAssertTrue(month.threads[2].rows.contains { $0.endsAfter }, "The language bar runs past the month")
+        let frame = CGSize(width: 1440, height: 900)
+        for range in [CalendarRange.month, .quarter, .year] {
+            store.calendarState.range = range
+            XCTAssertNotNil(store.timeline)
+            let view = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+            let data = try render(view, scheme: .light)
+            let file = folder.appendingPathComponent("calendar-timeline-\(range.rawValue.lowercased())-light.png")
+            try data.write(to: file)
+            XCTAssertGreaterThan(data.count, 10_000, "\(file.lastPathComponent) looks empty")
+        }
+        store.calendarState.range = .month
+        store.toggleCollapsed(newsletter.id)
+        XCTAssertTrue(try XCTUnwrap(store.timeline?.threads.first?.isCollapsed))
+        let folded = BudRootView(store: store).frame(width: frame.width, height: frame.height)
+        try render(folded, scheme: .light).write(to: folder.appendingPathComponent("calendar-timeline-month-folded-light.png"))
+        try render(BudRootView(store: store).frame(width: frame.width, height: frame.height), scheme: .dark)
+            .write(to: folder.appendingPathComponent("calendar-timeline-month-folded-dark.png"))
+    }
+
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
         try render(BudRootView(store: store).frame(width: size.width, height: size.height), scheme: scheme)
     }
