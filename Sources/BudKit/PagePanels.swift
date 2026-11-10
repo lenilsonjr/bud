@@ -1,9 +1,9 @@
 import Foundation
 
-/// The panels around a bud's page: the file tree, and what the page used to carry below its
-/// body. Each sits in one of the two sidebars and folds from its header.
+/// The panels around a bud's page: the file tree, what the page used to carry below its body,
+/// and the chat with the agent. Each sits in one of the two sidebars and folds from its header.
 public enum PagePanel: String, CaseIterable, Codable, Sendable {
-    case files, properties, inside, whereItLives, linkedFrom, source
+    case files, properties, inside, whereItLives, linkedFrom, source, agent
 
     /// The header's title, drawn as an eyebrow.
     public var title: String {
@@ -14,11 +14,16 @@ public enum PagePanel: String, CaseIterable, Codable, Sendable {
         case .whereItLives: return "Where it lives"
         case .linkedFrom: return "Linked from"
         case .source: return "Source"
+        case .agent: return "Agent"
         }
     }
 
     /// Source starts folded: the raw file is there when wanted, not in the way.
     public var startsCollapsed: Bool { self == .source }
+
+    /// Files and Agent take the rest of their sidebar, scrolling inside; the others are as tall
+    /// as what they hold.
+    public var fillsSidebar: Bool { self == .files || self == .agent }
 }
 
 /// The two sidebars.
@@ -32,8 +37,9 @@ public enum PanelSide: String, CaseIterable, Codable, Sendable {
 }
 
 /// Which panels each sidebar holds, top to bottom. The default is Files alone on the left and
-/// the page's own panels on the right. A panel on neither side is hidden. The layout is one per
-/// vault: the store keeps it in the vault's shared maps, so every device shows the same.
+/// the page's own panels on the right; Agent waits hidden until Show hidden panels, since no
+/// agent runs yet. A panel on neither side is hidden. The layout is one per vault: the store
+/// keeps it in the vault's shared maps, so every device shows the same.
 public struct PanelLayout: Equatable, Codable, Sendable {
     public var left: [PagePanel]
     public var right: [PagePanel]
@@ -80,9 +86,9 @@ public struct PanelLayout: Equatable, Codable, Sendable {
     public var hidden: [PagePanel] { PagePanel.allCases.filter { side(of: $0) == nil } }
 
     /// Whether a page shows a panel: the page's own panels go with a bud's page alone, so a
-    /// lens, a place and Everything show the file tree only.
+    /// lens, a place and Everything show the file tree and the chat only.
     public static func shows(_ panel: PagePanel, onBudPage: Bool) -> Bool {
-        onBudPage || panel == .files
+        onBudPage || panel == .files || panel == .agent
     }
 
     /// The panels a side shows on the page.

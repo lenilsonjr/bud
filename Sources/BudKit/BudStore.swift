@@ -82,6 +82,8 @@ public final class BudStore: ObservableObject {
     /// The panels around the page: where each sits and which are folded. The layout is read from
     /// the vault and changed through `arrange`; folding is this device's alone.
     @Published public var panels = PanelState()
+    /// The chat in the Agent panel. Empty until something is said; no agent answers yet.
+    @Published public var agent = AgentConversation()
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
