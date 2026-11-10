@@ -930,6 +930,17 @@ impl Vault {
         self.set_shared("layout", key, layout)
     }
 
+    /// Which tag columns each bud's board shows, as the app wrote it: one list per bud under
+    /// the bud's id, so every replica shows the same board.
+    pub fn board(&self) -> Result<Vec<(String, String)>> {
+        self.shared("board")
+    }
+
+    /// Keep one bud's board columns; none drops them.
+    pub fn set_board(&mut self, key: &str, columns: Option<&str>) -> Result<()> {
+        self.set_shared("board", key, columns)
+    }
+
     /// A map of text the tree document carries beside the buds, sorted by key.
     fn shared(&self, name: &str) -> Result<Vec<(String, String)>> {
         let tree = self.load_tree()?;

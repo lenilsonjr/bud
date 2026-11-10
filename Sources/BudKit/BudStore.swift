@@ -78,6 +78,9 @@ public final class BudStore: ObservableObject {
     @Published public var panels = PanelState()
     /// The chat in the Agent panel. Empty until something is said; no agent answers yet.
     @Published public var agent = AgentConversation()
+    /// Which tag columns each bud's board shows, by the bud's id, as the vault holds them. A bud
+    /// with no entry shows the tags in use inside it.
+    @Published public var boards: [UUID: BoardColumns] = [:]
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
@@ -267,6 +270,7 @@ public final class BudStore: ObservableObject {
                 await self?.soil?.reloadShared()
                 await self?.reloadTriggers()
                 await self?.reloadLayout()
+                await self?.reloadBoards()
             }
             guard let message = DevicesText.arrival(summary) else { return }
             self?.toasts.show(Undoable(message: message, systemImage: "arrow.down.to.line"))
@@ -278,6 +282,7 @@ public final class BudStore: ObservableObject {
             await self?.reload()
             await self?.reloadTriggers()
             await self?.reloadLayout()
+            await self?.reloadBoards()
             await self?.startWatching()
         }
     }
@@ -1249,6 +1254,46 @@ extension BudStore {
         guard let stored = try? await vault.shared(.layout), let text = stored[Self.layoutKey],
               let layout = try? Self.triggerDecoder.decode(PanelLayout.self, from: Data(text.utf8)) else { return }
         if layout != panels.layout { panels.layout = layout }
+    }
+}
+
+// MARK: the boards' columns
+
+extension BudStore {
+    /// The board of the center bud, with the tag columns the vault keeps for it.
+    public var board: Board { board(of: center) }
+
+    public func board(of id: UUID) -> Board {
+        Board(tree: tree, center: id, tags: boards[id]?.tags)
+    }
+
+    /// Sets which tag columns a bud's board shows, in order; nil goes back to the tags in use.
+    /// The list goes to the vault under the bud's id, so every device shows the same board.
+    public func setBoardColumns(_ columns: BoardColumns?, of id: UUID) {
+        guard boards[id] != columns else { return }
+        boards[id] = columns
+        let text = columns.flatMap(Self.triggerText)
+        write { vault in try await vault.setShared(.board, id.uuidString, text) }
+    }
+
+    /// Reads every board's columns from the vault, once the writes queued here have landed:
+    /// after a sync brought another device's.
+    public func reloadBoards() async {
+        await settle()
+        guard let stored = try? await vault.shared(.board) else { return }
+        var loaded: [UUID: BoardColumns] = [:]
+        for (key, text) in stored {
+            guard let id = UUID(uuidString: key),
+                  let columns = try? Self.triggerDecoder.decode(BoardColumns.self, from: Data(text.utf8)) else { continue }
+            loaded[id] = columns
+        }
+        if loaded != boards { boards = loaded }
+    }
+
+    /// The first picture a bud embeds, as the vault holds it.
+    public func picture(of id: UUID) async -> Data? {
+        await pending?.value
+        return try? await vault.picture(of: path(id))
     }
 }
 
