@@ -6,7 +6,7 @@ import SwiftUI
 /// with two days is a bar in its thread's colour and a bud with one day is a point. A header
 /// folds its thread's rows and keeps a rail over the days they cover. The quiet shade marks the
 /// weekends by the day and each month's first day by the week; today is a leaf line.
-struct TimelineView: View {
+struct CalendarTimelineView: View {
     let timeline: Timeline
     /// Folds or opens the thread with this id.
     let toggle: (UUID) -> Void
