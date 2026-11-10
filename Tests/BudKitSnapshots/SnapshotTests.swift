@@ -876,12 +876,14 @@ final class SnapshotTests: XCTestCase {
     /// thread off, so the column shows an unticked row; and the week segment, so its quiet line
     /// is seen.
     func testRendersTheMonthCalendar() throws {
-        guard let dir = ProcessInfo.processInfo.environment["BUD_SNAPSHOT_DIR"], !dir.isEmpty else {
-            throw XCTSkip("BUD_SNAPSHOT_DIR is not set")
-        }
-        let folder = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let store = stillStore()
+        let folder = try pictureFolder()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.locale = Locale(identifier: "en_GB")
+        calendar.firstWeekday = 2
+        let store = stillStore(devices: DeviceStore(peers: MemoryPeers.forLaunch(arguments: [], now: stillClock), now: stillClock, calendar: calendar))
+        // The switches are kept on this device: back to the defaults whatever the test did.
+        defer { store.calendarState = CalendarState() }
         // Two buds scheduled and due, so the month has bars across its weeks: one under the
         // newsletter over four rows, one under the roadmap over two.
         let day: TimeInterval = 86_400
@@ -892,12 +894,7 @@ final class SnapshotTests: XCTestCase {
         let onboarding = try XCTUnwrap(store.tree.walk(under: rootID).first { $0.text == "Review the onboarding flow" })
         store.setWhen(onboarding.id, store.now.addingTimeInterval(1 * day))
         store.setDue(onboarding.id, store.now.addingTimeInterval(11 * day))
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.locale = Locale(identifier: "en_GB")
-        calendar.firstWeekday = 2
-        store.dateCalendar = calendar
-        store.calendar = CalendarState()
+        store.calendarState = CalendarState()
         store.surface = .calendar
         XCTAssertEqual(store.monthGrid.month.title, "November 2026")
         XCTAssertFalse(store.monthGrid.bars.isEmpty, "The seed spans weeks")
@@ -912,10 +909,9 @@ final class SnapshotTests: XCTestCase {
         if let roadmap = store.calendarThreads.first(where: { $0.title == "Q4 roadmap" }) { store.toggleThread(roadmap.id) }
         let hidden = BudRootView(store: store).frame(width: frame.width, height: frame.height)
         try render(hidden, scheme: .light).write(to: folder.appendingPathComponent("calendar-month-thread-off-light.png"))
-        store.calendar = CalendarState(range: .week)
+        store.calendarState = CalendarState(range: .week)
         let week = BudRootView(store: store).frame(width: frame.width, height: frame.height)
         try render(week, scheme: .light).write(to: folder.appendingPathComponent("calendar-week-coming-light.png"))
-        store.calendar = CalendarState()
     }
 
     private func render(store: BudStore, scheme: ColorScheme) throws -> Data {
