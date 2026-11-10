@@ -78,10 +78,10 @@ extension KeyboardLayout {
             for code in UInt16(0)...127 {
                 var deadKeys: UInt32 = 0
                 var characters = [UniChar](repeating: 0, count: 4)
-                var length: UniCharCount = 0
-                let status = UCKeyTranslate(keyboard, code, UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, UniCharCount(characters.count), &length, &characters)
+                var length = 0
+                let status = UCKeyTranslate(keyboard, code, UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, characters.count, &length, &characters)
                 guard status == noErr, length > 0 else { continue }
-                let text = String(utf16CodeUnits: characters, count: Int(length))
+                let text = String(utf16CodeUnits: characters, count: length)
                 if let character = text.first, text.count == 1 { table[code] = character }
             }
             return KeyboardLayout(table)
