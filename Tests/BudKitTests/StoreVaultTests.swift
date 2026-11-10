@@ -363,7 +363,7 @@ final class StoreVaultTests: XCTestCase {
         await phone.reloadLayout()
         XCTAssertEqual(phone.panels.layout, mac.panels.layout)
         XCTAssertEqual(phone.panels.layout.right, [.files, .properties, .inside, .whereItLives, .linkedFrom])
-        XCTAssertEqual(phone.panels.layout.hidden, [.source])
+        XCTAssertEqual(phone.panels.layout.hidden, [.source, .agent], "Agent starts hidden on every device")
         XCTAssertFalse(phone.panels.isCollapsed(.inside), "Folding stays on the device that folded")
         let stored = try await vault.shared(.layout)
         XCTAssertEqual(stored.keys.sorted(), [BudStore.layoutKey])
