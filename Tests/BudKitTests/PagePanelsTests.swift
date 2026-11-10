@@ -115,6 +115,19 @@ final class PagePanelsTests: XCTestCase {
         XCTAssertEqual(state.layout.hidden, [])
     }
 
+    func testALayoutFromANewerBuildReadsWithItsUnknownPanelsSkipped() throws {
+        let text = "{\"left\":[\"files\",\"calendar\"],\"right\":[\"inside\",\"agent\",\"properties\"]}"
+        let layout = try JSONDecoder().decode(PanelLayout.self, from: Data(text.utf8))
+        XCTAssertEqual(layout.left, [.files])
+        XCTAssertEqual(layout.right, [.inside, .properties], "The known ones keep their order")
+        XCTAssertEqual(layout.hidden, [.whereItLives, .linkedFrom, .source], "On neither side is hidden")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let written = try encoder.encode(layout)
+        XCTAssertEqual(String(decoding: written, as: UTF8.self), "{\"left\":[\"files\"],\"right\":[\"inside\",\"properties\"]}")
+        XCTAssertEqual(try JSONDecoder().decode(PanelLayout.self, from: written), layout)
+    }
+
     func testTheLastPanelShownCannotHide() {
         var state = PanelState(layout: PanelLayout(left: [.files], right: []))
         XCTAssertFalse(PanelMenuItem.hide.isEnabled(for: .files, in: state))
