@@ -27,31 +27,41 @@ extension XCTestCase {
         BudStore(fileURL: nil, devices: devices ?? stillDevices(), keys: stillKeys)
     }
 
-    /// Choices of a picture's own on the still suite, drawn always light or always dark as the
+    /// Choices of a picture's own on the flags' suite, drawn always light or always dark as the
     /// picture is, so the appearance the person or the host app chose never reaches it.
     @MainActor
     func stillFlags(_ scheme: ColorScheme) -> Flags {
-        let flags = Flags(defaults: StillKeys.defaults)
+        let flags = Flags(defaults: StillFlags.defaults)
         flags.appearance = scheme == .dark ? .dark : .light
         return flags
     }
 }
 
 /// The still layout, on a defaults suite named for this process alone, so two stores in one test
-/// share it and two runs side by side never share a file. The suite is wiped when it is first
-/// opened and again when the process ends. No picture records a key into it; a picture's flags
-/// keep its appearance there.
+/// share it and two runs side by side never share a file. The suite is wiped when the layout is
+/// made and again when the process ends; no picture records into it.
 enum StillKeys {
     static let suite = "bud.still.\(UUID().uuidString)"
+
+    static let layout: KeyLayout = {
+        guard let defaults = UserDefaults(suiteName: suite) else { fatalError("No defaults suite named \(suite)") }
+        defaults.removePersistentDomain(forName: suite)
+        atexit { UserDefaults(suiteName: StillKeys.suite)?.removePersistentDomain(forName: StillKeys.suite) }
+        return KeyLayout(defaults: defaults)
+    }()
+}
+
+/// Where a picture's flags keep its appearance: a suite of their own beside the still layout's,
+/// named for this process alone and wiped when it is opened and again when the process ends.
+enum StillFlags {
+    static let suite = "bud.still.flags.\(UUID().uuidString)"
 
     static let defaults: UserDefaults = {
         guard let defaults = UserDefaults(suiteName: suite) else { fatalError("No defaults suite named \(suite)") }
         defaults.removePersistentDomain(forName: suite)
-        atexit { UserDefaults(suiteName: StillKeys.suite)?.removePersistentDomain(forName: StillKeys.suite) }
+        atexit { UserDefaults(suiteName: StillFlags.suite)?.removePersistentDomain(forName: StillFlags.suite) }
         return defaults
     }()
-
-    static let layout = KeyLayout(defaults: defaults)
 }
 
 extension XCTestCase {

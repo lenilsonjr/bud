@@ -14,8 +14,10 @@
 # A shot is only as big as the simulator's screen. No simulator holds the Mac window
 # (1400x900), so the mac shots are always skipped; the iOS catalog is the phone, iPad and Stage
 # Manager shots. On the largest iPad the test takes what fits upright, turns the simulator to
-# landscape and takes the landscape iPad too; if the simulator will not turn, the landscape
-# iPad is skipped as well. Each skipped shot is in the manifest with its reason.
+# landscape and takes the landscape iPad too, then turns it upright again; if the simulator will
+# not turn, the landscape iPad is skipped as well. Each skipped shot is in the manifest with its
+# reason. Every shot carries the safe area of the device it is named for (the phone's or the
+# iPad's status bar and home indicator, none for a Stage Manager window), not the simulator's.
 #
 # What comes out, under <out-dir> (build/screens-ios by default):
 #   catalog/          one PNG per screen taken, named surface.state-window-scheme.png, and the
@@ -23,7 +25,7 @@
 #   catalog.xcresult  the test result, which carries every picture as an attachment too
 #   test.log          xcodebuild's output
 # One line on stdout per screen that failed, that the Mac's references have and this run never
-# planned, or that the Mac's references lack; then one per skipped screen with its
+# planned, or that this run planned and the Mac's references lack; then one per skipped screen with its
 # reason. Exit 0 when nothing failed or went missing, skipped screens or not; 1 when something
 # did; 2 when the catalog did not render or the arguments are off.
 #
@@ -76,14 +78,15 @@ failed="$(awk '$2 != "taken" && $2 != "skipped" { print $1 }' <<<"$answers")"
 skipped="$(awk '$2 == "skipped" { print $1 }' <<<"$answers")"
 # Missing is a Mac reference this run never planned; a planned one that went wrong is failed.
 missing="$(comm -23 <(screens "$references") <(cut -d ' ' -f 1 <<<"$answers"))"
-extra="$(comm -13 <(screens "$references") <(screens "$out/catalog"))"
+# Extra is a screen this run planned that the Mac has no reference for.
+extra="$(comm -13 <(screens "$references") <(cut -d ' ' -f 1 <<<"$answers"))"
 
 problems=0
 for name in $failed; do echo "failed $name"; problems=$((problems + 1)); done
 for name in $missing; do echo "missing $name"; problems=$((problems + 1)); done
 for name in $extra; do echo "extra $name"; problems=$((problems + 1)); done
 sed -n 's/^\([^ ]*\) skipped /skipped \1 /p' <<<"$answers"
-taken="$(screens "$out/catalog" | wc -l | tr -d ' ')"
+taken="$(awk '$2 == "taken"' <<<"$answers" | wc -l | tr -d ' ')"
 count="$(sed '/^$/d' <<<"$skipped" | wc -l | tr -d ' ')"
 if [ "$problems" -eq 0 ]; then
   echo "$taken screens in $out/catalog and $count skipped, name for name with the Mac's catalog."

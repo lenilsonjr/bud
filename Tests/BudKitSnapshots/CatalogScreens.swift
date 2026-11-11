@@ -10,16 +10,26 @@ import SwiftUI
 enum Catalog {
     /// A window the catalog renders in: its name in the file, its size in points, whether it is
     /// a compact width, and whether the sidebars follow the window's shape as they do on iOS.
+    /// The iOS catalog also gives it the safe area of the device it is named for, whatever the
+    /// simulator's own: the status bar and the home indicator on the phone and the iPad, none on
+    /// the Mac or in a Stage Manager window, which the catalog takes without its controls. The
+    /// Mac's renderer has no safe area and reads none of it.
     struct Window {
         let name: String
         let size: CGSize
         let compact: Bool
         let followsWindow: Bool
+        var safeArea = EdgeInsets()
+
+        /// The phone's status bar and home indicator.
+        static let phoneSafeArea = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
+        /// The iPad's status bar and home indicator, either way up.
+        static let padSafeArea = EdgeInsets(top: 24, leading: 0, bottom: 20, trailing: 0)
 
         static let mac = Window(name: "mac", size: CGSize(width: 1400, height: 900), compact: false, followsWindow: false)
-        static let phone = Window(name: "phone", size: CGSize(width: 393, height: 852), compact: true, followsWindow: true)
-        static let padPortrait = Window(name: "ipad-portrait", size: CGSize(width: 834, height: 1210), compact: false, followsWindow: true)
-        static let padLandscape = Window(name: "ipad-landscape", size: CGSize(width: 1210, height: 834), compact: false, followsWindow: true)
+        static let phone = Window(name: "phone", size: CGSize(width: 393, height: 852), compact: true, followsWindow: true, safeArea: phoneSafeArea)
+        static let padPortrait = Window(name: "ipad-portrait", size: CGSize(width: 834, height: 1210), compact: false, followsWindow: true, safeArea: padSafeArea)
+        static let padLandscape = Window(name: "ipad-landscape", size: CGSize(width: 1210, height: 834), compact: false, followsWindow: true, safeArea: padSafeArea)
         static let stageNarrow = Window(name: "stage-320x700", size: CGSize(width: 320, height: 700), compact: true, followsWindow: true)
         static let stageMedium = Window(name: "stage-600x800", size: CGSize(width: 600, height: 800), compact: true, followsWindow: true)
         static let stageWide = Window(name: "stage-1024x768", size: CGSize(width: 1024, height: 768), compact: false, followsWindow: true)

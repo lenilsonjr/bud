@@ -130,18 +130,10 @@ public final class BudStore: ObservableObject {
     /// Where this device's own choices are kept.
     private let defaults: UserDefaults
 
-    /// What every tour's launch argument starts with. An app launched with one is drawing
-    /// pictures: it opens its vault but starts no sync node, fires no trigger, brings in no old
-    /// file and listens for no capture.
-    public static let tourPrefix = "-bud-"
     /// The launch argument for an app that hosts pictures and shows nothing of its own, as the
-    /// iOS catalog's host app does.
-    public static let picturesArgument = tourPrefix + "pictures"
-
-    /// Whether these launch arguments are a tour's, the pictures argument among them.
-    public static func launchedForPictures(_ arguments: [String]) -> Bool {
-        arguments.contains { $0.hasPrefix(tourPrefix) }
-    }
+    /// iOS catalog's host app does: it opens its vault but starts no sync node, fires no trigger,
+    /// brings in no old file and listens for no capture.
+    public static let picturesArgument = "-bud-pictures"
 
     static var sidebarFollowsWindow: Bool {
         #if os(iOS)
