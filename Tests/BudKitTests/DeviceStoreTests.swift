@@ -410,4 +410,168 @@ extension DeviceStoreTests {
         XCTAssertEqual(RequestError(message: "peer: this vault is paired with another vault already"), .refused)
         XCTAssertNil(RequestError(message: "something else"))
     }
+
+    // MARK: Launch fetch
+
+    func testALaunchFetchWaitsUntilEveryChangeOfAKnownTotalArrived() async {
+        let (store, peers, _) = await make()
+        XCTAssertNil(store.launchFetch)
+        store.awaitLaunchFetch()
+        XCTAssertEqual(store.launchFetch, LaunchFetch(received: 0, total: nil))
+        await peers.emitFetchProgress(received: 0, total: 134)
+        await eventually { store.launchFetch == LaunchFetch(received: 0, total: 134) }
+        await peers.emitFetchProgress(received: 134, total: 134)
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testALaunchFetchFromAnEmptyVaultEndsAtOnce() async {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        await peers.emitFetchProgress(received: 0, total: 0)
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testAFinishedSyncEndsTheLaunchFetch() async {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        await peers.setNextSummary(SyncSummary(created: 12, ops: 40))
+        await store.syncNow()
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testFetchProgressWithoutALaunchFetchStartsNone() async {
+        let (store, peers, _) = await make()
+        await peers.emitFetchProgress(received: 3, total: 10)
+        await store.refresh()
+        XCTAssertNil(store.launchFetch)
+    }
+
+    func testThePersonCanStopWaiting() async {
+        let (store, _, _) = await make()
+        store.awaitLaunchFetch()
+        store.endLaunchFetch()
+        XCTAssertNil(store.launchFetch)
+    }
+
+    func testASyncThatAnsweredEndsTheLaunchFetchEvenWithNothingNew() async {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        await peers.setNextSummary(SyncSummary())
+        await store.syncNow()
+        XCTAssertNil(store.launchFetch)
+    }
+
+    func testAFetchOfUnknownSizeEndsWhenItsChangesArrive() async {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        await peers.emitFetchProgress(received: 0, total: nil)
+        await eventually { store.launchFetch == LaunchFetch(received: 0, total: nil) }
+        await peers.emitFetchProgress(received: 12, total: nil)
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testALaunchFetchWithNoProgressGivesUpAfterItsPatience() async {
+        let (store, _, _) = await make()
+        store.awaitLaunchFetch()
+        store.startLaunchFetchPatience(0.05)
+        XCTAssertNotNil(store.launchFetch)
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testThePatienceStartsOnlyOnceTheNodeIsUp() async throws {
+        let (store, _, _) = await make()
+        store.awaitLaunchFetch()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNotNil(store.launchFetch, "no clock runs before the node is up")
+    }
+
+    func testProgressStartsThePatienceOver() async throws {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        store.startLaunchFetchPatience(0.3)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        await peers.emitFetchProgress(received: 0, total: 50)
+        await eventually { store.launchFetch == LaunchFetch(received: 0, total: 50) }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertNotNil(store.launchFetch, "the progress gave it a new 0.3 s")
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testPatienceWithNoWaitStartsNothing() async {
+        let (store, _, _) = await make()
+        store.startLaunchFetchPatience(0.01)
+        XCTAssertNil(store.launchFetch)
+    }
+
+    func testTheDefaultPatienceIsTwiceTheSessionTimeout() {
+        XCTAssertEqual(DeviceStore.launchFetchPatience, 2 * 60)
+    }
+
+    // MARK: Kept pairing
+
+    func testPairingRenamingAndRemovingTellThePairingChanged() async throws {
+        let (store, _, _) = await make()
+        var changes = 0
+        var unpaired = 0
+        store.onPairingChanged = { changes += 1 }
+        store.onUnpaired = { unpaired += 1 }
+        let other = try XCTUnwrap(store.devices.first { !$0.isThisDevice })
+        await store.rename(other.id, label: "Studio")
+        XCTAssertEqual(changes, 1)
+        await store.remove(other.id, rotate: false)
+        XCTAssertEqual(changes, 2)
+        XCTAssertEqual(unpaired, 0, "other devices remain")
+    }
+
+    func testRemovingTheLastOtherDeviceUnpairs() async {
+        let (store, _, _) = await make()
+        var changes = 0
+        var unpaired = 0
+        store.onPairingChanged = { changes += 1 }
+        store.onUnpaired = { unpaired += 1 }
+        for device in store.devices where !device.isThisDevice {
+            await store.remove(device.id, rotate: false)
+        }
+        XCTAssertEqual(unpaired, 1)
+        XCTAssertEqual(changes, 4)
+    }
+
+    func testOtherDevicesGoneFromTheNodesListAnyOtherWayUnpairToo() async {
+        let (store, peers, _) = await make()
+        var unpaired = 0
+        store.onUnpaired = { unpaired += 1 }
+        for device in store.devices where !device.isThisDevice {
+            try? await peers.remove(device.id)
+        }
+        await store.refresh()
+        XCTAssertEqual(unpaired, 1)
+        await store.refresh()
+        XCTAssertEqual(unpaired, 1, "told once")
+    }
+
+    func testAKeyHandedOverByAnotherDeviceTellsThePairingChanged() async {
+        let (store, peers, _) = await make()
+        var changes = 0
+        store.onPairingChanged = { changes += 1 }
+        await peers.emitPairingChanged()
+        await eventually { changes == 1 }
+    }
+
+    func testLeavingTheForegroundBringsTheKeptPairingUpToDate() async {
+        let (store, _, _) = await make()
+        var changes = 0
+        store.onPairingChanged = { changes += 1 }
+        store.pairingMayHaveChanged()
+        XCTAssertEqual(changes, 1)
+    }
+
+    func testAcceptingATicketTellsThePairingChanged() async throws {
+        let (store, peers, _) = await make()
+        var changes = 0
+        store.onPairingChanged = { changes += 1 }
+        let ticket = try await peers.ticket(withAddresses: false)
+        await store.join(text: ticket.text)
+        // The join itself, and the event the node tells of the new device.
+        await eventually { changes >= 2 }
+    }
 }

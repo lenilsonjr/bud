@@ -23,6 +23,18 @@ public enum RequestPhase: Equatable, Sendable {
     case failed(RequestError)
 }
 
+/// How far the first fetch of a launch has got: `received` of `total` changes, with `total` nil
+/// while it is not known.
+public struct LaunchFetch: Equatable, Sendable {
+    public var received: Int
+    public var total: Int?
+
+    public init(received: Int, total: Int?) {
+        self.received = received
+        self.total = total
+    }
+}
+
 /// How far a key rotation has got, for the dialog.
 public struct RotationProgress: Equatable, Sendable {
     /// How many devices it has to reach.
@@ -64,10 +76,19 @@ public final class DeviceStore: ObservableObject {
     @Published public private(set) var offer: JoinOffer?
     /// Where the scan of another device's request is, on the device that holds the vault.
     @Published public private(set) var requestPhase: RequestPhase = .idle
+    /// Set while a launch that found its vault cleared waits for the first fetch from its peers:
+    /// what has arrived of how much, with `total` nil while it is not known.
+    @Published public private(set) var launchFetch: LaunchFetch?
     /// Told when a sync is over, for the toast that says what it brought in.
     public var onSyncFinished: ((SyncSummary) -> Void)?
     /// Told when a key rotation is over, for the toast that says who missed it.
     public var onRotationFinished: ((RotationResult) -> Void)?
+    /// Told when this device paired, or a peer was removed, renamed, let back in or given a new
+    /// key: for the copy of the pairing kept outside the vault.
+    public var onPairingChanged: (() -> Void)?
+    /// Told when this device, which had other devices, has none left: removed here, or gone
+    /// from the node's list any other way. The kept pairing goes.
+    public var onUnpaired: (() -> Void)?
 
     private var peers: Peers
     /// Where the store, and the bud store over it, read the time; a picture hands it a fixed moment.
@@ -85,6 +106,13 @@ public final class DeviceStore: ObservableObject {
     private var scan = 0
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
+    /// Ends the launch fetch when nothing has moved for a while.
+    private var launchFetchTimer: Task<Void, Never>?
+    private var launchPatience: TimeInterval = DeviceStore.launchFetchPatience
+    /// How long the launch fetch waits with no progress before the cards open anyway, when the
+    /// app names no other time: twice the core's session timeout, so one slow session with a
+    /// peer that is there ends before the wait gives up. The app passes the core's own value.
+    nonisolated public static let launchFetchPatience: TimeInterval = 120
 
     /// The store the apps use. It starts on this device alone, so Settings shows the invitation,
     /// and the app hands it the real node once that has started (`use`); pictures keep it alone.
@@ -100,6 +128,7 @@ public final class DeviceStore: ObservableObject {
         listening?.cancel()
         renewing?.cancel()
         renewingRequest?.cancel()
+        launchFetchTimer?.cancel()
     }
 
     /// "k7f3…q2m9": the first four characters of an id, an ellipsis and the last four.
@@ -140,7 +169,11 @@ public final class DeviceStore: ObservableObject {
 
     /// Reads the devices and the sync state again.
     public func refresh() async {
-        if let list = try? await peers.devices() { devices = list }
+        if let list = try? await peers.devices() {
+            let hadOthers = devices.contains { !$0.isThisDevice }
+            devices = list
+            if hadOthers && list.allSatisfy(\.isThisDevice) { onUnpaired?() }
+        }
         if let state = try? await peers.state() { syncState = state }
         if let setting = try? await peers.relay() { relay = setting }
     }
@@ -150,8 +183,13 @@ public final class DeviceStore: ObservableObject {
         if let stored = try? await peers.relay() { relay = stored }
     }
 
+    /// Syncs with every peer now. One that answered ends a launch fetch, whatever it brought:
+    /// it holds everything the peer had.
     public func syncNow() async {
-        if let summary = try? await peers.syncNow() { lastSummary = summary }
+        if let summary = try? await peers.syncNow() {
+            lastSummary = summary
+            endLaunchFetch()
+        }
         await refresh()
     }
 
@@ -212,6 +250,7 @@ public final class DeviceStore: ObservableObject {
         guard offer != nil else { return }
         offer = nil
         try? await peers.answerJoin(keep: keep)
+        if keep { onPairingChanged?() }
     }
 
     /// Makes a new request if one is on show and the one shown has run out.
@@ -254,6 +293,7 @@ public final class DeviceStore: ObservableObject {
             let device = try await peers.confirmRequest(code)
             if scan == mine { requestPhase = .confirmed(device) }
             await refresh()
+            onPairingChanged?()
         } catch {
             if scan == mine { requestPhase = .failed(RequestError(error)) }
         }
@@ -275,6 +315,7 @@ public final class DeviceStore: ObservableObject {
             let device = try await peers.accept(text)
             joinPhase = .joined(device, received: fetched.received, total: fetched.total)
             await refresh()
+            onPairingChanged?()
         } catch let error as AcceptError {
             joinPhase = .failed(error)
         } catch {
@@ -285,6 +326,54 @@ public final class DeviceStore: ObservableObject {
     public func resetJoin() {
         joinPhase = .idle
         fetched = (0, nil)
+    }
+
+    // MARK: Launch fetch
+
+    /// The vault came up cleared and its pairing comes back: the cards wait for the first fetch.
+    /// The patience starts once the node is up (`startLaunchFetchPatience`), so a slow start
+    /// does not eat into it.
+    public func awaitLaunchFetch() {
+        launchFetch = LaunchFetch(received: 0, total: nil)
+    }
+
+    /// The node is up: the wait ends after `patience` seconds with nothing arriving, so a peer
+    /// that is not around never holds the screen. Each bit of progress starts it over; the core
+    /// tells no session before it ends, so that is the only sign of life there is.
+    public func startLaunchFetchPatience(_ patience: TimeInterval = DeviceStore.launchFetchPatience) {
+        launchPatience = patience
+        waitForLaunchFetch()
+    }
+
+    /// Something may have changed what this device keeps of its pairing, such as the app going
+    /// to the background: the copy kept elsewhere is brought up to date.
+    public func pairingMayHaveChanged() {
+        onPairingChanged?()
+    }
+
+    /// The cards open, fetched or not: the fetch is over, or the person stopped waiting for it.
+    public func endLaunchFetch() {
+        launchFetchTimer?.cancel()
+        launchFetchTimer = nil
+        launchFetch = nil
+    }
+
+    /// Starts the patience over, after progress.
+    private func waitForLaunchFetch() {
+        launchFetchTimer?.cancel()
+        guard launchFetch != nil else { return }
+        let patience = launchPatience
+        launchFetchTimer = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(patience * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.endLaunchFetch()
+        }
+    }
+
+    /// A first session tells its progress twice, before and after it applies what came, so
+    /// anything received means the fetch from that peer is over, its size known or not.
+    static func launchFetchIsDone(received: Int, total: Int?) -> Bool {
+        received > 0 || TVDevicesText.fetchIsDone(received: received, total: total)
     }
 
     // MARK: Remove, allow, rotate
@@ -300,6 +389,7 @@ public final class DeviceStore: ObservableObject {
             return false
         }
         await refresh()
+        onPairingChanged?()
         if rotate { await rotateKey() }
         return true
     }
@@ -309,6 +399,7 @@ public final class DeviceStore: ObservableObject {
     public func rename(_ id: String, label: String?) async {
         try? await peers.rename(id, label: label)
         await refresh()
+        onPairingChanged?()
     }
 
     public func rotateKey() async {
@@ -329,6 +420,7 @@ public final class DeviceStore: ObservableObject {
                 if result.failed { rotation = nil }
                 if !result.failed && !result.missed.isEmpty { rotatedAt = now() }
                 onRotationFinished?(result)
+                onPairingChanged?()
             }
         }
         await refresh()
@@ -340,6 +432,7 @@ public final class DeviceStore: ObservableObject {
     public func allow(_ id: String) async {
         try? await peers.allow(id)
         await refresh()
+        onPairingChanged?()
     }
 
     // MARK: Events
@@ -349,6 +442,7 @@ public final class DeviceStore: ObservableObject {
         case let .ticketRedeemed(id):
             redeemedBy = id
             await refresh()
+            onPairingChanged?()
         case let .joinOffered(offered):
             if requestOpen { offer = offered }
         case let .deviceJoined(device):
@@ -360,14 +454,27 @@ public final class DeviceStore: ObservableObject {
                 joinPhase = .joined(device, received: 0, total: nil)
             }
             await refresh()
+            onPairingChanged?()
         case let .syncFinished(summary):
             lastSummary = summary
+            // A sync that brought buds in ends the wait, even one that never said its size.
+            endLaunchFetch()
             onSyncFinished?(summary)
             await refresh()
+        case .pairingChanged:
+            onPairingChanged?()
         case let .fetchProgress(received, total):
             fetched = (received, total)
             if case let .joined(device, _, _) = joinPhase {
                 joinPhase = .joined(device, received: received, total: total)
+            }
+            if launchFetch != nil {
+                if Self.launchFetchIsDone(received: received, total: total) {
+                    endLaunchFetch()
+                } else {
+                    launchFetch = LaunchFetch(received: received, total: total)
+                    waitForLaunchFetch()
+                }
             }
         }
     }

@@ -247,6 +247,9 @@ public enum PeerEvent: Hashable, Sendable {
     case syncFinished(SyncSummary)
     /// Changes arriving from a vault just joined; `total` is nil while it is not known.
     case fetchProgress(received: Int, total: Int?)
+    /// What this device keeps of its pairing changed with no call here: a peer handed over a new
+    /// vault key, or the ticket this device accepted was spent.
+    case pairingChanged
 }
 
 /// Where BudKit pairs devices and reads who is paired. It mirrors what the Rust bindings export on

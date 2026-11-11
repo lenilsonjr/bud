@@ -46,6 +46,7 @@ struct TVShell: View {
     @ObservedObject private var flags = Flags.shared
     @FocusState private var focusedTab: TVTab?
     @FocusState private var searchLit: Bool
+    @Environment(\.scenePhase) private var scenePhase
 
     init(store: BudStore) {
         self.store = store
@@ -53,6 +54,21 @@ struct TVShell: View {
     }
 
     var body: some View {
+        if let fetch = devices.launchFetch {
+            // The cache was cleared: no card shows until the vault is back from the peers. Menu
+            // stops waiting, for a peer that is not around.
+            TVFetchScreen(text: TVDevicesText.launchFetchBody, received: fetch.received, total: fetch.total)
+                // Focusable, so Menu reaches it rather than leaving the app.
+                .focusable()
+                .onExitCommand { devices.endLaunchFetch() }
+                .preferredColorScheme(flags.appearance.colorScheme)
+                .task { await devices.start() }
+        } else {
+            shell
+        }
+    }
+
+    private var shell: some View {
         VStack(spacing: 0) {
             tabs
             switch tab {
@@ -87,12 +103,20 @@ struct TVShell: View {
             // The first sync finished before the fetch reported a total: the cards can open.
             if fetching { finishFetch() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // The node runs while the app is up; back from the background it syncs at once,
+            // rather than on its next round, so the TV carries what one peer left for another.
+            if phase == .active { Task { await devices.syncNow() } }
+            // On the way out the kept pairing is brought up to date, in case the app is not
+            // back before the cache is cleared.
+            if phase != .active { devices.pairingMayHaveChanged() }
+        }
     }
 
     /// G18 while the vault comes over; the cards open on their own when it is done.
     @ViewBuilder private var fetchScreen: some View {
         if case let .joined(device, received, total) = devices.joinPhase {
-            TVFetchScreen(device: device, received: received, total: total)
+            TVFetchScreen(text: TVDevicesText.fetchBody(from: device), received: received, total: total)
         } else {
             Theme.window.ignoresSafeArea()
         }

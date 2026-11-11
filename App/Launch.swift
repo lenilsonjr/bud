@@ -38,14 +38,30 @@ enum Launch {
     /// not open leaves the app on the JSON file, as before; a node that will not start leaves the
     /// vault unsynced, alone in Settings. A tour starts no node; an app launched for pictures
     /// opens its vault and does none of the rest: no node, no source, no trigger, no old file.
+    ///
+    /// On the Apple TV the vault is a cache. When the vault takes the pairing kept in the
+    /// Keychain (it has no node key and no peers of its own, as after the system cleared Caches,
+    /// or a restore was cut short), the pairing comes back and the cards wait for the first fetch
+    /// from the peers. The index is never deleted here.
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
+        let keeper = pairingKeeper
+        let kept = keeper?.kept
+        // An index gone with buds left in the folder: they would come back as new buds beside
+        // the peers' own, so they go before the first scan.
+        if kept != nil, paths.fetchesFromPeer() { paths.emptyVaultFolder() }
         guard let vault = try? RustVault(paths: paths) else {
             let store = BudStore()
             if !forPictures { listenForCaptures(into: store) }
             return store
         }
+        let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
+        // Decided by the vault's state, one small read of the index, so the wait is up before the
+        // first card; the restore itself runs off the main thread. Tours and pictures start no
+        // node, so nothing would end the wait.
+        let restoring = !onTour && kept.map { (try? vault.core.takesPairing(pairing: $0)) == true } == true
         let store = BudStore(vault: vault)
+        if restoring { store.devices.awaitLaunchFetch() }
         #if !os(tvOS)
         // The TV shows no soil, only the source rows of buds planted elsewhere, and keeps a copy
         // of the vault that fires no trigger of its own. Pictures poll no source either.
@@ -59,17 +75,36 @@ enum Launch {
         let kind = BudStore.platformSource
         let name = deviceName
         guard !forPictures else { return store }
-        let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
         Task.detached(priority: .userInitiated) {
             if bringOldBuds(into: vault, platform: platform) { await store.reload() }
             // After the old file: it plants only into an empty vault, and a capture landing
             // first would keep it out. Lines captured meanwhile wait in the relay.
             await listenForCaptures(into: store)
             guard !onTour else { return }
+            if restoring, let kept {
+                do {
+                    if !(try vault.core.restorePairing(pairing: kept)) { await devices.endLaunchFetch() }
+                } catch {
+                    // A node started now would make a key of its own, and the kept pairing could
+                    // not come back after it: the next launch tries again.
+                    NSLog("Bud: the kept pairing did not come back: \(error)")
+                    await devices.endLaunchFetch()
+                    return
+                }
+            }
             do {
                 let peers = try RustPeers(vault: vault, kind: kind, name: name)
                 await devices.use(peers)
+                if let keeper { await keepPairing(of: vault, in: keeper, following: devices) }
+                if restoring {
+                    // Twice the core's session timeout: one slow session with a peer that is
+                    // there ends before the wait gives up.
+                    await devices.startLaunchFetchPatience(2 * TimeInterval(sessionTimeoutSeconds()))
+                    // A cleared TV asks its peers at once rather than on the node's next round.
+                    await devices.syncNow()
+                }
             } catch {
+                if restoring { await devices.endLaunchFetch() }
                 NSLog("Bud: the sync node did not start: \(error)")
             }
         }
@@ -82,6 +117,31 @@ enum Launch {
         #if !os(tvOS)
         CaptureRelay.shared.listen { line in store.capture(line) }
         #endif
+    }
+
+    /// Where the pairing is kept apart from the vault: only on the Apple TV, whose vault and
+    /// index the system may clear.
+    private static var pairingKeeper: PairingKeeper? {
+        #if os(tvOS)
+        return PairingKeeper(store: KeychainTokens(service: PairingKeeper.service))
+        #else
+        return nil
+        #endif
+    }
+
+    /// The pairing kept up to date for as long as the app runs.
+    private static var pairingSync: PairingSync?
+
+    /// Keeps the pairing up to date while the app runs: now, after every change the devices or
+    /// the node tell of, when the app leaves the foreground, and every few minutes besides.
+    /// One step at a time, so an older read never lands after a newer one.
+    private static func keepPairing(of vault: RustVault, in keeper: PairingKeeper, following devices: DeviceStore) async {
+        let sync = PairingSync(keeper: keeper) { try vault.core.pairing() }
+        pairingSync = sync
+        devices.onPairingChanged = { Task { await sync.keep() } }
+        devices.onUnpaired = { Task { await sync.forget() } }
+        await sync.keep()
+        await sync.start(every: 5 * 60)
     }
 
     /// Plants the buds a device kept in the old JSON file into its empty vault, once, and sets

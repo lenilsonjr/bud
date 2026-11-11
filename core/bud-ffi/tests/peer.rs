@@ -310,7 +310,12 @@ fn a_listener_hears_the_ticket_go_and_the_size_of_a_first_fetch() {
         heard_by_b.0.lock().unwrap().get(2),
         Some(PeerEvent::SyncFinished { summary }) if summary.created > 0
     ));
-    assert_eq!(heard_by_b.0.lock().unwrap().len(), 3);
+    // And the spent ticket, which changes what b keeps of its pairing.
+    assert_eq!(
+        heard_by_b.0.lock().unwrap().get(3),
+        Some(&PeerEvent::PairingChanged)
+    );
+    assert_eq!(heard_by_b.0.lock().unwrap().len(), 4);
     // A stopped node tells no one anything more, and refuses a new listener.
     a.node.stop();
     assert!(a.node.listen(Box::new(Heard::default())).is_err());
@@ -363,4 +368,37 @@ fn a_tv_shows_a_request_and_the_phone_confirms_its_words_and_brings_the_key() {
         std::fs::read_to_string(t.dir.path().join("Newsletter.md")).is_ok()
     });
     assert!(t.node.join_request_qr("bud1abc".to_string()).is_err());
+}
+
+#[test]
+fn a_kept_pairing_brings_a_cleared_device_back_as_itself() {
+    let (a, b) = paired();
+    b.node.sync_now().unwrap();
+    assert!(a.vault.pairing().unwrap().is_some());
+    let kept = b.vault.pairing().unwrap().unwrap();
+    let id = b.node.id().unwrap();
+    b.node.stop();
+    drop(b);
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = open_vault(
+        dir.path().to_str().unwrap().to_string(),
+        index.path().join("index.db").to_str().unwrap().to_string(),
+    )
+    .unwrap();
+    assert!(vault.pairing().unwrap().is_none());
+    assert!(vault.restore_pairing(kept.clone()).unwrap());
+    assert!(!vault.restore_pairing(kept).unwrap(), "once");
+    let node = start_node(Arc::clone(&vault), RelaySetting::Off).unwrap();
+    assert_eq!(node.id().unwrap(), id);
+    node.sync_now().unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("Newsletter/Pick a name.md")).unwrap(),
+        "Short names read better.\n"
+    );
+    assert!(matches!(
+        vault.restore_pairing(vec![1, 2, 3]),
+        Err(VaultError::Invalid { .. })
+    ));
 }

@@ -218,6 +218,8 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
                 created: Int(summary.created), updated: Int(summary.updated), written: Int(summary.written),
                 moved: Int(summary.moved), ops: Int(summary.ops)
             ))
+        case .pairingChanged:
+            return .pairingChanged
         case .keyRotation, .rotationDone:
             return nil
         }

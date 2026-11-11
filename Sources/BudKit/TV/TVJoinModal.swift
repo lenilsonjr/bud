@@ -131,10 +131,11 @@ struct TVJoinModal: View {
 }
 
 /// First sync on Apple TV (G18): the TV keeps its copy in a cache and starts empty, so after
-/// joining it fetches everything before it shows a card. One quiet screen; the caller takes it
-/// away when the fetch is over.
+/// joining, or after the cache was cleared, it fetches everything before it shows a card. One
+/// quiet screen; the caller takes it away when the fetch is over.
 struct TVFetchScreen: View {
-    let device: Device
+    /// What is being fetched from where.
+    let text: String
     let received: Int
     let total: Int?
 
@@ -154,7 +155,7 @@ struct TVFetchScreen: View {
             Text("Getting your buds")
                 .textStyle(Self.title)
                 .foregroundStyle(Theme.text)
-            Text(TVDevicesText.fetchBody(from: device))
+            Text(text)
                 .textStyle(Self.body)
                 .foregroundStyle(Theme.text2)
                 .multilineTextAlignment(.center)

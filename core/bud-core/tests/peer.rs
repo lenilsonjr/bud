@@ -503,8 +503,13 @@ fn rotating_the_key_moves_the_remaining_peers_and_turns_the_old_key_away() {
     // A ticket made before the rotation.
     let stale = a.node.ticket_with_addresses().unwrap().encode();
     a.node.forget_peer(&c.node.id()).unwrap();
+    let heard_by_b = Recorder::listening(&b.node);
     let report = a.node.rotate_key().unwrap();
     assert_eq!(report.reached, 1);
+    // b is told its pairing changed, so a copy of it kept elsewhere follows the new key.
+    eventually("b hears its key changed", || {
+        heard_by_b.events().contains(&NodeEvent::PairingChanged)
+    });
     let new = a.node.ticket().unwrap().key;
     assert_ne!(new, old);
     assert_eq!(b.node.ticket().unwrap().key, new, "b got the new key");
@@ -569,10 +574,12 @@ fn the_maker_hears_who_redeemed_its_ticket_and_the_taker_hears_the_size_of_the_f
         matches!(&events[2], NodeEvent::SyncFinished(report) if report.created > 0),
         "{events:?}"
     );
-    assert_eq!(events.len(), 3);
+    // And the ticket b accepted is spent, which changes what b keeps of its pairing.
+    assert_eq!(events[3], NodeEvent::PairingChanged);
+    assert_eq!(events.len(), 4);
     // A later sync is not a first fetch and brings nothing, so it says nothing.
     b.node.sync_now().unwrap();
-    assert_eq!(heard_by_b.events().len(), 3);
+    assert_eq!(heard_by_b.events().len(), 4);
     assert_eq!(heard_by_a.events().len(), 2);
 }
 
@@ -1070,4 +1077,162 @@ fn a_malformed_request_is_refused_and_an_edited_one_shows_other_words() {
     let written = format!("{shown:?}");
     assert!(!written.contains("secret"), "{written}");
     assert!(written.contains(&shown.id()));
+}
+
+#[test]
+fn a_vault_with_no_peer_keeps_no_pairing() {
+    let a = Peer::new(Some(&fixture()), None);
+    assert_eq!(a.vault.lock().unwrap().pairing().unwrap(), None);
+}
+
+#[test]
+fn a_device_that_lost_its_folder_and_index_comes_back_with_its_kept_pairing() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    b.node.rename_peer(&a.node.id(), Some("Studio")).unwrap();
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    let id = b.node.id();
+    // The cache is cleared: the folder and the index go, the node with them.
+    drop(b);
+
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(vault.restore_pairing(&kept).unwrap());
+    let vault = Arc::new(Mutex::new(vault));
+    let node = Node::start_with(
+        Arc::clone(&vault),
+        NodeOptions {
+            relay: Relay::Off,
+            interval: None,
+            identity: Identity::default(),
+        },
+    )
+    .unwrap();
+    let c = Peer {
+        vault,
+        dir,
+        index,
+        node,
+    };
+    assert_eq!(c.node.id(), id, "the same device, by its node key");
+    let peers = c.node.peers().unwrap();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].id, a.node.id());
+    assert_eq!(peers[0].label.as_deref(), Some("Studio"));
+
+    // The first session fetches the whole vault, and says so.
+    let heard = Recorder::listening(&c.node);
+    c.node.sync_now().unwrap();
+    let total = a.vault.lock().unwrap().bud_count().unwrap();
+    assert_eq!(
+        heard.events()[..2],
+        [
+            NodeEvent::FetchProgress {
+                received: 0,
+                total: Some(total),
+            },
+            NodeEvent::FetchProgress {
+                received: total,
+                total: Some(total),
+            },
+        ]
+    );
+    for name in [
+        "Gift ideas.md",
+        "Launch the newsletter.md",
+        "Launch the newsletter/Pick a name/Shortlist three candidates.md",
+        "Routines/Weekly review.md",
+    ] {
+        assert_eq!(c.read(name), a.read(name), "{name}");
+    }
+
+    // And it is a peer like before: an edit made on it reaches the other.
+    let name = "Gift ideas.md";
+    let edited = format!("{}Candles.\n", c.read(name).unwrap());
+    c.write(name, &edited);
+    c.node.sync_now().unwrap();
+    eventually("the edit reaches a", || {
+        a.read(name) == Some(edited.clone())
+    });
+}
+
+#[test]
+fn a_kept_pairing_never_replaces_a_live_one() {
+    let (_a, b) = paired(None);
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    // b has its peers and its key: the copy changes nothing.
+    assert!(!b.vault.lock().unwrap().restore_pairing(&kept).unwrap());
+    // A fresh index on which a node already made its key refuses it too.
+    let other = Peer::new(None, None);
+    assert!(!other.vault.lock().unwrap().restore_pairing(&kept).unwrap());
+    assert!(other.node.peers().unwrap().is_empty());
+}
+
+#[test]
+fn a_damaged_pairing_is_refused_and_leaves_the_index_bare() {
+    let (_a, b) = paired(None);
+    let mut kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    kept.truncate(kept.len() / 2);
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(vault.restore_pairing(&kept).is_err());
+    assert!(vault.restore_pairing(b"").is_err());
+    assert!(!index.path().join("node.key").exists());
+}
+
+#[test]
+fn a_restore_cut_short_after_its_rows_is_taken_again() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    drop(b);
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(vault.takes_pairing(&kept).unwrap());
+    assert!(vault.restore_pairing(&kept).unwrap());
+    // The key goes, as if the restore stopped between the rows and the key.
+    std::fs::remove_file(index.path().join("node.key")).unwrap();
+    assert!(
+        vault.takes_pairing(&kept).unwrap(),
+        "rows of the kept pairing alone"
+    );
+    assert!(vault.restore_pairing(&kept).unwrap());
+    assert!(index.path().join("node.key").is_file());
+    assert!(!index.path().join("node.key.new").exists());
+    // Whole now: nothing more to take.
+    assert!(!vault.takes_pairing(&kept).unwrap());
+    assert!(!vault.restore_pairing(&kept).unwrap());
+    let node = Node::start_with(
+        Arc::new(Mutex::new(vault)),
+        NodeOptions {
+            relay: Relay::Off,
+            interval: None,
+            identity: Identity::default(),
+        },
+    )
+    .unwrap();
+    assert_eq!(node.peers().unwrap()[0].id, a.node.id());
+}
+
+#[test]
+fn a_kept_node_key_with_no_peers_takes_its_own_pairing_only() {
+    let (_a, b) = paired(None);
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    let key = std::fs::read(b.index.path().join("node.key")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    std::fs::write(index.path().join("node.key"), &key).unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(vault.restore_pairing(&kept).unwrap(), "the same key");
+    assert_eq!(std::fs::read(index.path().join("node.key")).unwrap(), key);
+
+    // Another key with no peers: that device is someone else.
+    let index = tempfile::tempdir().unwrap();
+    std::fs::write(index.path().join("node.key"), [9u8; 32]).unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(!vault.takes_pairing(&kept).unwrap());
+    assert!(!vault.restore_pairing(&kept).unwrap());
 }

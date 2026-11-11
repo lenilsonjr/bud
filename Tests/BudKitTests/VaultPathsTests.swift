@@ -37,10 +37,60 @@ final class VaultPathsTests: XCTestCase {
         }
     }
 
-    func testOnlyAnEmptyVaultOnTheTVFetchesFromAPeer() {
-        XCTAssertTrue(paths(.tvOS).fetchesFromPeer(vaultFolderIsEmpty: true))
-        XCTAssertFalse(paths(.tvOS).fetchesFromPeer(vaultFolderIsEmpty: false))
-        XCTAssertFalse(paths(.macOS).fetchesFromPeer(vaultFolderIsEmpty: true))
-        XCTAssertFalse(paths(.iOS).fetchesFromPeer(vaultFolderIsEmpty: true))
+    func testOnlyAClearedCacheOnTheTVFetchesFromAPeer() {
+        XCTAssertTrue(paths(.tvOS).fetchesFromPeer(indexIsMissing: true))
+        XCTAssertFalse(paths(.tvOS).fetchesFromPeer(indexIsMissing: false))
+        XCTAssertFalse(paths(.macOS).fetchesFromPeer(indexIsMissing: true))
+        XCTAssertFalse(paths(.iOS).fetchesFromPeer(indexIsMissing: true))
+    }
+
+    /// A container in a fresh temporary folder.
+    private func temporary(_ platform: VaultPlatform) -> VaultPaths {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        return VaultPaths(platform: platform, base: base)
+    }
+
+    func testAnEmptyFolderBesideItsIndexOpensAsItIs() throws {
+        let tv = temporary(.tvOS)
+        try FileManager.default.createDirectory(at: tv.vaultFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tv.indexFolder, withIntermediateDirectories: true)
+        try Data("index".utf8).write(to: tv.indexFile)
+        XCTAssertFalse(tv.fetchesFromPeer())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tv.indexFile.path), "the index stays")
+    }
+
+    func testAClearedCacheFetches() {
+        let tv = temporary(.tvOS)
+        XCTAssertTrue(tv.fetchesFromPeer())
+    }
+
+    func testAnIndexGoneWhileBudsRemainStillFetches() throws {
+        let tv = temporary(.tvOS)
+        try FileManager.default.createDirectory(at: tv.vaultFolder, withIntermediateDirectories: true)
+        try Data("A note.\n".utf8).write(to: tv.vaultFolder.appendingPathComponent("Gift ideas.md"))
+        XCTAssertTrue(tv.fetchesFromPeer())
+    }
+
+    func testLeftoversInTheTVFolderGoAndTheFolderStays() throws {
+        let tv = temporary(.tvOS)
+        let files = FileManager.default
+        try files.createDirectory(at: tv.vaultFolder.appendingPathComponent("Routines"), withIntermediateDirectories: true)
+        try Data().write(to: tv.vaultFolder.appendingPathComponent("Gift ideas.md"))
+        try Data().write(to: tv.vaultFolder.appendingPathComponent("Routines/Weekly review.md"))
+        tv.emptyVaultFolder()
+        XCTAssertEqual(try files.contentsOfDirectory(atPath: tv.vaultFolder.path), [])
+    }
+
+    func testTheMacFolderIsNeverEmptied() throws {
+        let mac = temporary(.macOS)
+        try FileManager.default.createDirectory(at: mac.vaultFolder, withIntermediateDirectories: true)
+        try Data().write(to: mac.vaultFolder.appendingPathComponent("Gift ideas.md"))
+        mac.emptyVaultFolder()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: mac.vaultFolder.path), ["Gift ideas.md"])
+    }
+
+    func testTheMacNeverFetchesForAMissingIndex() {
+        XCTAssertFalse(temporary(.macOS).fetchesFromPeer())
     }
 }
