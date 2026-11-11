@@ -152,6 +152,27 @@ targets:
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
         NSLocalNetworkUsageDescription: Bud finds your other devices on this network to keep the vault in sync.
+  # The iOS screen catalog: unit tests hosted in the app on a simulator, which draw each screen of
+  # the table in Tests/BudKitSnapshots/CatalogScreens.swift in the app's own window and keep the
+  # pictures. Pictures to look at, never a gate; scripts/ios-catalog.sh runs it.
+  Bud-iOS-Catalog:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - Tests/BudCatalogIOS
+      - Tests/BudKitSnapshots/CatalogScreens.swift
+      - Tests/BudKitSnapshots/StillPictures.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).$(APP_SLUG).catalog
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Bud.app/Bud
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: Bud-iOS
+      - package: BudKit
+        product: BudKit
 schemes:
   Bud iOS:
     build:
@@ -177,3 +198,15 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # The iOS catalog on a simulator. The -bud launch argument tells the host app it is drawing
+  # pictures, so it starts no sync node.
+  Bud iOS Catalog:
+    build:
+      targets:
+        Bud-iOS-Catalog: [test]
+    test:
+      config: Debug
+      targets:
+        - Bud-iOS-Catalog
+      commandLineArguments:
+        "-bud-pictures": true

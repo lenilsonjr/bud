@@ -1,12 +1,9 @@
 import XCTest
 @testable import BudKit
 
-#if canImport(SwiftUI) && os(macOS)
-import AppKit
-import SwiftUI
-
-/// What every picture shares: the one moment it is taken at, the seed world on that clock, the
-/// folder `BUD_SNAPSHOT_DIR` names, and one frame rendered under a light or dark appearance.
+#if canImport(SwiftUI)
+/// What every picture shares, on the Mac and in the iOS app: the one moment it is taken at, the
+/// seed world on that clock, and the folder `BUD_SNAPSHOT_DIR` names.
 extension XCTestCase {
     /// The one moment every picture is taken at, so two runs draw the same days and counts.
     var stillClock: @Sendable () -> Date { { Tree.stillNow } }
@@ -55,7 +52,15 @@ extension XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
+}
+#endif
 
+#if canImport(SwiftUI) && os(macOS)
+import AppKit
+import SwiftUI
+
+/// One frame rendered under a light or dark appearance, and the picture as PNG.
+extension XCTestCase {
     /// One frame at `scale` pixels per point, with no animation in flight, so a picture never
     /// lands mid-transition.
     @MainActor

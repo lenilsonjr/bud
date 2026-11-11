@@ -11,6 +11,8 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
 - `Tests/BudKitTests` — model, layout and theme tests; they run on Linux too.
 - `Tests/BudKitSnapshots` — renders the canvas to PNGs when `BUD_SNAPSHOT_DIR` is set (macOS only);
   every pull request attaches them as an artifact.
+- `Tests/BudCatalogIOS` — the same screen catalog drawn by the iOS app on a simulator, unit tests
+  hosted in the app (the `Bud iOS Catalog` scheme); pictures to look at, never compared.
 - `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS, tvOS) that hosts
   `BudRootView` from `BudKit`, or `BudTVView` on Apple TV: the same orbit canvas with the
   remote moving the light from card to card, one line of capture, Play/Pause to tick a to-do.
@@ -26,6 +28,7 @@ swift run BudMac          # the macOS runner, no Xcode project needed
 swift test                # model + layout tests (run on Linux too)
 cargo test --workspace    # the Rust core's tests
 scripts/compare-screens.sh develop   # which screens moved since develop (macOS); no ref: since the last release
+scripts/ios-catalog.sh "iPad Pro 13-inch (M4)"   # the iOS catalog of the working tree, into build/screens-ios
 ```
 
 For the real apps, build the Rust core, then generate the Xcode project (needs rustup and
