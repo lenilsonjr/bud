@@ -43,13 +43,18 @@ public struct RotationProgress: Equatable, Sendable {
     public var done: Int
     /// What each device tried answered: true when it took the new key.
     public var reports: [String: Bool]
+    /// The devices that said they removed this one: no longer counted, and left off the dialog.
+    public var removed: Set<String>
     /// Set once the rotation is over.
     public var result: RotationResult?
 
-    public init(total: Int, done: Int = 0, reports: [String: Bool] = [:], result: RotationResult? = nil) {
+    public init(
+        total: Int, done: Int = 0, reports: [String: Bool] = [:], removed: Set<String> = [], result: RotationResult? = nil
+    ) {
         self.total = total
         self.done = done
         self.reports = reports
+        self.removed = removed
         self.result = result
     }
 }
@@ -434,9 +439,10 @@ public final class DeviceStore: ObservableObject {
                 rotation?.done += 1
                 rotation?.reports[id] = reached
             case let .removed(id):
-                // Not one to reach any more: it leaves the count and the list.
+                // Not one to reach any more: it leaves the dialog's count and lines. The list
+                // follows the node, which tells when it lets the device go.
                 rotation?.total -= 1
-                devices.removeAll { $0.id == id }
+                rotation?.removed.insert(id)
             case let .done(result):
                 rotation?.result = result
                 if result.failed { rotation = nil }

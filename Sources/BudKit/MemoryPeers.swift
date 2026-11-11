@@ -306,12 +306,17 @@ public actor MemoryPeers: Peers {
         var reached = 0
         var missed: [String] = []
         var steps: [RotationStep] = []
+        var dropped: [String] = []
         for id in removing.sorted() {
             guard all.contains(where: { $0.id == id && !$0.isThisDevice }) else { continue }
             all.removeAll { $0.id == id }
+            missing.remove(id)
+            dropped.append(id)
             steps.append(.removed(id: id))
         }
         removing = []
+        // The node tells each device it lets go, as it does outside a rotation.
+        for id in dropped { emit(.deviceRemoved(id: id)) }
         for index in all.indices where !all[index].isThisDevice {
             let misses = missing.contains(all[index].id)
             all[index].missed = misses
