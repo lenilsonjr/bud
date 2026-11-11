@@ -62,7 +62,9 @@ public struct PairingKeeper: Sendable {
     /// Lets the kept copy go, whatever it holds, damaged or not. False when it could not.
     @discardableResult
     public func forget() -> Bool {
-        guard token != nil else { return true }
+        // Only a delete this keeper made says the Keychain is empty: a read that found nothing
+        // may have failed, as before the first unlock, and the copy may still be there.
+        guard !held.isEmpty else { return true }
         return write(nil)
     }
 
@@ -80,7 +82,9 @@ public struct PairingKeeper: Sendable {
     }
 
     /// The text kept in the Keychain. The keeper is its only writer while the app runs, so it
-    /// reads the Keychain once and remembers what it wrote since.
+    /// reads the Keychain once and remembers what it wrote since. A read that found nothing is
+    /// not remembered: the Keychain tells no missing item from one it would not give, so the
+    /// next look reads again.
     private var token: String? {
         held.text { store.token(for: Self.account) }
     }
@@ -110,13 +114,19 @@ private final class Held: @unchecked Sendable {
     private let lock = NSLock()
     private var known: String??
 
-    /// The text, read with `read` the first time and remembered after.
+    /// The text, read with `read` until a read finds some, and remembered after.
     func text(_ read: () -> String?) -> String? {
         lock.lock(); defer { lock.unlock() }
         if let known { return known }
         let text = read()
-        known = .some(text)
+        if text != nil { known = .some(text) }
         return text
+    }
+
+    /// Whether the keeper itself deleted the copy, and wrote nothing since.
+    var isEmpty: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return known == .some(nil)
     }
 
     /// Remembers `text`, or forgets what was known with nil, so the next look reads again.
