@@ -63,7 +63,8 @@ const REQUEST_PREFIX: &str = "budr1";
 const WORDS_CONTEXT: &[u8] = b"bud/join/1";
 /// Bound to the data a message is sealed with, so a sealed message of another use never opens.
 const SEAL_CONTEXT: &[u8] = b"bud/sync/1";
-const NODE_KEY_FILE: &str = "node.key";
+/// The name of the node key's file in the index folder. The apps read it to tell a cleared cache.
+pub const NODE_KEY_FILE: &str = "node.key";
 /// The largest message accepted once the peer has proved it holds the key, sealed.
 const MAX_FRAME: usize = 256 * 1024 * 1024;
 /// The largest first message accepted from a caller that has proved nothing yet.
@@ -758,15 +759,19 @@ impl Vault {
 
     /// This device's pairing, encoded, to keep where a cleared cache cannot take it: the node key,
     /// the vault key and the peers. None while the vault has no peer or no node has run on it,
-    /// since then there is nothing to come back to.
+    /// since then there is nothing to come back to. Every list is in the order of its node ids,
+    /// so the same rows always encode the same, and a copy kept elsewhere is written only when
+    /// something changed.
     pub fn pairing(&self) -> Result<Option<Vec<u8>>> {
         let Some(node_key) = self.node_key_bytes()? else {
             return Ok(None);
         };
         let conn = lock(&self.conn);
-        let peers = rows(&conn, "SELECT node, relay, addrs, added FROM peers", |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-        })?;
+        let peers = rows(
+            &conn,
+            "SELECT node, relay, addrs, added FROM peers ORDER BY node",
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
         if peers.is_empty() {
             return Ok(None);
         }
@@ -781,17 +786,27 @@ impl Vault {
                 .try_into()
                 .map_err(|_| Error::Invalid("peer: the vault key is damaged".to_string()))?,
             peers,
-            denied: rows(&conn, "SELECT node FROM peer_denied", |r| r.get(0))?,
-            missed: rows(&conn, "SELECT node FROM peer_missed", |r| r.get(0))?,
-            tickets: rows(&conn, "SELECT node, ticket FROM peer_ticket", |r| {
-                Ok((r.get(0)?, r.get(1)?))
+            denied: rows(&conn, "SELECT node FROM peer_denied ORDER BY node", |r| {
+                r.get(0)
             })?,
-            identities: rows(&conn, "SELECT node, kind, name FROM peer_identity", |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            missed: rows(&conn, "SELECT node FROM peer_missed ORDER BY node", |r| {
+                r.get(0)
             })?,
-            labels: rows(&conn, "SELECT node, label FROM peer_label", |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?,
+            tickets: rows(
+                &conn,
+                "SELECT node, ticket FROM peer_ticket ORDER BY node",
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?,
+            identities: rows(
+                &conn,
+                "SELECT node, kind, name FROM peer_identity ORDER BY node",
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?,
+            labels: rows(
+                &conn,
+                "SELECT node, label FROM peer_label ORDER BY node",
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?,
         };
         Ok(Some(postcard::to_stdvec(&pairing).map_err(peer_error)?))
     }
@@ -836,7 +851,18 @@ impl Vault {
     /// [`Vault::takes_pairing`]), so a kept copy never overwrites a live pairing. The rows land
     /// first and the node key after them, so a restore cut short leaves no key without its
     /// peers and is taken again. Call it before a node starts on the vault.
+    ///
+    /// A ticket this device accepted and had not spent when the copy was taken comes back only
+    /// while the vault that made it could still redeem it: one the first session spent after
+    /// the copy was taken stays out once that while is over.
     pub fn restore_pairing(&self, bytes: &[u8]) -> Result<bool> {
+        self.restore_pairing_at(bytes, SystemTime::now())
+    }
+
+    /// [`Vault::restore_pairing`] as if it ran at `now`. For tests of a copy brought back long
+    /// after it was taken, which cannot wait that long.
+    #[doc(hidden)]
+    pub fn restore_pairing_at(&self, bytes: &[u8], now: SystemTime) -> Result<bool> {
         let pairing = Pairing::decode(bytes)?;
         if !self.takes(&pairing)? {
             return Ok(false);
@@ -867,7 +893,7 @@ impl Vault {
                 params![node],
             )?;
         }
-        for (node, ticket) in &pairing.tickets {
+        for (node, ticket) in pairing.live_tickets(now) {
             tx.execute(
                 "INSERT OR IGNORE INTO peer_ticket (node, ticket) VALUES (?1, ?2)",
                 params![node, ticket],
@@ -939,6 +965,25 @@ impl Pairing {
             ));
         }
         Ok(pairing)
+    }
+
+    /// The tickets that may still be redeemed at `now`. A ticket is spent by the first session
+    /// with its peer, which may have run after the copy was taken, and the copy cannot tell. The
+    /// time can: the peer was added when this device accepted the ticket (a ticket of a known
+    /// peer is refused), and the vault that made it redeems it only within [`TICKET_LIFETIME`]
+    /// of making it, which came before. Past that, the ticket is spent or void either way, and
+    /// stays out. Within it, it may be live and comes back; a spent one then does no harm, since
+    /// the peer knows this device and ignores it, and the first session clears it.
+    fn live_tickets(&self, now: SystemTime) -> impl Iterator<Item = &(String, Vec<u8>)> {
+        let now = now
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.tickets.iter().filter(move |(node, _)| {
+            self.peers.iter().any(|(peer, _, _, added)| {
+                peer == node && now - added <= TICKET_LIFETIME.as_secs() as i64
+            })
+        })
     }
 }
 
