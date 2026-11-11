@@ -82,22 +82,28 @@ enum Launch {
             // first would keep it out. Lines captured meanwhile wait in the relay.
             await listenForCaptures(into: store)
             guard !onTour else { return }
+            var restored = restoring
             if restoring, let kept {
                 do {
-                    if !(try vault.core.restorePairing(pairing: kept)) { await devices.endLaunchFetch() }
+                    if !(try vault.core.restorePairing(pairing: kept)) {
+                        restored = false
+                        await devices.endLaunchFetch()
+                    }
                 } catch {
-                    // A node started now would make a key of its own, and the kept pairing could
-                    // not come back after it: the next launch tries again.
+                    // A restore that failed once would likely fail on every launch and leave the TV
+                    // with no node at all. The kept copy goes, and the TV starts unpaired, ready to
+                    // be invited again.
                     NSLog("Bud: the kept pairing did not come back: \(error)")
+                    _ = keeper?.forget()
+                    restored = false
                     await devices.endLaunchFetch()
-                    return
                 }
             }
             do {
                 let peers = try RustPeers(vault: vault, kind: kind, name: name)
                 await devices.use(peers)
                 if let keeper { await keepPairing(of: vault, in: keeper, following: devices) }
-                if restoring {
+                if restored {
                     // The node dials its peers one after another, each up to the core's session
                     // timeout: the wait gives them all that, and one session more.
                     await devices.startLaunchFetchPatience(sessionTimeout: TimeInterval(sessionTimeoutSeconds()))
@@ -105,7 +111,7 @@ enum Launch {
                     await devices.syncNow()
                 }
             } catch {
-                if restoring { await devices.endLaunchFetch() }
+                if restored { await devices.endLaunchFetch() }
                 NSLog("Bud: the sync node did not start: \(error)")
             }
         }
