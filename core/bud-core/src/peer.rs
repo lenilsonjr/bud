@@ -68,7 +68,7 @@ const MAX_HELLO: usize = 16 * 1024 * 1024;
 const CHUNK: usize = 64 * 1024;
 /// How many sessions a node answers at once.
 const MAX_SESSIONS: usize = 16;
-const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
+pub const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long the person at a device that showed a join request has to keep or refuse the key a
 /// phone brought; the phone waits a session for the answer.
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(45);
@@ -308,6 +308,10 @@ pub enum NodeEvent {
     /// when buds changed; the files are written by the vault, so the watcher does not report
     /// them. Told as soon as they are applied, so a session that fails after still tells it.
     SyncFinished(SyncReport),
+    /// What this vault keeps of its pairing changed with no call on this node: a peer handed
+    /// over a new vault key, or the ticket this vault accepted was spent in its first session.
+    /// For a copy of the pairing kept elsewhere.
+    PairingChanged,
 }
 
 /// Told each [`NodeEvent`] as it happens, from the node's own threads or the thread of a call
@@ -702,6 +706,186 @@ impl Vault {
         tx.commit()?;
         Ok(())
     }
+
+    /// This device's pairing, encoded, to keep where a cleared cache cannot take it: the node key,
+    /// the vault key and the peers. None while the vault has no peer or no node has run on it,
+    /// since then there is nothing to come back to.
+    pub fn pairing(&self) -> Result<Option<Vec<u8>>> {
+        let Some(node_key) = self.node_key_bytes()? else {
+            return Ok(None);
+        };
+        let conn = lock(&self.conn);
+        let peers = rows(&conn, "SELECT node, relay, addrs, added FROM peers", |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        if peers.is_empty() {
+            return Ok(None);
+        }
+        let vault_key: Vec<u8> = conn
+            .query_row("SELECT key FROM peer_key WHERE id = 1", [], |r| r.get(0))
+            .optional()?
+            .ok_or_else(|| Error::Invalid("peer: a paired vault has no key".to_string()))?;
+        let pairing = Pairing {
+            version: PAIRING_VERSION,
+            node_key,
+            vault_key: vault_key
+                .try_into()
+                .map_err(|_| Error::Invalid("peer: the vault key is damaged".to_string()))?,
+            peers,
+            denied: rows(&conn, "SELECT node FROM peer_denied", |r| r.get(0))?,
+            missed: rows(&conn, "SELECT node FROM peer_missed", |r| r.get(0))?,
+            tickets: rows(&conn, "SELECT node, ticket FROM peer_ticket", |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?,
+            identities: rows(&conn, "SELECT node, kind, name FROM peer_identity", |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?,
+            labels: rows(&conn, "SELECT node, label FROM peer_label", |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?,
+        };
+        Ok(Some(postcard::to_stdvec(&pairing).map_err(peer_error)?))
+    }
+
+    /// Whether [`Vault::restore_pairing`] would bring `bytes` in: the vault has no node key and
+    /// no peer but those of the kept pairing, as after a cleared cache or a restore cut short;
+    /// or it has the kept node key and no peer. A vault paired on its own never takes one.
+    pub fn takes_pairing(&self, bytes: &[u8]) -> Result<bool> {
+        self.takes(&Pairing::decode(bytes)?)
+    }
+
+    fn takes(&self, pairing: &Pairing) -> Result<bool> {
+        let peers = self.peer_list()?;
+        Ok(match self.node_key_bytes()? {
+            Some(key) => peers.is_empty() && key == pairing.node_key,
+            None => peers
+                .iter()
+                .all(|peer| pairing.peers.iter().any(|(node, ..)| *node == peer.id)),
+        })
+    }
+
+    /// The node key as it is on disk, or none before a node ran on the vault.
+    fn node_key_bytes(&self) -> Result<Option<[u8; 32]>> {
+        match std::fs::read(self.index_dir.join(NODE_KEY_FILE)) {
+            Ok(bytes) => Ok(Some(bytes.try_into().map_err(|_| {
+                Error::Invalid(format!("peer: {NODE_KEY_FILE} is damaged"))
+            })?)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Bring back a pairing kept with [`Vault::pairing`]: the node starts as the same device,
+    /// with the same key and peers, and its first session with each peer fetches the whole
+    /// vault. False, and nothing changes, when the vault does not take it (see
+    /// [`Vault::takes_pairing`]), so a kept copy never overwrites a live pairing. The rows land
+    /// first and the node key after them, so a restore cut short leaves no key without its
+    /// peers and is taken again. Call it before a node starts on the vault.
+    pub fn restore_pairing(&self, bytes: &[u8]) -> Result<bool> {
+        let pairing = Pairing::decode(bytes)?;
+        if !self.takes(&pairing)? {
+            return Ok(false);
+        }
+        let key_path = self.index_dir.join(NODE_KEY_FILE);
+        let has_key = self.node_key_bytes()?.is_some();
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO peer_key (id, key) VALUES (1, ?1)
+             ON CONFLICT(id) DO UPDATE SET key = excluded.key",
+            params![pairing.vault_key.to_vec()],
+        )?;
+        for (node, relay, addrs, added) in &pairing.peers {
+            tx.execute(
+                "INSERT OR IGNORE INTO peers (node, relay, addrs, added) VALUES (?1, ?2, ?3, ?4)",
+                params![node, relay, addrs, added],
+            )?;
+        }
+        for node in &pairing.denied {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_denied (node) VALUES (?1)",
+                params![node],
+            )?;
+        }
+        for node in &pairing.missed {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_missed (node) VALUES (?1)",
+                params![node],
+            )?;
+        }
+        for (node, ticket) in &pairing.tickets {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_ticket (node, ticket) VALUES (?1, ?2)",
+                params![node, ticket],
+            )?;
+        }
+        for (node, kind, name) in &pairing.identities {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_identity (node, kind, name) VALUES (?1, ?2, ?3)",
+                params![node, kind, name],
+            )?;
+        }
+        for (node, label) in &pairing.labels {
+            tx.execute(
+                "INSERT OR IGNORE INTO peer_label (node, label) VALUES (?1, ?2)",
+                params![node, label],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+        // The key goes in last, once the rows have landed, and whole: written beside its place
+        // and moved there.
+        if !has_key {
+            let fresh = key_path.with_extension("key.new");
+            let _ = std::fs::remove_file(&fresh);
+            write_private(&fresh, &pairing.node_key)?;
+            std::fs::rename(&fresh, &key_path)?;
+        }
+        Ok(true)
+    }
+}
+
+/// The shape of a kept pairing; a change to it moves the version.
+const PAIRING_VERSION: u8 = 1;
+
+/// What [`Vault::pairing`] keeps. When each peer was last seen is left out, so the first session
+/// after a restore counts as a first fetch and tells its progress.
+#[derive(Serialize, Deserialize)]
+struct Pairing {
+    version: u8,
+    node_key: [u8; 32],
+    vault_key: [u8; 32],
+    /// Node id, relay setting, direct addresses and when it was added, as the table holds them.
+    peers: Vec<(String, String, String, i64)>,
+    denied: Vec<String>,
+    missed: Vec<String>,
+    tickets: Vec<(String, Vec<u8>)>,
+    identities: Vec<(String, Option<String>, Option<String>)>,
+    labels: Vec<(String, String)>,
+}
+
+impl Pairing {
+    fn decode(bytes: &[u8]) -> Result<Pairing> {
+        let pairing: Pairing = postcard::from_bytes(bytes)
+            .map_err(|_| Error::Invalid("peer: the kept pairing is damaged".to_string()))?;
+        if pairing.version != PAIRING_VERSION {
+            return Err(Error::Invalid(
+                "peer: the kept pairing is from another version".to_string(),
+            ));
+        }
+        Ok(pairing)
+    }
+}
+
+/// Every row of a query with no parameters, read with `row`.
+fn rows<T>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    row: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> Result<Vec<T>> {
+    let mut stmt = conn.prepare(sql)?;
+    let found = stmt.query_map([], row)?;
+    Ok(found.collect::<rusqlite::Result<_>>()?)
 }
 
 /// Seal `plain` with the vault key: a fresh nonce, then the ciphertext and its tag.
@@ -1216,7 +1400,10 @@ impl Shared {
         send.finish().map_err(peer_error)?;
         connection.close(0u32.into(), b"done");
         // The peer took the ticket; it is spent.
-        self.vault().clear_pending_ticket(&peer.id)?;
+        if ticket.is_some() {
+            self.vault().clear_pending_ticket(&peer.id)?;
+            self.emit(NodeEvent::PairingChanged);
+        }
         Ok(report)
     }
 
@@ -1414,6 +1601,7 @@ impl Shared {
                     return Err(peer_error("a stranger sent a new key"));
                 }
                 self.vault().replace_key(&new, &[])?;
+                self.emit(NodeEvent::PairingChanged);
                 self.reached(&remote_text);
                 if self.dropped_acks.load(Ordering::SeqCst) > 0 {
                     self.dropped_acks.fetch_sub(1, Ordering::SeqCst);

@@ -339,6 +339,9 @@ pub enum PeerEvent {
     /// A peer's changes were applied here in one session and changed buds, in files the watcher
     /// does not report: what they did. Told as soon as they are applied.
     SyncFinished { summary: SyncSummary },
+    /// What this vault keeps of its pairing changed with no call on this node: a peer handed
+    /// over a new vault key, or the accepted ticket was spent.
+    PairingChanged,
 }
 
 impl From<bud_core::NodeEvent> for PeerEvent {
@@ -380,6 +383,7 @@ impl From<bud_core::NodeEvent> for PeerEvent {
             NodeEvent::SyncFinished(report) => PeerEvent::SyncFinished {
                 summary: report.into(),
             },
+            NodeEvent::PairingChanged => PeerEvent::PairingChanged,
         }
     }
 }
@@ -570,6 +574,12 @@ pub struct Vault {
 }
 
 /// Open the vault at `vault_dir` with its index at `index_path`, and bring the index up to date.
+/// How long one session with a peer may take, in seconds, before it is given up.
+#[uniffi::export]
+pub fn session_timeout_seconds() -> u64 {
+    bud_core::SESSION_TIMEOUT.as_secs()
+}
+
 #[uniffi::export]
 pub fn open_vault(vault_dir: String, index_path: String) -> Result<Arc<Vault>> {
     let mut vault = bud_core::Vault::open(vault_dir, index_path)?;
@@ -613,6 +623,24 @@ impl Vault {
 
 #[uniffi::export]
 impl Vault {
+    /// This device's pairing, to keep outside a cache that may be cleared; none while it has no
+    /// peer.
+    pub fn pairing(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self.core().pairing()?)
+    }
+
+    /// Brings a kept pairing back, before a node starts on the vault. False, changing nothing,
+    /// when the vault does not take it (`takes_pairing`).
+    pub fn restore_pairing(&self, pairing: Vec<u8>) -> Result<bool> {
+        Ok(self.core().restore_pairing(&pairing)?)
+    }
+
+    /// Whether `restore_pairing` would bring the kept pairing in: the vault has no node key and
+    /// no peer of its own, or has the kept key and no peer.
+    pub fn takes_pairing(&self, pairing: Vec<u8>) -> Result<bool> {
+        Ok(self.core().takes_pairing(&pairing)?)
+    }
+
     /// Every bud in the index, parents before children.
     pub fn snapshot(&self) -> Result<Vec<BudRecord>> {
         Ok(self.core().all()?.into_iter().map(Into::into).collect())

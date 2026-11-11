@@ -74,6 +74,9 @@ public enum TVDevicesText {
         "Joined. Fetching the whole vault from \(PeerText.shortID(device.id)) \(JoinText.reachPhrase(device.reach))."
     }
 
+    /// The same screen at a launch that found the cache cleared and the pairing kept.
+    public static let launchFetchBody = "The cache was cleared. Fetching the whole vault back from your other devices."
+
     public static let fetchNote = "Cards open when it’s done"
 
     /// Whether the first fetch is over: every bud of a known total has arrived.

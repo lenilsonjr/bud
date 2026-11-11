@@ -35,9 +35,12 @@ public final class MemoryTokens: TokenStore, @unchecked Sendable {
 #if canImport(Security)
 /// Tokens in this device's Keychain, readable after the first unlock and never synced to iCloud.
 public struct KeychainTokens: TokenStore {
-    private let service = "bud.sources"
+    private let service: String
 
-    public init() {}
+    /// The tokens of the sources, or another kind of secret under its own service.
+    public init(service: String = "bud.sources") {
+        self.service = service
+    }
 
     public func token(for account: String) -> String? {
         var query = base(account)
@@ -48,13 +51,21 @@ public struct KeychainTokens: TokenStore {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Replaces the token in place, so a write that fails leaves the one before; adds it only
+    /// when there was none.
     @discardableResult
     public func set(_ token: String?, for account: String) -> Bool {
-        SecItemDelete(base(account) as CFDictionary)
-        guard let token else { return true }
-        var item = base(account)
-        item[kSecValueData as String] = Data(token.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        guard let token else {
+            let status = SecItemDelete(base(account) as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
+        }
+        let fields: [String: Any] = [
+            kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let updated = SecItemUpdate(base(account) as CFDictionary, fields as CFDictionary)
+        guard updated == errSecItemNotFound else { return updated == errSecSuccess }
+        let item = base(account).merging(fields) { _, new in new }
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 

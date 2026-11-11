@@ -11,7 +11,7 @@ public enum VaultPlatform: Sendable, Equatable {
 ///
 /// On the Mac and iPhone the vault is a folder of Markdown files in Documents and the index sits
 /// beside the app's other support files. The Apple TV keeps nothing it cannot fetch again: both
-/// live under Caches, and a launch that finds the vault empty asks a peer for it.
+/// live under Caches, and a launch that finds them cleared asks a peer for the vault.
 public struct VaultPaths: Sendable, Equatable {
     public let platform: VaultPlatform
     public let base: URL
@@ -49,9 +49,26 @@ public struct VaultPaths: Sendable, Equatable {
     }
 
     /// Whether a launch should fetch the vault from a peer before it shows cards: only where the
-    /// vault is a cache, and only while its folder is empty.
-    public func fetchesFromPeer(vaultFolderIsEmpty: Bool) -> Bool {
-        platform == .tvOS && vaultFolderIsEmpty
+    /// vault is a cache, and only when the cache was cleared. The system clears Caches as a
+    /// whole, so a missing index is the sign; an empty folder beside an index is a vault that is
+    /// empty, or whose deletions have not synced yet, and opens as it is.
+    public func fetchesFromPeer(indexIsMissing: Bool) -> Bool {
+        platform == .tvOS && indexIsMissing
+    }
+
+    /// The same, read from the disk.
+    public func fetchesFromPeer(_ files: FileManager = .default) -> Bool {
+        fetchesFromPeer(indexIsMissing: !files.fileExists(atPath: indexFile.path))
+    }
+
+    /// Clears what is left in the vault folder, keeping the folder: on the Apple TV, when the
+    /// index is gone and the vault comes back from the peers, which hold the truth. Files left
+    /// over would otherwise be read as new buds beside theirs.
+    public func emptyVaultFolder(_ files: FileManager = .default) {
+        guard platform == .tvOS else { return }
+        for name in (try? files.contentsOfDirectory(atPath: vaultFolder.path)) ?? [] {
+            try? files.removeItem(at: vaultFolder.appendingPathComponent(name))
+        }
     }
 
     private var cachesFolder: URL {

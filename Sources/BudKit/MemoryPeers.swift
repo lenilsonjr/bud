@@ -108,6 +108,11 @@ public actor MemoryPeers: Peers {
         emit(.fetchProgress(received: received, total: total))
     }
 
+    /// Tells every listener the pairing changed, as a key handed over by another device would.
+    public func emitPairingChanged() {
+        emit(.pairingChanged)
+    }
+
     /// What reading or confirming a request fails with from now on; nil lets them work.
     public func setRequestFailure(_ error: RequestError?) { requestFailure = error }
 
