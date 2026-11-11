@@ -17,6 +17,8 @@ public struct PairingKeeper: Sendable {
     static let installKey = "pairing.install"
 
     private let store: TokenStore
+    /// What the Keychain holds, once read.
+    private let held = Held()
     /// This install's id, made the first time.
     let install: String
 
@@ -33,7 +35,7 @@ public struct PairingKeeper: Sendable {
     /// The pairing this install kept last, or nil when there is none, it came from another
     /// install, or it was damaged.
     public var kept: Data? {
-        guard let text = store.token(for: Self.account) else { return nil }
+        guard let text = token else { return nil }
         let parts = text.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2, parts[0] == install else { return nil }
         return Data(base64Encoded: parts[1])
@@ -42,26 +44,85 @@ public struct PairingKeeper: Sendable {
     /// Lets a copy go that this install cannot use: another install's, or a damaged one. Called
     /// at launch, before anything reads the copy.
     public func dropForeign() {
-        guard store.token(for: Self.account) != nil, kept == nil else { return }
-        store.set(nil, for: Self.account)
+        guard token != nil, kept == nil else { return }
+        write(nil)
     }
 
     /// Keeps the vault's pairing as it is now. Nil, a vault with its node key and no peer, is an
     /// unpaired device, and the copy goes: a restore that failed starts no node and so makes no
     /// key, and a vault with a key never takes a kept copy. Writes only when it changed, so
-    /// calling it often costs a read. False when the write failed; the copy before stays.
+    /// calling it often costs a comparison. False when the write failed; the copy before stays.
     @discardableResult
     public func keep(_ pairing: Data?) -> Bool {
         guard let pairing else { return forget() }
         guard pairing != kept else { return true }
-        return store.set(install + ":" + pairing.base64EncodedString(), for: Self.account)
+        return write(install + ":" + pairing.base64EncodedString())
     }
 
     /// Lets the kept copy go, whatever it holds, damaged or not. False when it could not.
     @discardableResult
     public func forget() -> Bool {
-        guard store.token(for: Self.account) != nil else { return true }
-        return store.set(nil, for: Self.account)
+        guard token != nil else { return true }
+        return write(nil)
+    }
+
+    /// The keeper a launch with `arguments` uses, made by `make` only when one is wanted: on the
+    /// Apple TV, whose vault is a cache, and never on a tour or for pictures, which start no node
+    /// and leave the Keychain and the install id alone. A copy this install cannot use goes here,
+    /// before anything reads it.
+    public static func forLaunch(
+        platform: VaultPlatform, arguments: [String], make: () -> PairingKeeper
+    ) -> PairingKeeper? {
+        guard platform == .tvOS, !LaunchArguments.isTour(arguments) else { return nil }
+        let keeper = make()
+        keeper.dropForeign()
+        return keeper
+    }
+
+    /// The text kept in the Keychain. The keeper is its only writer while the app runs, so it
+    /// reads the Keychain once and remembers what it wrote since.
+    private var token: String? {
+        held.text { store.token(for: Self.account) }
+    }
+
+    /// Writes `text` to the Keychain, or deletes the copy with nil. A write that failed leaves
+    /// the Keychain unknown, so the next look reads it again.
+    @discardableResult
+    private func write(_ text: String?) -> Bool {
+        let written = store.set(text, for: Self.account)
+        held.note(written ? .some(text) : nil)
+        return written
+    }
+}
+
+/// What a launch was started for, read from its arguments.
+public enum LaunchArguments {
+    /// Whether a launch with these arguments is a tour or hosts pictures: every argument that
+    /// starts one begins with "-bud". Such a launch starts no node and leaves the kept pairing
+    /// alone.
+    public static func isTour(_ arguments: [String]) -> Bool {
+        arguments.contains { $0.hasPrefix("-bud") }
+    }
+}
+
+/// The Keychain text a keeper read or wrote last, shared by its copies; nil until known.
+private final class Held: @unchecked Sendable {
+    private let lock = NSLock()
+    private var known: String??
+
+    /// The text, read with `read` the first time and remembered after.
+    func text(_ read: () -> String?) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        if let known { return known }
+        let text = read()
+        known = .some(text)
+        return text
+    }
+
+    /// Remembers `text`, or forgets what was known with nil, so the next look reads again.
+    func note(_ text: String??) {
+        lock.lock(); defer { lock.unlock() }
+        known = text
     }
 }
 

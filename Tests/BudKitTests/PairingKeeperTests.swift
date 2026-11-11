@@ -146,6 +146,72 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([7]))
     }
 
+    func testALaunchReadsTheKeychainOnce() async throws {
+        let defaults = try freshDefaults()
+        let tokens = CountingTokens()
+        PairingKeeper(store: tokens, defaults: defaults).keep(Data([1, 2, 3]))
+        let counted = CountingTokens([PairingKeeper.account: try XCTUnwrap(tokens.token(for: PairingKeeper.account))])
+        let keeper = try XCTUnwrap(PairingKeeper.forLaunch(platform: .tvOS, arguments: ["Bud"]) {
+            PairingKeeper(store: counted, defaults: defaults)
+        })
+        XCTAssertEqual(keeper.kept, Data([1, 2, 3]))
+        // The first keep after the launch finds the same pairing, and the next one a new one.
+        let sync = PairingSync(keeper: keeper) { Data([1, 2, 3]) }
+        await sync.keep()
+        keeper.keep(Data([4]))
+        XCTAssertEqual(keeper.kept, Data([4]))
+        XCTAssertEqual(counted.reads, 1)
+        XCTAssertEqual(counted.writes, 1)
+    }
+
+    func testAFailedWriteReadsTheKeychainAgain() throws {
+        let tokens = RefusingTokens()
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
+        keeper.keep(Data([1]))
+        tokens.refusing = true
+        keeper.keep(Data([2]))
+        tokens.refusing = false
+        XCTAssertEqual(keeper.kept, Data([1]), "what the Keychain holds, not what was asked")
+    }
+
+    func testToursAndPicturesBuildNoKeeper() throws {
+        let tokens = CountingTokens([PairingKeeper.account: "another-install:AQID"])
+        let defaults = try freshDefaults()
+        for arguments in [["Bud", "-bud-pictures"], ["Bud", MemoryPeers.pairedArgument], ["Bud", "-bud-nearby"]] {
+            var made = 0
+            let keeper = PairingKeeper.forLaunch(platform: .tvOS, arguments: arguments) {
+                made += 1
+                return PairingKeeper(store: tokens, defaults: defaults)
+            }
+            XCTAssertNil(keeper, "\(arguments)")
+            XCTAssertEqual(made, 0, "\(arguments)")
+        }
+        XCTAssertEqual(tokens.reads, 0)
+        XCTAssertEqual(tokens.writes, 0, "another install's copy is left alone too")
+    }
+
+    func testOnlyTheTVKeepsItsPairing() {
+        for platform in [VaultPlatform.macOS, .iOS] {
+            var made = 0
+            let keeper = PairingKeeper.forLaunch(platform: platform, arguments: ["Bud"]) {
+                made += 1
+                return PairingKeeper(store: MemoryTokens(), defaults: .standard)
+            }
+            XCTAssertNil(keeper)
+            XCTAssertEqual(made, 0)
+        }
+    }
+
+    func testATVLaunchDropsAnotherInstallsCopy() throws {
+        let tokens = MemoryTokens([PairingKeeper.account: "another-install:AQID"])
+        let defaults = try freshDefaults()
+        let keeper = PairingKeeper.forLaunch(platform: .tvOS, arguments: ["Bud"]) {
+            PairingKeeper(store: tokens, defaults: defaults)
+        }
+        XCTAssertNotNil(keeper)
+        XCTAssertNil(tokens.token(for: PairingKeeper.account))
+    }
+
     func testTheTimerKeepsUntilStopped() async throws {
         let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         let vault = CountingVault()
@@ -192,12 +258,18 @@ private final class RefusingTokens: TokenStore, @unchecked Sendable {
     }
 }
 
-/// Tokens in memory that count their writes.
+/// Tokens in memory that count their reads and writes.
 private final class CountingTokens: TokenStore, @unchecked Sendable {
-    private let inner = MemoryTokens()
+    private let inner: MemoryTokens
+    private(set) var reads = 0
     private(set) var writes = 0
 
-    func token(for account: String) -> String? { inner.token(for: account) }
+    init(_ tokens: [String: String] = [:]) { inner = MemoryTokens(tokens) }
+
+    func token(for account: String) -> String? {
+        reads += 1
+        return inner.token(for: account)
+    }
 
     @discardableResult
     func set(_ token: String?, for account: String) -> Bool {

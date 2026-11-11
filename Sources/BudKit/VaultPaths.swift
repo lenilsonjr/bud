@@ -48,17 +48,20 @@ public struct VaultPaths: Sendable, Equatable {
         indexFolder.appendingPathComponent("index.db")
     }
 
-    /// The node's key inside `indexFolder`, beside the index.
-    public var nodeKeyFile: URL {
-        indexFolder.appendingPathComponent("node.key")
+    /// The node's key inside `indexFolder`, beside the index, under `name`: the core names it,
+    /// and the app hands that name on from the bindings.
+    public func nodeKeyFile(named name: String) -> URL {
+        indexFolder.appendingPathComponent(name)
     }
 
     /// Whether a launch should fetch the vault from a peer before it shows cards: only where the
     /// vault is a cache, and only when the cache was cleared. The system clears Caches as a
-    /// whole, so the index and the node key both gone is the sign; an empty folder beside an
-    /// index is a vault that is empty, or whose deletions have not synced yet, and opens as it is.
-    public func fetchesFromPeer(_ files: FileManager = .default) -> Bool {
-        platform == .tvOS && !files.fileExists(atPath: indexFile.path) && !files.fileExists(atPath: nodeKeyFile.path)
+    /// whole, so the index and the node key, under the core's `nodeKey` name, both gone is the
+    /// sign; an empty folder beside an index is a vault that is empty, or whose deletions have
+    /// not synced yet, and opens as it is.
+    public func fetchesFromPeer(nodeKey: String, _ files: FileManager = .default) -> Bool {
+        platform == .tvOS && !files.fileExists(atPath: indexFile.path)
+            && !files.fileExists(atPath: nodeKeyFile(named: nodeKey).path)
     }
 
     /// Clears what is left in the vault folder, keeping the folder: on the Apple TV, when the

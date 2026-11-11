@@ -583,6 +583,13 @@ pub fn session_timeout_seconds() -> u64 {
     bud_core::SESSION_TIMEOUT.as_secs()
 }
 
+/// The name of the node key's file in the index folder: with the index, its absence is how the
+/// apps tell a cache the system cleared.
+#[uniffi::export]
+pub fn node_key_file_name() -> String {
+    bud_core::NODE_KEY_FILE.to_string()
+}
+
 /// Whether `pairing` is a kept pairing this build can bring back, read without opening a vault.
 #[uniffi::export]
 pub fn pairing_is_usable(pairing: Vec<u8>) -> bool {
