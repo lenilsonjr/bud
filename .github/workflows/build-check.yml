@@ -83,6 +83,14 @@ jobs:
           xcodebuild -project Bud.xcodeproj -scheme "${{ matrix.scheme }}" -configuration Debug
           -destination '${{ matrix.destination }}'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      # The iOS catalog runs on a simulator on a Mac, by hand; here it is only compiled, against
+      # the app just built, so a change that breaks it shows before anyone needs the pictures.
+      - name: Compile the iOS catalog
+        if: matrix.platform == 'iOS'
+        run: >-
+          xcodebuild -project Bud.xcodeproj -scheme "Bud iOS Catalog" -configuration Debug
+          -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing
 
   # Pictures, not a gate: the canvas rendered in light and dark, attached to the run so a change can
   # be looked at before it merges. Never required by the ruleset.
