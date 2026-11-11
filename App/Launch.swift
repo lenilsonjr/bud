@@ -45,14 +45,19 @@ enum Launch {
     /// from the peers. The index is never deleted here.
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
-        let keeper = pairingKeeper
-        let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
-        // Tours and pictures start no node, so nothing would end a wait, and leave the kept
-        // pairing alone. A copy this build cannot read is no pairing either.
-        let kept = onTour ? nil : keeper?.kept.flatMap { pairingIsUsable(pairing: $0) ? $0 : nil }
+        let arguments = ProcessInfo.processInfo.arguments
+        let onTour = LaunchArguments.isTour(arguments)
+        // Only on the Apple TV, whose vault and index the system may clear. Tours and pictures
+        // start no node, so nothing would end a wait, and get no keeper: the Keychain copy and
+        // the install id stay as they are.
+        let keeper = PairingKeeper.forLaunch(platform: platform, arguments: arguments) {
+            PairingKeeper(store: KeychainTokens(service: PairingKeeper.service))
+        }
+        // A copy this build cannot read is no pairing either.
+        let kept = keeper?.kept.flatMap { pairingIsUsable(pairing: $0) ? $0 : nil }
         // An index gone with buds left in the folder: they would come back as new buds beside
         // the peers' own, so they go before the first scan, when the pairing will come back.
-        if kept != nil, paths.fetchesFromPeer() { paths.emptyVaultFolder() }
+        if kept != nil, paths.fetchesFromPeer(nodeKey: nodeKeyFileName()) { paths.emptyVaultFolder() }
         guard let vault = try? RustVault(paths: paths) else {
             let store = BudStore()
             if !forPictures { listenForCaptures(into: store) }
@@ -126,19 +131,6 @@ enum Launch {
         #endif
     }
 
-    /// Where the pairing is kept apart from the vault: only on the Apple TV, whose vault and
-    /// index the system may clear.
-    private static var pairingKeeper: PairingKeeper? {
-        #if os(tvOS)
-        let keeper = PairingKeeper(store: KeychainTokens(service: PairingKeeper.service))
-        // A copy kept by an install of the app that was deleted goes, rather than rejoining.
-        keeper.dropForeign()
-        return keeper
-        #else
-        return nil
-        #endif
-    }
-
     /// The pairing kept up to date for as long as the app runs.
     private static var pairingSync: PairingSync?
 
@@ -149,10 +141,24 @@ enum Launch {
     private static func keepPairing(of vault: RustVault, in keeper: PairingKeeper, following devices: DeviceStore) async {
         let sync = PairingSync(keeper: keeper) { try vault.core.pairing() }
         pairingSync = sync
-        devices.onPairingChanged = { Task { await sync.keep() } }
+        devices.onPairingChanged = { keep(sync) }
         devices.onUnpaired = { Task { await sync.forget() } }
         Task { await sync.keep() }
         await sync.start(every: 5 * 60)
+    }
+
+    /// Keeps the pairing now. On the Apple TV the step runs under a background task, so a keep
+    /// asked for on the way into the background finishes before the app is suspended.
+    private static func keep(_ sync: PairingSync) {
+        #if os(tvOS)
+        let task = BackgroundTask(named: "Keep the pairing")
+        Task {
+            await sync.keep()
+            task.end()
+        }
+        #else
+        Task { await sync.keep() }
+        #endif
     }
 
     /// Plants the buds a device kept in the old JSON file into its vault, once, and sets the file
@@ -162,3 +168,24 @@ enum Launch {
         return await OldBuds.bring(from: file, platform: platform) { _ = vault.plant($0) }
     }
 }
+
+#if os(tvOS)
+/// Time the system grants the app to finish a step after it leaves the foreground, ended once
+/// the step is done or the time runs out, whichever comes first.
+@MainActor
+private final class BackgroundTask {
+    private var id = UIBackgroundTaskIdentifier.invalid
+
+    init(named name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
+    }
+}
+#endif

@@ -2,8 +2,8 @@
 //! and sync over the loopback interface, with the relay off.
 
 use bud_ffi::{
-    open_vault, pairing_is_usable, start_node, start_node_as, PeerEvent, PeerListener, PeerNode,
-    RelaySetting, Vault, VaultError,
+    node_key_file_name, open_vault, pairing_is_usable, start_node, start_node_as, PeerEvent,
+    PeerListener, PeerNode, RelaySetting, Vault, VaultError,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -403,6 +403,8 @@ fn a_kept_pairing_brings_a_cleared_device_back_as_itself() {
     assert!(!vault.restore_pairing(kept).unwrap(), "once");
     let node = start_node(Arc::clone(&vault), RelaySetting::Off).unwrap();
     assert_eq!(node.id().unwrap(), id);
+    // The key is back under the name the apps look for when they tell a cleared cache.
+    assert!(index.path().join(node_key_file_name()).is_file());
     node.sync_now().unwrap();
     assert_eq!(
         std::fs::read_to_string(dir.path().join("Newsletter/Pick a name.md")).unwrap(),

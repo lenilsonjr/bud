@@ -38,8 +38,11 @@ final class VaultPathsTests: XCTestCase {
     }
 
     func testThePhoneNeverFetchesForAMissingIndex() {
-        XCTAssertFalse(temporary(.iOS).fetchesFromPeer())
+        XCTAssertFalse(temporary(.iOS).fetchesFromPeer(nodeKey: key))
     }
+
+    /// The node key's name, as the bindings would give it.
+    private let key = "device.key"
 
     /// A container in a fresh temporary folder.
     private func temporary(_ platform: VaultPlatform) -> VaultPaths {
@@ -53,27 +56,29 @@ final class VaultPathsTests: XCTestCase {
         try FileManager.default.createDirectory(at: tv.vaultFolder, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: tv.indexFolder, withIntermediateDirectories: true)
         try Data("index".utf8).write(to: tv.indexFile)
-        XCTAssertFalse(tv.fetchesFromPeer())
+        XCTAssertFalse(tv.fetchesFromPeer(nodeKey: key))
         XCTAssertTrue(FileManager.default.fileExists(atPath: tv.indexFile.path), "the index stays")
     }
 
     func testANodeKeyLeftBehindIsNoClearedCache() throws {
         let tv = temporary(.tvOS)
         try FileManager.default.createDirectory(at: tv.indexFolder, withIntermediateDirectories: true)
-        try Data(count: 32).write(to: tv.nodeKeyFile)
-        XCTAssertFalse(tv.fetchesFromPeer())
+        try Data(count: 32).write(to: tv.nodeKeyFile(named: key))
+        XCTAssertFalse(tv.fetchesFromPeer(nodeKey: key))
+        // The name is the one handed in, from the core, not one of the app's own.
+        XCTAssertTrue(tv.fetchesFromPeer(nodeKey: "another.key"))
     }
 
     func testAClearedCacheFetches() {
         let tv = temporary(.tvOS)
-        XCTAssertTrue(tv.fetchesFromPeer())
+        XCTAssertTrue(tv.fetchesFromPeer(nodeKey: key))
     }
 
     func testAnIndexGoneWhileBudsRemainStillFetches() throws {
         let tv = temporary(.tvOS)
         try FileManager.default.createDirectory(at: tv.vaultFolder, withIntermediateDirectories: true)
         try Data("A note.\n".utf8).write(to: tv.vaultFolder.appendingPathComponent("Gift ideas.md"))
-        XCTAssertTrue(tv.fetchesFromPeer())
+        XCTAssertTrue(tv.fetchesFromPeer(nodeKey: key))
     }
 
     func testLeftoversInTheTVFolderGoAndTheFolderStays() throws {
@@ -95,6 +100,6 @@ final class VaultPathsTests: XCTestCase {
     }
 
     func testTheMacNeverFetchesForAMissingIndex() {
-        XCTAssertFalse(temporary(.macOS).fetchesFromPeer())
+        XCTAssertFalse(temporary(.macOS).fetchesFromPeer(nodeKey: key))
     }
 }
