@@ -13,9 +13,10 @@
 //! it.
 //!
 //! A ticket is one-shot on the side that made it: the maker records the ticket it issued and
-//! accepts it from one node, once, within ten minutes of making it. A node the vault removed is refused even when it proves the key,
-//! and a key rotation gives the remaining peers a new vault key over sessions sealed with the old
-//! one, which voids the old key and every ticket made under it.
+//! accepts it from one node, once, within ten minutes of making it. A node the vault removed is
+//! refused even when it proves the key, and told so, so it lets the vault go; a key rotation gives
+//! the remaining peers a new vault key over sessions sealed with the old one, which voids the old
+//! key and every ticket made under it.
 //!
 //! Every message is sealed with the vault key (XChaCha20-Poly1305, a fresh nonce each) before it
 //! goes on the wire, so a relay or a stranger on the network sees ciphertext only. A session is
@@ -34,7 +35,7 @@ use crate::{Error, Result, SyncReport, Vault};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use data_encoding::{BASE32_NOPAD, HEXLOWER};
-use iroh::endpoint::{presets, Incoming};
+use iroh::endpoint::{presets, Connection, ConnectionError, Incoming, VarInt};
 use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMode, RelayUrl, SecretKey};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use rusqlite::{params, OptionalExtension};
@@ -74,6 +75,11 @@ pub const SESSION_TIMEOUT: Duration = Duration::from_secs(60);
 const CONFIRM_TIMEOUT: Duration = Duration::from_secs(45);
 const DEFAULT_INTERVAL: Duration = Duration::from_secs(5);
 
+/// The code a session is closed with when the node that answers removed the one that dialed, or
+/// turned it away for good: not paired any more, as against a key it lacks, which closes with 1
+/// and can be put right by pairing again. A build before it closes every refusal with 1.
+const CLOSE_REMOVED: u32 = 2;
+
 /// How long an issued ticket can be redeemed.
 const TICKET_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
@@ -86,6 +92,16 @@ fn now_millis() -> i64 {
 
 fn peer_error(err: impl std::fmt::Display) -> Error {
     Error::Invalid(format!("peer: {err}"))
+}
+
+/// Whether the other side closed `connection` saying it removed this node. Any other close, a
+/// code this build does not know among them, is not.
+fn removed_by(connection: &Connection) -> bool {
+    matches!(
+        connection.close_reason(),
+        Some(ConnectionError::ApplicationClosed(close))
+            if close.error_code == VarInt::from_u32(CLOSE_REMOVED)
+    )
 }
 
 /// How a node reaches the others when they are not on the same network.
@@ -312,6 +328,11 @@ pub enum NodeEvent {
     /// over a new vault key, or the ticket this vault accepted was spent in its first session.
     /// For a copy of the pairing kept elsewhere.
     PairingChanged,
+    /// A peer removed this vault, or turned it away for good, and is no longer a peer here: it
+    /// is not dialed again, and what this vault keeps of its pairing changed. Told only when the
+    /// peer said so; one that turns away a key this vault lacks, as after a missed rotation, or
+    /// a build that says neither, stays a peer.
+    PeerRemoved { id: String },
 }
 
 /// Told each [`NodeEvent`] as it happens, from the node's own threads or the thread of a call
@@ -593,22 +614,26 @@ impl Vault {
 
     /// Forget a peer and refuse its node id from now on, even when it proves the vault key.
     fn forget(&self, id: &str) -> Result<()> {
+        if !self.drop_peer(id)? {
+            return Err(Error::Invalid(format!("peer: no peer {id}")));
+        }
+        lock(&self.conn).execute(
+            "INSERT OR IGNORE INTO peer_denied (node) VALUES (?1)",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Let a peer go with everything kept about it, without refusing it: a peer that removed this
+    /// vault may pair with it again. False when it was not a peer.
+    fn drop_peer(&self, id: &str) -> Result<bool> {
         let conn = lock(&self.conn);
         conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_ticket WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_missed WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_identity WHERE node = ?1", params![id])?;
         conn.execute("DELETE FROM peer_label WHERE node = ?1", params![id])?;
-        match conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? {
-            0 => Err(Error::Invalid(format!("peer: no peer {id}"))),
-            _ => {
-                conn.execute(
-                    "INSERT OR IGNORE INTO peer_denied (node) VALUES (?1)",
-                    params![id],
-                )?;
-                Ok(())
-            }
-        }
+        Ok(conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? > 0)
     }
 
     /// Lift the refusal of a node this vault removed.
@@ -1360,14 +1385,31 @@ impl Shared {
         Ok(addr)
     }
 
-    /// Dial a peer and run one session.
+    /// Dial a peer and run one session. A peer that ends it saying it removed this vault is let
+    /// go here too.
     async fn exchange(&self, peer: &PeerInfo) -> Result<SyncReport> {
-        let key = self.vault().peer_key()?;
         let connection = self
             .endpoint
             .connect(self.address_of(peer)?, ALPN)
             .await
             .map_err(peer_error)?;
+        match self.session(peer, &connection).await {
+            Err(_) if removed_by(&connection) => {
+                if self.vault().drop_peer(&peer.id)? {
+                    self.lost(&peer.id);
+                    self.emit(NodeEvent::PeerRemoved {
+                        id: peer.id.clone(),
+                    });
+                }
+                Err(peer_error("a peer removed this device"))
+            }
+            done => done,
+        }
+    }
+
+    /// One session over a connection to a peer: heads, changes both ways, confirmation.
+    async fn session(&self, peer: &PeerInfo, connection: &Connection) -> Result<SyncReport> {
+        let key = self.vault().peer_key()?;
         let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
         let (heads, ticket) = {
             let vault = self.vault();
@@ -1505,9 +1547,10 @@ impl Shared {
         let connection = incoming.await.map_err(peer_error)?;
         let remote = connection.remote_id();
         let remote_text = id_text(&remote);
-        // A node that was removed is turned away before it is read, key or no key.
+        // A node that was removed is turned away before it is read, key or no key, and told so,
+        // so it lets this vault go instead of calling again.
         if self.vault().is_denied(&remote_text)? {
-            connection.close(1u32.into(), b"not paired");
+            connection.close(CLOSE_REMOVED.into(), b"removed");
             return Err(peer_error("a removed peer called"));
         }
         let key = self.vault().peer_key()?;

@@ -181,12 +181,22 @@ fn a_removed_peer_syncs_again_once_allowed() {
     let (a, b) = paired();
     b.node.sync_now().unwrap();
     let b_id = b.node.id().unwrap();
+    let heard = Heard::default();
+    b.node.listen(Box::new(heard.clone())).unwrap();
     a.node.forget_peer(b_id.clone()).unwrap();
-    let ticket = a.node.ticket(true).unwrap();
-    b.node.forget_peer(a.node.id().unwrap()).unwrap();
-    b.node.accept_ticket(ticket).unwrap();
+    assert!(b.node.sync_now().is_err());
+    // Told it was removed, b lets a go.
+    assert!(b.node.peers().unwrap().is_empty());
+    assert_eq!(
+        heard.0.lock().unwrap().clone(),
+        vec![PeerEvent::PeerRemoved {
+            id: a.node.id().unwrap()
+        }]
+    );
+    b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
     assert!(b.node.sync_now().is_err(), "the maker still refuses it");
     a.node.allow_peer(b_id).unwrap();
+    b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
     b.node.sync_now().unwrap();
     assert_eq!(a.node.peers().unwrap().len(), 1);
 }

@@ -342,6 +342,9 @@ pub enum PeerEvent {
     /// What this vault keeps of its pairing changed with no call on this node: a peer handed
     /// over a new vault key, or the accepted ticket was spent.
     PairingChanged,
+    /// A peer removed this vault, or turned it away for good, and is no longer a peer here. A
+    /// copy of the pairing kept elsewhere follows; with no peer left, it goes.
+    PeerRemoved { id: String },
 }
 
 impl From<bud_core::NodeEvent> for PeerEvent {
@@ -384,6 +387,7 @@ impl From<bud_core::NodeEvent> for PeerEvent {
                 summary: report.into(),
             },
             NodeEvent::PairingChanged => PeerEvent::PairingChanged,
+            NodeEvent::PeerRemoved { id } => PeerEvent::PeerRemoved { id },
         }
     }
 }
