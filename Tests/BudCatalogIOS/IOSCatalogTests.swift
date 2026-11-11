@@ -193,7 +193,8 @@ final class IOSCatalogTests: XCTestCase {
     /// The controller of the app hosting the tests: the root of its first scene's key window.
     private static func parent() throws -> UIViewController {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = try XCTUnwrap(scenes.lazy.compactMap { $0.keyWindow ?? $0.windows.first }.first, "The app has no window to draw in")
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = try XCTUnwrap(scene.flatMap { $0.keyWindow ?? $0.windows.first }, "The app has no window to draw in")
         return try XCTUnwrap(window.rootViewController, "The app's window has no root view controller")
     }
 }
