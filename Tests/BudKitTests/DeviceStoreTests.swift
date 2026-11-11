@@ -470,6 +470,19 @@ extension DeviceStoreTests {
         await eventually { store.launchFetch == nil }
     }
 
+    func testASyncThatFailsAtOnceLeavesTheLaunchFetchToItsPatience() async throws {
+        let (store, peers, _) = await make()
+        store.awaitLaunchFetch()
+        // Four other devices in the fixtures: five sessions of 0.06 s.
+        store.startLaunchFetchPatience(sessionTimeout: 0.06)
+        await peers.setSyncFails(true)
+        await store.syncNow()
+        XCTAssertNotNil(store.launchFetch, "the cards stay shut while the patience runs")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNotNil(store.launchFetch)
+        await eventually { store.launchFetch == nil }
+    }
+
     func testALaunchFetchWithNoProgressGivesUpAfterItsPatience() async {
         let (store, _, _) = await make()
         store.awaitLaunchFetch()

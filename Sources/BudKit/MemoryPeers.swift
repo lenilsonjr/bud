@@ -74,6 +74,7 @@ public actor MemoryPeers: Peers {
     ]
     private var listeners: [UUID: AsyncStream<PeerEvent>.Continuation] = [:]
     private var rotationFails = false
+    private var syncFails = false
 
     public init(
         devices: [Device]? = nil, lifetime: TimeInterval = Ticket.lifetime, missing: Set<String> = [],
@@ -102,6 +103,9 @@ public actor MemoryPeers: Peers {
 
     /// What the next `syncNow` reports.
     public func setNextSummary(_ summary: SyncSummary) { nextSummary = summary }
+
+    /// Whether `syncNow` fails at once from now on, as when no peer answers.
+    public func setSyncFails(_ value: Bool) { syncFails = value }
 
     /// Tells every listener that changes are arriving from a vault just joined.
     public func emitFetchProgress(received: Int, total: Int?) {
@@ -305,6 +309,7 @@ public actor MemoryPeers: Peers {
     }
 
     public func syncNow() async throws -> SyncSummary {
+        if syncFails { throw PeersError.noPeerAnswered }
         emit(.syncFinished(nextSummary))
         return nextSummary
     }
