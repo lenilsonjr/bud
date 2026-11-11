@@ -138,6 +138,30 @@ fn eventually(what: &str, mut check: impl FnMut() -> bool) {
     panic!("not within a few seconds: {what}");
 }
 
+/// A device whose folder and index were cleared, back on the pairing it kept, its node running.
+fn restored(kept: &[u8]) -> Peer {
+    let dir = tempfile::tempdir().unwrap();
+    let index = tempfile::tempdir().unwrap();
+    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+    assert!(vault.restore_pairing(kept).unwrap());
+    let vault = Arc::new(Mutex::new(vault));
+    let node = Node::start_with(
+        Arc::clone(&vault),
+        NodeOptions {
+            relay: Relay::Off,
+            interval: None,
+            identity: Identity::default(),
+        },
+    )
+    .unwrap();
+    Peer {
+        vault,
+        dir,
+        index,
+        node,
+    }
+}
+
 /// `a` holds the fixture vault, `b` an empty folder that accepted a's ticket.
 fn paired(interval: Option<Duration>) -> (Peer, Peer) {
     let a = Peer::new(Some(&fixture()), None);
@@ -477,14 +501,77 @@ fn a_removed_peer_is_paired_again_with_a_fresh_ticket() {
     b.node.sync_now().unwrap();
     a.node.forget_peer(&b.node.id()).unwrap();
     assert!(b.node.sync_now().is_err());
+    // b was told and let a go, without refusing it.
+    assert!(b.node.peers().unwrap().is_empty());
     let ticket = a.node.ticket_with_addresses().unwrap().encode();
-    b.node.forget_peer(&a.node.id()).unwrap();
     b.node.accept_ticket(&ticket).unwrap();
     // The maker still refuses a node it removed; only the maker can lift that.
     assert!(b.node.sync_now().is_err());
+    assert!(b.node.peers().unwrap().is_empty());
     a.node.allow_peer(&b.node.id()).unwrap();
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
     b.node.sync_now().unwrap();
     assert_eq!(a.node.peers().unwrap().len(), 1);
+}
+
+#[test]
+fn a_removed_peer_is_told_so_and_lets_the_vault_that_removed_it_go() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let heard = Recorder::listening(&b.node);
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    assert!(b.node.peers().unwrap().is_empty(), "b let a go");
+    assert_eq!(
+        heard.events(),
+        vec![NodeEvent::PeerRemoved { id: a.node.id() }]
+    );
+    // With no peer left there is no pairing to keep.
+    assert_eq!(b.vault.lock().unwrap().pairing().unwrap(), None);
+    // And b does not call again: the next round dials no one.
+    b.node.sync_now().unwrap();
+    assert_eq!(heard.events().len(), 1);
+}
+
+#[test]
+fn a_peer_that_missed_a_rotation_is_turned_away_but_keeps_its_peer() {
+    let (a, b) = paired(None);
+    let stale = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.sync_now().unwrap();
+    // b turns the new key away, so it misses the rotation and holds the old key.
+    b.node.forget_peer(&a.node.id()).unwrap();
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.missed, vec![b.node.id()]);
+    b.node.accept_ticket(&stale).unwrap();
+    let heard = Recorder::listening(&b.node);
+    assert!(b.node.sync_now().is_err(), "the old key is turned away");
+    // Not told it was removed: a key it lacks is put right by pairing again, so a stays.
+    let ids: Vec<String> = b.node.peers().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![a.node.id()]);
+    assert!(heard.events().is_empty());
+    assert!(a.node.peers().unwrap()[0].missed);
+}
+
+#[test]
+fn a_device_back_on_its_kept_pairing_lets_go_of_a_peer_that_removed_it() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    // The cache is cleared and the device comes back as itself, with the peer it kept.
+    drop(b);
+    let c = restored(&kept);
+    assert_eq!(c.node.peers().unwrap().len(), 1);
+    let heard = Recorder::listening(&c.node);
+    assert!(c.node.sync_now().is_err());
+    assert!(c.node.peers().unwrap().is_empty());
+    assert_eq!(
+        heard.events(),
+        vec![NodeEvent::PeerRemoved { id: a.node.id() }]
+    );
+    // Nothing is left to keep, so the copy kept elsewhere goes.
+    assert_eq!(c.vault.lock().unwrap().pairing().unwrap(), None);
 }
 
 #[test]
