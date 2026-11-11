@@ -199,10 +199,10 @@ public final class DeviceStore: ObservableObject {
     /// Syncs with every peer now. One that answered ends a launch fetch, whatever it brought:
     /// it holds everything the peer had.
     public func syncNow() async {
-        if let summary = try? await peers.syncNow() {
-            lastSummary = summary
-            endLaunchFetch()
-        }
+        // Either way the launch wait is over: a sync that reached no peer will not fill it sooner,
+        // and the node keeps trying on its own rounds.
+        if let summary = try? await peers.syncNow() { lastSummary = summary }
+        endLaunchFetch()
         await refresh()
     }
 
