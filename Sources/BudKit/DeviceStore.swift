@@ -480,9 +480,14 @@ public final class DeviceStore: ObservableObject {
         case .pairingChanged:
             onPairingChanged?()
         case .deviceRemoved:
-            // Gone from the node's list: the last one gone unpairs this device.
+            // Gone from the node's list. The last one gone unpairs this device, which the refresh
+            // tells, and leaves no one to wait for a launch fetch from.
             await refresh()
-            onPairingChanged?()
+            if devices.contains(where: { !$0.isThisDevice }) {
+                onPairingChanged?()
+            } else {
+                endLaunchFetch()
+            }
         case let .fetchProgress(received, total):
             fetched = (received, total)
             if case let .joined(device, _, _) = joinPhase {
