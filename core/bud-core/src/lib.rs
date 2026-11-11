@@ -59,6 +59,10 @@ pub enum Error {
     Exists(String),
     #[error("not allowed: {0}")]
     Invalid(String),
+    /// The connection to a peer or a stream on it failed, as against a refusal of this node's
+    /// own, such as a message that does not open.
+    #[error("peer: the link failed: {0}")]
+    Link(String),
     #[error("watch: {0}")]
     Watch(String),
 }

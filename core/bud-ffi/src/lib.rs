@@ -37,6 +37,8 @@ impl From<bud_core::Error> for VaultError {
             bud_core::Error::NoSuchBud(_) => VaultError::NoSuchBud { message },
             bud_core::Error::Exists(_) => VaultError::Exists { message },
             bud_core::Error::Invalid(_) => VaultError::Invalid { message },
+            // The apps read a link failure as a device that did not answer, from its message.
+            bud_core::Error::Link(_) => VaultError::Invalid { message },
             bud_core::Error::Watch(_) => VaultError::Watch { message },
         }
     }
