@@ -501,18 +501,62 @@ fn a_removed_peer_is_paired_again_with_a_fresh_ticket() {
     b.node.sync_now().unwrap();
     a.node.forget_peer(&b.node.id()).unwrap();
     assert!(b.node.sync_now().is_err());
-    // b was told and let a go, without refusing it.
-    assert!(b.node.peers().unwrap().is_empty());
     let ticket = a.node.ticket_with_addresses().unwrap().encode();
     b.node.accept_ticket(&ticket).unwrap();
     // The maker still refuses a node it removed; only the maker can lift that.
     assert!(b.node.sync_now().is_err());
-    assert!(b.node.peers().unwrap().is_empty());
     a.node.allow_peer(&b.node.id()).unwrap();
-    let ticket = a.node.ticket_with_addresses().unwrap().encode();
-    b.node.accept_ticket(&ticket).unwrap();
     b.node.sync_now().unwrap();
     assert_eq!(a.node.peers().unwrap().len(), 1);
+}
+
+#[test]
+fn a_new_ticket_of_the_vault_that_removed_this_one_waits_until_it_is_let_back_in() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    assert!(b.node.peers().unwrap().is_empty(), "b let a go");
+    let ticket = a.node.ticket_with_addresses().unwrap().encode();
+    b.node.accept_ticket(&ticket).unwrap();
+    let heard = Recorder::listening(&b.node);
+    // a still refuses b and says it removed it, but b holds a ticket of a's it has not
+    // redeemed: a stays, and so does the ticket.
+    assert!(b.node.sync_now().is_err());
+    let ids: Vec<String> = b.node.peers().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![a.node.id()]);
+    assert!(heard.events().is_empty());
+    a.node.allow_peer(&b.node.id()).unwrap();
+    b.node.sync_now().unwrap();
+    assert_eq!(a.node.peers().unwrap().len(), 1);
+    assert!(
+        heard.events().contains(&NodeEvent::PairingChanged),
+        "the ticket is spent"
+    );
+}
+
+#[test]
+fn a_rotation_lets_go_of_a_peer_that_removed_this_vault() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    c.node.forget_peer(&a.node.id()).unwrap();
+    let heard = Recorder::listening(&a.node);
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 1);
+    assert!(report.missed.is_empty(), "let go, not missed");
+    let ids: Vec<String> = a.node.peers().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![b.node.id()]);
+    assert!(heard
+        .events()
+        .contains(&NodeEvent::PeerRemoved { id: c.node.id() }));
 }
 
 #[test]
@@ -539,8 +583,10 @@ fn a_peer_that_missed_a_rotation_is_turned_away_but_keeps_its_peer() {
     let (a, b) = paired(None);
     let stale = a.node.ticket_with_addresses().unwrap().encode();
     b.node.sync_now().unwrap();
-    // b turns the new key away, so it misses the rotation and holds the old key.
+    // b no longer knows a, without refusing it, so it turns the new key away and holds the
+    // old one.
     b.node.forget_peer(&a.node.id()).unwrap();
+    b.node.allow_peer(&a.node.id()).unwrap();
     let report = a.node.rotate_key().unwrap();
     assert_eq!(report.missed, vec![b.node.id()]);
     b.node.accept_ticket(&stale).unwrap();
@@ -683,8 +729,9 @@ fn a_rotation_is_told_peer_by_peer_before_its_report() {
             .unwrap();
         p.node.sync_now().unwrap();
     }
-    // d no longer knows a, so it turns the new key away.
+    // d no longer knows a, without refusing it, so it turns the new key away.
     d.node.forget_peer(&a.node.id()).unwrap();
+    d.node.allow_peer(&a.node.id()).unwrap();
     let heard = Recorder::listening(&a.node);
     let report = a.node.rotate_key().unwrap();
     let events = heard.events();
@@ -785,8 +832,9 @@ fn a_peer_that_kept_the_old_key_is_missed_and_marked() {
     let (a, b) = paired(None);
     b.node.sync_now().unwrap();
     let old = a.node.ticket().unwrap().key;
-    // b no longer knows a, so it turns the new key away.
+    // b no longer knows a, without refusing it, so it turns the new key away.
     b.node.forget_peer(&a.node.id()).unwrap();
+    b.node.allow_peer(&a.node.id()).unwrap();
     let report = a.node.rotate_key().unwrap();
     assert_eq!(report.reached, 0);
     assert_eq!(report.missed, vec![b.node.id()]);
