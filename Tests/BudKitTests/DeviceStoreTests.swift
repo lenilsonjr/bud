@@ -239,9 +239,34 @@ extension DeviceStoreTests {
         let rotation = try XCTUnwrap(store.rotation)
         XCTAssertEqual(rotation.total, 3)
         XCTAssertNil(rotation.reports[gone], "neither reached nor missed")
-        XCTAssertFalse(store.devices.contains { $0.id == gone })
+        XCTAssertFalse(DevicesText.rotationLines(store.devices, progress: rotation, kind: nil).contains { $0.id == gone })
         XCTAssertEqual(finished, [RotationResult(reached: 3, missed: [])])
         XCTAssertEqual(DevicesText.rotationCount(rotation), "4 of 4")
+        // The list follows the node, which said it let the device go.
+        await eventually { !store.devices.contains { $0.id == gone } }
+    }
+
+    func testTheLastDeviceRemovedInARotationUnpairsOnce() async {
+        for failing in [false, true] {
+            let (store, peers, _) = await make()
+            var unpaired = 0
+            store.onUnpaired = { unpaired += 1 }
+            let others = store.devices.filter { !$0.isThisDevice }.map(\.id)
+            for id in others.dropLast() {
+                await peers.removedBy(id)
+                await eventually { !store.devices.contains { $0.id == id } }
+            }
+            store.awaitLaunchFetch()
+            await peers.setDevicesFail(failing)
+            await peers.setRemoving([others.last!])
+            await store.rotateKey()
+            await eventually { store.devices.allSatisfy(\.isThisDevice) }
+            await eventually { unpaired == 1 }
+            XCTAssertNil(store.launchFetch, "no one is left to fetch from")
+            await peers.setDevicesFail(false)
+            await store.refresh()
+            XCTAssertEqual(unpaired, 1, failing ? "told once, the list unread" : "told once")
+        }
     }
 
     func testARotationTheNodeCannotStartSaysItFailed() async {

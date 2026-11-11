@@ -98,9 +98,11 @@ public enum DevicesText {
     }
 
     /// The dialog's lines: this device first with the new key, then each of the others as it
-    /// reports. A device that has not answered yet waits; one that is apart says so.
+    /// reports. A device that has not answered yet waits; one that is apart says so. One that said
+    /// it removed this device has no line.
     public static func rotationLines(_ devices: [Device], progress: RotationProgress?, kind: DeviceKind?) -> [RotationLine] {
-        ordered(devices).map { device in
+        let removed = progress?.removed ?? []
+        return ordered(devices).filter { !removed.contains($0.id) }.map { device in
             if device.isThisDevice { return RotationLine(id: device.id, state: .newKey, label: "\(thisDevice(kind)) · new key") }
             switch progress?.reports[device.id] {
             case .some(true): return RotationLine(id: device.id, state: .gotIt, label: "Got it")
