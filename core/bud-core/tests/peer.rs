@@ -628,6 +628,8 @@ fn a_rotation_does_not_probe_a_removed_peer_kept_for_its_ticket_and_voids_the_ti
     assert_eq!(b.node.dials() - before, 1, "the hand over only");
     assert_eq!(report.reached, 0);
     assert!(report.missed.is_empty());
+    // The ticket kept a through the hand over, but it came with the old key: once b takes the
+    // new one, a goes, neither listed nor missed.
     assert_eq!(
         heard.events(),
         vec![
@@ -635,16 +637,48 @@ fn a_rotation_does_not_probe_a_removed_peer_kept_for_its_ticket_and_voids_the_ti
                 id: a.node.id(),
                 outcome: RotationOutcome::Removed,
             },
+            NodeEvent::PeerRemoved { id: a.node.id() },
             NodeEvent::RotationDone(report),
         ]
     );
-    // The ticket kept a for now, but the rotation voided it: the next refusal lets a go.
-    assert_eq!(b.node.peers().unwrap().len(), 1);
-    assert!(b.node.sync_now().is_err());
     assert!(b.node.peers().unwrap().is_empty());
-    assert!(heard
-        .events()
-        .contains(&NodeEvent::PeerRemoved { id: a.node.id() }));
+}
+
+/// The node ids this vault holds a ticket of and has not redeemed, read from its index.
+fn pending_tickets(p: &Peer) -> Vec<String> {
+    let conn = rusqlite::Connection::open(p.index.path().join("index.db")).unwrap();
+    let mut statement = conn
+        .prepare("SELECT node FROM peer_ticket ORDER BY node")
+        .unwrap();
+    statement
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[test]
+fn a_key_handed_over_by_one_peer_keeps_the_ticket_of_another() {
+    let c = Peer::new(Some(&fixture()), None);
+    let a = Peer::new(None, None);
+    let b = Peer::new(None, None);
+    c.node.sync_now().unwrap();
+    for p in [&a, &b] {
+        p.node
+            .accept_ticket(&c.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    a.node
+        .accept_ticket(&b.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    assert_eq!(pending_tickets(&a), vec![b.node.id()]);
+    let report = c.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 2);
+    assert_eq!(a.node.ticket().unwrap().key, c.node.ticket().unwrap().key);
+    // Taking a key someone else made voids nothing this vault holds of its own.
+    assert_eq!(pending_tickets(&a), vec![b.node.id()]);
+    assert_eq!(a.node.peers().unwrap().len(), 2);
 }
 
 #[test]
