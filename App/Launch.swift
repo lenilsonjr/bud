@@ -50,6 +50,11 @@ enum Launch {
             store.startTriggers()
         }
         #endif
+        #if !os(tvOS)
+        // Every window shows this one store, so captures made outside a window land in it while
+        // the app runs, whichever windows come and go.
+        if !forPictures { CaptureRelay.shared.listen { line in store.capture(line) } }
+        #endif
         let devices = store.devices
         let platform = platform
         let kind = BudStore.platformSource

@@ -8,7 +8,7 @@ public struct BudRootView: View {
     @StateObject private var store: BudStore
     @ObservedObject private var flags: Flags
     /// Whether captures made outside the window land in this store: off for a picture, and for
-    /// an app launched to draw pictures.
+    /// an app that listens once for the store all its windows share.
     private let listensForCaptures: Bool
     /// This window's place among the windows that listen for captures.
     @State private var listener: UUID?
@@ -78,7 +78,7 @@ public struct BudRootView: View {
             guard listensForCaptures, listener == nil else { return }
             // The store itself, not this view, which may be gone by the time a line comes.
             let store = store
-            listener = CaptureRelay.shared.listen(for: store) { line in store.capture(line) }
+            listener = CaptureRelay.shared.listen { line in store.capture(line) }
         }
         .onDisappear {
             if let listener { CaptureRelay.shared.stopListening(listener) }

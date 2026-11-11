@@ -19,10 +19,10 @@ struct BudApp: App {
             BudTVView(store: store)
             #elseif os(macOS)
             // The desktop palette searches the window's store and goes through it.
-            BudRootView(store: store, listensForCaptures: !Launch.forPictures)
+            BudRootView(store: store, listensForCaptures: false)
                 .onAppear { delegate.attach(store) }
             #else
-            BudRootView(store: store, listensForCaptures: !Launch.forPictures)
+            BudRootView(store: store, listensForCaptures: false)
             #endif
         }
         #if os(macOS)

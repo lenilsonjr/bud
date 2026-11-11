@@ -4,8 +4,6 @@ import XCTest
 /// Not a `@MainActor` class: the Linux test runner's discovery cannot cast isolated test
 /// methods, so each test hops onto the main actor itself.
 final class CaptureRelayTests: XCTestCase {
-    /// Stands for a store: only who it is matters to the relay.
-    private final class Owner {}
 
     func testLinesWaitUntilAWindowListensThenArriveInOrder() async {
         await MainActor.run { relayKeepsOrder() }
@@ -17,7 +15,7 @@ final class CaptureRelayTests: XCTestCase {
         relay.send(.init(text: "Second", todo: true))
         XCTAssertEqual(relay.waiting, 2)
         var got: [CaptureRelay.Line] = []
-        let window = relay.listen(for: Owner()) { got.append($0) }
+        let window = relay.listen { got.append($0) }
         XCTAssertEqual(got.map(\.text), ["First", "Second"])
         XCTAssertEqual(relay.waiting, 0)
         relay.send(.init(text: "Third"))
@@ -33,28 +31,24 @@ final class CaptureRelayTests: XCTestCase {
 
     @MainActor private func relayKeepsOtherWindows() {
         let relay = CaptureRelay()
-        let shared = Owner(), mine = Owner()
-        var inShared: [String] = []
-        var inMine: [String] = []
-        // Two windows over one store, then a window with a store of its own.
-        let one = relay.listen(for: shared) { inShared.append($0.text) }
-        let two = relay.listen(for: shared) { inShared.append($0.text) }
-        let three = relay.listen(for: mine) { inMine.append($0.text) }
+        var first: [String] = []
+        var second: [String] = []
+        let one = relay.listen { first.append($0.text) }
+        let two = relay.listen { second.append($0.text) }
         relay.send(.init(text: "Newest"))
-        XCTAssertEqual(inMine, ["Newest"], "A line lands once, in the newest store")
-        XCTAssertEqual(inShared, [])
-        relay.stopListening(three)
-        relay.send(.init(text: "Back"))
-        XCTAssertEqual(inShared, ["Back"], "A closed window's store gets nothing more")
-        XCTAssertEqual(inMine, ["Newest"])
+        XCTAssertEqual(second, ["Newest"], "A line lands once, with the newest listener")
+        XCTAssertEqual(first, [])
         relay.stopListening(two)
+        relay.send(.init(text: "Back"))
+        XCTAssertEqual(first, ["Back"], "The window left open keeps listening")
+        XCTAssertEqual(second, ["Newest"], "A closed window gets nothing more")
         relay.stopListening(two)
         relay.stopListening(UUID())
         relay.send(.init(text: "Still"))
-        XCTAssertEqual(inShared, ["Back", "Still"], "A store keeps listening while one of its windows is open")
+        XCTAssertEqual(first, ["Back", "Still"], "Stopping an id twice, or one never given, stops nothing else")
         relay.stopListening(one)
         relay.send(.init(text: "Waits"))
-        XCTAssertEqual(relay.waiting, 1, "Waits once the last window is gone")
+        XCTAssertEqual(relay.waiting, 1, "Waits once the last listener is gone")
     }
 
     func testALineKnowsWhereItCameFrom() {
