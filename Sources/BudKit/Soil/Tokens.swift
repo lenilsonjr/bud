@@ -59,13 +59,12 @@ public struct KeychainTokens: TokenStore {
             let status = SecItemDelete(base(account) as CFDictionary)
             return status == errSecSuccess || status == errSecItemNotFound
         }
-        let fields: [String: Any] = [
-            kSecValueData as String: Data(token.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
-        let updated = SecItemUpdate(base(account) as CFDictionary, fields as CFDictionary)
+        // Only the value changes in place; how the item may be read is set once, when it is added.
+        let value: [String: Any] = [kSecValueData as String: Data(token.utf8)]
+        let updated = SecItemUpdate(base(account) as CFDictionary, value as CFDictionary)
         guard updated == errSecItemNotFound else { return updated == errSecSuccess }
-        let item = base(account).merging(fields) { _, new in new }
+        let item = base(account).merging(value) { _, new in new }
+            .merging([kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]) { _, new in new }
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 
