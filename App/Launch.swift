@@ -29,11 +29,15 @@ enum Launch {
         #endif
     }
 
+    /// Whether the app was launched with a tour's argument, or to host pictures.
+    static let forPictures = BudStore.launchedForPictures(ProcessInfo.processInfo.arguments)
+
     /// The store over this device's vault, with a node that pairs and syncs it. The vault opens
     /// at once; bringing in the old JSON file and starting the node happen off the main thread,
     /// and the store reloads and Settings follows the node when they are done. A vault that will
     /// not open leaves the app on the JSON file, as before; a node that will not start leaves the
-    /// vault unsynced, alone in Settings.
+    /// vault unsynced, alone in Settings. An app launched for pictures opens its vault and does
+    /// none of the rest: no node, no trigger, no old file.
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
         guard let vault = try? RustVault(paths: paths) else { return BudStore() }
@@ -42,16 +46,15 @@ enum Launch {
         // The TV shows no soil, only the source rows of buds planted elsewhere.
         store.follow(SourceStore.shared)
         // The TV keeps a copy of the vault and fires no trigger of its own.
-        store.startTriggers()
+        if !forPictures { store.startTriggers() }
         #endif
         let devices = store.devices
         let platform = platform
         let kind = BudStore.platformSource
         let name = deviceName
-        let launchedForPictures = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
+        guard !forPictures else { return store }
         Task.detached(priority: .userInitiated) {
             if bringOldBuds(into: vault, platform: platform) { await store.reload() }
-            guard !launchedForPictures else { return }
             do {
                 let peers = try RustPeers(vault: vault, kind: kind, name: name)
                 await devices.use(peers)

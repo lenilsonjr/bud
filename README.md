@@ -11,8 +11,9 @@ on a flat web of orbits you drag around. No warehouses, no triggers.
 - `Tests/BudKitTests` — model, layout and theme tests; they run on Linux too.
 - `Tests/BudKitSnapshots` — renders the canvas to PNGs when `BUD_SNAPSHOT_DIR` is set (macOS only);
   every pull request attaches them as an artifact.
-- `Tests/BudCatalogIOS` — the same screen catalog drawn by the iOS app on a simulator, unit tests
-  hosted in the app (the `Bud iOS Catalog` scheme); pictures to look at, never compared.
+- `Tests/BudCatalogIOS` — the phone and iPad shots of the screen catalog, drawn by the iOS app on
+  a simulator; unit tests hosted in the app (the `Bud iOS Catalog` scheme); pictures to look at,
+  never compared.
 - `App` + `project.yml` — a thin multiplatform app (iOS, iPadOS, macOS, tvOS) that hosts
   `BudRootView` from `BudKit`, or `BudTVView` on Apple TV: the same orbit canvas with the
   remote moving the light from card to card, one line of capture, Play/Pause to tick a to-do.

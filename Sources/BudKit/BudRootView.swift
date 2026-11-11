@@ -6,7 +6,10 @@ import SwiftUI
 public struct BudRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: BudStore
-    @ObservedObject private var flags = Flags.shared
+    @ObservedObject private var flags: Flags
+    /// Whether captures made outside the window land in this store: off for a picture, and for
+    /// an app launched to draw pictures.
+    private let listensForCaptures: Bool
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
@@ -16,11 +19,16 @@ public struct BudRootView: View {
 
     @MainActor public init(fileURL: URL? = BudStore.defaultFile) {
         _store = StateObject(wrappedValue: BudStore(fileURL: fileURL))
+        flags = Flags.shared
+        listensForCaptures = true
     }
 
     /// A store the caller already holds: the app's, over the vault on disk, or one for pictures.
-    @MainActor public init(store: BudStore) {
+    /// A picture brings choices of its own, so the person's appearance never reaches it.
+    @MainActor public init(store: BudStore, flags: Flags = .shared, listensForCaptures: Bool = true) {
         _store = StateObject(wrappedValue: store)
+        self.flags = flags
+        self.listensForCaptures = listensForCaptures
     }
 
     public var body: some View {
@@ -64,8 +72,8 @@ public struct BudRootView: View {
         // Every keycap and key binding in the window reads the store's layout.
         .environment(\.keys, store.keys)
         .environment(\.goAnywhere, { store.perform(.goAnywhere) })
-        .onAppear { CaptureRelay.shared.listen { line in store.capture(line) } }
-        .onDisappear { CaptureRelay.shared.stopListening() }
+        .onAppear { if listensForCaptures { CaptureRelay.shared.listen { line in store.capture(line) } } }
+        .onDisappear { if listensForCaptures { CaptureRelay.shared.stopListening() } }
         .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
             store.freshStart(sample: note.userInfo?["sample"] as? Bool ?? false)
         }

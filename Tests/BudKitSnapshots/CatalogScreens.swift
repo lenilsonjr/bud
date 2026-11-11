@@ -66,6 +66,15 @@ enum Catalog {
     /// The phone palette's size: the phone's width and half its height.
     static let phonePaletteSize = CGSize(width: Window.phone.size.width, height: Window.phone.size.height / 2)
 
+    /// The phone palette's sheet over `store`, at its size, as both catalogs draw it.
+    @MainActor
+    static func phonePaletteSheet(_ store: BudStore) -> some View {
+        CommandPalette(store: store, inSheet: true) { store.searching = false }
+            .frame(width: phonePaletteSize.width, height: phonePaletteSize.height)
+            .background(Theme.raised)
+            .environment(\.compact, true)
+    }
+
     @MainActor
     static var screens: [Screen] {
         [
@@ -179,16 +188,19 @@ enum Catalog {
 
     /// What became of a screen, as the manifest records it. `planned` is written before any
     /// picture is taken and stays when the run dies before reaching the screen. `taken` is a
-    /// picture with no reference to hold it against, which is every picture the iOS app takes.
+    /// picture with no reference to hold it against, which is every picture the iOS app takes;
+    /// `skipped` is one the simulator's screen cannot hold, with the reason after it.
     enum Outcome: String {
-        case planned, matched, mismatched, recorded, taken, failed
+        case planned, matched, mismatched, recorded, taken, skipped, failed
     }
 
-    /// One line of `manifest.txt` in `out`: the screen and its outcome, appended, so the last
-    /// line for a name is its answer and a run that dies leaves every earlier line in place.
-    static func note(_ name: String, _ outcome: Outcome, in out: URL) throws {
+    /// One line of `manifest.txt` in `out`: the screen, its outcome and any reason in brackets,
+    /// appended, so the last line for a name is its answer and a run that dies leaves every
+    /// earlier line in place.
+    static func note(_ name: String, _ outcome: Outcome, because reason: String? = nil, in out: URL) throws {
         let file = out.appendingPathComponent("manifest.txt")
-        let line = Data("\(name) \(outcome.rawValue)\n".utf8)
+        let said = reason.map { " (\($0))" } ?? ""
+        let line = Data("\(name) \(outcome.rawValue)\(said)\n".utf8)
         guard let handle = try? FileHandle(forWritingTo: file) else { return try line.write(to: file) }
         defer { try? handle.close() }
         try handle.seekToEnd()

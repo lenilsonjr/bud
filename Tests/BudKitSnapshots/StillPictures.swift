@@ -2,6 +2,8 @@ import XCTest
 @testable import BudKit
 
 #if canImport(SwiftUI)
+import SwiftUI
+
 /// What every picture shares, on the Mac and in the iOS app: the one moment it is taken at, the
 /// seed world on that clock, and the folder `BUD_SNAPSHOT_DIR` names.
 extension XCTestCase {
@@ -24,20 +26,32 @@ extension XCTestCase {
     func stillStore(devices: DeviceStore? = nil) -> BudStore {
         BudStore(fileURL: nil, devices: devices ?? stillDevices(), keys: stillKeys)
     }
+
+    /// Choices of a picture's own on the still suite, drawn always light or always dark as the
+    /// picture is, so the appearance the person or the host app chose never reaches it.
+    @MainActor
+    func stillFlags(_ scheme: ColorScheme) -> Flags {
+        let flags = Flags(defaults: StillKeys.defaults)
+        flags.appearance = scheme == .dark ? .dark : .light
+        return flags
+    }
 }
 
 /// The still layout, on a defaults suite named for this process alone, so two stores in one test
-/// share it and two runs side by side never share a file. The suite is wiped when the layout is
-/// made and again when the process ends; no picture records into it.
+/// share it and two runs side by side never share a file. The suite is wiped when it is first
+/// opened and again when the process ends. No picture records a key into it; a picture's flags
+/// keep its appearance there.
 enum StillKeys {
     static let suite = "bud.still.\(UUID().uuidString)"
 
-    static let layout: KeyLayout = {
+    static let defaults: UserDefaults = {
         guard let defaults = UserDefaults(suiteName: suite) else { fatalError("No defaults suite named \(suite)") }
         defaults.removePersistentDomain(forName: suite)
         atexit { UserDefaults(suiteName: StillKeys.suite)?.removePersistentDomain(forName: StillKeys.suite) }
-        return KeyLayout(defaults: defaults)
+        return defaults
     }()
+
+    static let layout = KeyLayout(defaults: defaults)
 }
 
 extension XCTestCase {

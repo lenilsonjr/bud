@@ -74,11 +74,7 @@ final class CatalogTests: XCTestCase {
         let store = stillStore()
         store.sidebar = SidebarVisibility(followsWindow: true)
         for (scheme, name) in names {
-            let sheet = CommandPalette(store: store, inSheet: true) { store.searching = false }
-                .frame(width: Catalog.phonePaletteSize.width, height: Catalog.phonePaletteSize.height)
-                .background(Theme.raised)
-                .environment(\.compact, true)
-            let image = try stillImage(sheet, scheme: scheme, scale: 1)
+            let image = try stillImage(Catalog.phonePaletteSheet(store), scheme: scheme, scale: 1)
             try check(image, surface: "modal", name: name, into: out)
         }
     }

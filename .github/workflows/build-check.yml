@@ -83,13 +83,15 @@ jobs:
           xcodebuild -project Bud.xcodeproj -scheme "${{ matrix.scheme }}" -configuration Debug
           -destination '${{ matrix.destination }}'
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
-      # The iOS catalog runs on a simulator on a Mac, by hand; here it is only compiled, against
-      # the app just built, so a change that breaks it shows before anyone needs the pictures.
+      # The iOS catalog runs on a simulator on a Mac, by hand; here it is only compiled for the
+      # simulator, where it runs, so a change that breaks it shows before anyone needs the
+      # pictures. The device build above is for another SDK, so the app builds again; the core's
+      # simulator slice is arm64 alone, and so is this build.
       - name: Compile the iOS catalog
         if: matrix.platform == 'iOS'
         run: >-
           xcodebuild -project Bud.xcodeproj -scheme "Bud iOS Catalog" -configuration Debug
-          -destination 'generic/platform=iOS'
+          -destination 'generic/platform=iOS Simulator' ARCHS=arm64
           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing
 
   # Pictures, not a gate: the canvas rendered in light and dark, attached to the run so a change can
