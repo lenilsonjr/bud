@@ -26,36 +26,29 @@ public final class CaptureRelay {
     }
 
     private var queue: [Line] = []
-    /// The stores listening, newest last, each with the windows that show it. A line goes to the
-    /// newest store that still has a window open, so it lands once.
-    private var stores: [(store: ObjectIdentifier, windows: Set<UUID>, sink: (Line) -> Void)] = []
+    /// The listeners, newest last. A line goes to the newest one only, so it lands once.
+    private var sinks: [(id: UUID, sink: (Line) -> Void)] = []
 
     public init() {}
 
     public func send(_ line: Line) {
-        if let sink = stores.last?.sink { sink(line) } else { queue.append(line) }
+        if let sink = sinks.last?.sink { sink(line) } else { queue.append(line) }
     }
 
-    /// Starts delivering into `store` for one more window, beginning with whatever waited. Keep
-    /// the answer to stop that window alone.
+    /// Starts delivering to one more listener, beginning with whatever waited. Keep the answer
+    /// to stop that listener alone.
     @discardableResult
-    public func listen(for store: AnyObject, _ sink: @escaping (Line) -> Void) -> UUID {
+    public func listen(_ sink: @escaping (Line) -> Void) -> UUID {
         let id = UUID()
-        let key = ObjectIdentifier(store)
-        var windows: Set<UUID> = [id]
-        if let i = stores.firstIndex(where: { $0.store == key }) { windows.formUnion(stores.remove(at: i).windows) }
-        stores.append((key, windows, sink))
+        sinks.append((id, sink))
         let waiting = queue
         queue = []
         waiting.forEach(sink)
         return id
     }
 
-    /// Stops one window. A store goes once its last window does; the others keep listening.
-    public func stopListening(_ id: UUID) {
-        for i in stores.indices { stores[i].windows.remove(id) }
-        stores.removeAll { $0.windows.isEmpty }
-    }
+    /// Stops one listener; the others keep listening.
+    public func stopListening(_ id: UUID) { sinks.removeAll { $0.id == id } }
 
     /// How many lines wait for a listener.
     public var waiting: Int { queue.count }
