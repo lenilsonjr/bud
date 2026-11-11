@@ -75,6 +75,8 @@ public actor MemoryPeers: Peers {
     private var listeners: [UUID: AsyncStream<PeerEvent>.Continuation] = [:]
     private var rotationFails = false
     private var syncFails = false
+    private var removing: Set<String> = []
+    private var devicesFail = false
 
     public init(
         devices: [Device]? = nil, lifetime: TimeInterval = Ticket.lifetime, missing: Set<String> = [],
@@ -93,6 +95,12 @@ public actor MemoryPeers: Peers {
 
     /// Whether the next key rotations fail outright, as on a closed node.
     public func setRotationFails(_ value: Bool) { rotationFails = value }
+
+    /// The ids that say they removed this device in the next key rotation, and leave the list.
+    public func setRemoving(_ ids: Set<String>) { removing = ids }
+
+    /// Whether reading the devices fails from now on, as a node busy elsewhere might.
+    public func setDevicesFail(_ value: Bool) { devicesFail = value }
 
     /// Whether a ticket this vault issued can be reached; when not, `accept` throws `unreachable`.
     public func setReachable(_ value: Bool) { reachable = value }
@@ -152,7 +160,10 @@ public actor MemoryPeers: Peers {
 
     // MARK: Peers
 
-    public func devices() async throws -> [Device] { all }
+    public func devices() async throws -> [Device] {
+        if devicesFail { throw PeersError.closed }
+        return all
+    }
 
     public func ticket(withAddresses: Bool) async throws -> Ticket {
         counter += 1
@@ -295,6 +306,12 @@ public actor MemoryPeers: Peers {
         var reached = 0
         var missed: [String] = []
         var steps: [RotationStep] = []
+        for id in removing.sorted() {
+            guard all.contains(where: { $0.id == id && !$0.isThisDevice }) else { continue }
+            all.removeAll { $0.id == id }
+            steps.append(.removed(id: id))
+        }
+        removing = []
         for index in all.indices where !all[index].isThisDevice {
             let misses = missing.contains(all[index].id)
             all[index].missed = misses

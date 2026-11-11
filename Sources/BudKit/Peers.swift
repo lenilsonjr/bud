@@ -225,14 +225,19 @@ public struct RotationResult: Hashable, Sendable {
     }
 }
 
-/// One step of a key rotation: a device tried, and at the end the result.
+/// One step of a key rotation: a device tried, or a device said it removed this one and took
+/// nothing, and at the end the result.
 public enum RotationStep: Hashable, Sendable {
     case device(id: String, reached: Bool)
+    /// Neither reached nor missed: it leaves the list instead.
+    case removed(id: String)
     case done(RotationResult)
 
     public var deviceID: String? {
-        if case let .device(id, _) = self { return id }
-        return nil
+        switch self {
+        case let .device(id, _), let .removed(id): return id
+        case .done: return nil
+        }
     }
 }
 
