@@ -46,20 +46,21 @@ enum Launch {
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
         let keeper = pairingKeeper
-        let kept = keeper?.kept
+        let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
+        // Tours and pictures start no node, so nothing would end a wait, and leave the kept
+        // pairing alone. A copy this build cannot read is no pairing either.
+        let kept = onTour ? nil : keeper?.kept.flatMap { pairingIsUsable(pairing: $0) ? $0 : nil }
         // An index gone with buds left in the folder: they would come back as new buds beside
-        // the peers' own, so they go before the first scan.
+        // the peers' own, so they go before the first scan, when the pairing will come back.
         if kept != nil, paths.fetchesFromPeer() { paths.emptyVaultFolder() }
         guard let vault = try? RustVault(paths: paths) else {
             let store = BudStore()
             if !forPictures { listenForCaptures(into: store) }
             return store
         }
-        let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
         // Decided by the vault's state, one small read of the index, so the wait is up before the
-        // first card; the restore itself runs off the main thread. Tours and pictures start no
-        // node, so nothing would end the wait.
-        let restoring = !onTour && kept.map { (try? vault.core.takesPairing(pairing: $0)) == true } == true
+        // first card; the restore itself runs off the main thread.
+        let restoring = kept.map { (try? vault.core.takesPairing(pairing: $0)) == true } == true
         let store = BudStore(vault: vault)
         if restoring { store.devices.awaitLaunchFetch() }
         #if !os(tvOS)
@@ -97,9 +98,9 @@ enum Launch {
                 await devices.use(peers)
                 if let keeper { await keepPairing(of: vault, in: keeper, following: devices) }
                 if restoring {
-                    // Twice the core's session timeout: one slow session with a peer that is
-                    // there ends before the wait gives up.
-                    await devices.startLaunchFetchPatience(2 * TimeInterval(sessionTimeoutSeconds()))
+                    // The node dials its peers one after another, each up to the core's session
+                    // timeout: the wait gives them all that, and one session more.
+                    await devices.startLaunchFetchPatience(sessionTimeout: TimeInterval(sessionTimeoutSeconds()))
                     // A cleared TV asks its peers at once rather than on the node's next round.
                     await devices.syncNow()
                 }

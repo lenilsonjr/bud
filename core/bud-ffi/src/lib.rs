@@ -573,13 +573,19 @@ pub struct Vault {
     inner: Arc<Mutex<bud_core::Vault>>,
 }
 
-/// Open the vault at `vault_dir` with its index at `index_path`, and bring the index up to date.
 /// How long one session with a peer may take, in seconds, before it is given up.
 #[uniffi::export]
 pub fn session_timeout_seconds() -> u64 {
     bud_core::SESSION_TIMEOUT.as_secs()
 }
 
+/// Whether `pairing` is a kept pairing this build can bring back, read without opening a vault.
+#[uniffi::export]
+pub fn pairing_is_usable(pairing: Vec<u8>) -> bool {
+    bud_core::Vault::pairing_is_usable(&pairing)
+}
+
+/// Open the vault at `vault_dir` with its index at `index_path`, and bring the index up to date.
 #[uniffi::export]
 pub fn open_vault(vault_dir: String, index_path: String) -> Result<Arc<Vault>> {
     let mut vault = bud_core::Vault::open(vault_dir, index_path)?;
@@ -636,7 +642,7 @@ impl Vault {
     }
 
     /// Whether `restore_pairing` would bring the kept pairing in: the vault has no node key and
-    /// no peer of its own, or has the kept key and no peer.
+    /// no peer of its own.
     pub fn takes_pairing(&self, pairing: Vec<u8>) -> Result<bool> {
         Ok(self.core().takes_pairing(&pairing)?)
     }

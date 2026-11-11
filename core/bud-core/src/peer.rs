@@ -747,21 +747,27 @@ impl Vault {
         Ok(Some(postcard::to_stdvec(&pairing).map_err(peer_error)?))
     }
 
+    /// Whether `bytes` is a kept pairing this build can bring back, read without a vault.
+    pub fn pairing_is_usable(bytes: &[u8]) -> bool {
+        Pairing::decode(bytes).is_ok()
+    }
+
     /// Whether [`Vault::restore_pairing`] would bring `bytes` in: the vault has no node key and
-    /// no peer but those of the kept pairing, as after a cleared cache or a restore cut short;
-    /// or it has the kept node key and no peer. A vault paired on its own never takes one.
+    /// no peer but those of the kept pairing, as after a cleared cache or a restore cut short.
+    /// A vault with a node key never takes one: a key with no peers is a device whose person
+    /// removed the last peer, and that pairing stays gone.
     pub fn takes_pairing(&self, bytes: &[u8]) -> Result<bool> {
         self.takes(&Pairing::decode(bytes)?)
     }
 
     fn takes(&self, pairing: &Pairing) -> Result<bool> {
-        let peers = self.peer_list()?;
-        Ok(match self.node_key_bytes()? {
-            Some(key) => peers.is_empty() && key == pairing.node_key,
-            None => peers
-                .iter()
-                .all(|peer| pairing.peers.iter().any(|(node, ..)| *node == peer.id)),
-        })
+        if self.node_key_bytes()?.is_some() {
+            return Ok(false);
+        }
+        Ok(self
+            .peer_list()?
+            .iter()
+            .all(|peer| pairing.peers.iter().any(|(node, ..)| *node == peer.id)))
     }
 
     /// The node key as it is on disk, or none before a node ran on the vault.
@@ -787,7 +793,6 @@ impl Vault {
             return Ok(false);
         }
         let key_path = self.index_dir.join(NODE_KEY_FILE);
-        let has_key = self.node_key_bytes()?.is_some();
         let mut conn = lock(&self.conn);
         let tx = conn.transaction()?;
         tx.execute(
@@ -835,12 +840,10 @@ impl Vault {
         drop(conn);
         // The key goes in last, once the rows have landed, and whole: written beside its place
         // and moved there.
-        if !has_key {
-            let fresh = key_path.with_extension("key.new");
-            let _ = std::fs::remove_file(&fresh);
-            write_private(&fresh, &pairing.node_key)?;
-            std::fs::rename(&fresh, &key_path)?;
-        }
+        let fresh = key_path.with_extension("key.new");
+        let _ = std::fs::remove_file(&fresh);
+        write_private(&fresh, &pairing.node_key)?;
+        std::fs::rename(&fresh, &key_path)?;
         Ok(true)
     }
 }

@@ -507,6 +507,35 @@ extension DeviceStoreTests {
         XCTAssertEqual(DeviceStore.launchFetchPatience, 2 * 60)
     }
 
+    func testThePatienceGrowsWithThePeersTheNodeDials() {
+        XCTAssertEqual(DeviceStore.launchFetchPatience(peers: 1, sessionTimeout: 60), 120)
+        XCTAssertEqual(DeviceStore.launchFetchPatience(peers: 3, sessionTimeout: 60), 240)
+        XCTAssertEqual(DeviceStore.launchFetchPatience(peers: 0, sessionTimeout: 60), 120, "never less than one peer")
+    }
+
+    func testThePatienceSizedToTheListedPeersStillEnds() async {
+        let (store, _, _) = await make()
+        store.awaitLaunchFetch()
+        // Four other devices in the fixtures: five sessions of 0.01 s.
+        store.startLaunchFetchPatience(sessionTimeout: 0.01)
+        await eventually { store.launchFetch == nil }
+    }
+
+    func testTwoStartsAtOnceListenOnce() async {
+        let peers = MemoryPeers()
+        let store = DeviceStore(peers: peers)
+        var changes = 0
+        store.onPairingChanged = { changes += 1 }
+        async let first: Void = store.start()
+        async let second: Void = store.start()
+        _ = await (first, second)
+        await store.start()
+        await peers.emitPairingChanged()
+        await eventually { changes >= 1 }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(changes, 1)
+    }
+
     // MARK: Kept pairing
 
     func testPairingRenamingAndRemovingTellThePairingChanged() async throws {
