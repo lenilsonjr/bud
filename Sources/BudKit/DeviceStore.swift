@@ -198,12 +198,14 @@ public final class DeviceStore: ObservableObject {
     }
 
     /// Syncs with every peer now. One that answered ends a launch fetch, whatever it brought:
-    /// it holds everything the peer had.
+    /// it holds everything the peer had. So does a sync with no peer to ask. A sync that reached
+    /// no peer leaves the wait to its patience, which gives every peer its session: a peer that
+    /// failed at once may be back on the node's next round.
     public func syncNow() async {
-        // Either way the launch wait is over: a sync that reached no peer will not fill it sooner,
-        // and the node keeps trying on its own rounds.
-        if let summary = try? await peers.syncNow() { lastSummary = summary }
-        endLaunchFetch()
+        if let summary = try? await peers.syncNow() {
+            lastSummary = summary
+            endLaunchFetch()
+        }
         await refresh()
     }
 

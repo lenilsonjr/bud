@@ -32,6 +32,16 @@ public struct BudTVView: View {
     }
 }
 
+private extension TVForeground.Phase {
+    init(_ phase: ScenePhase) {
+        switch phase {
+        case .active: self = .active
+        case .background: self = .background
+        default: self = .inactive
+        }
+    }
+}
+
 /// The window's contents, watching both the store and its devices so the join and the first
 /// fetch can move the screen along.
 struct TVShell: View {
@@ -47,6 +57,8 @@ struct TVShell: View {
     @FocusState private var focusedTab: TVTab?
     @FocusState private var searchLit: Bool
     @Environment(\.scenePhase) private var scenePhase
+    /// Whether the app went to the background since it was last active.
+    @State private var foreground = TVForeground()
 
     init(store: BudStore) {
         self.store = store
@@ -62,7 +74,7 @@ struct TVShell: View {
                 .focusable()
                 .onExitCommand { devices.endLaunchFetch() }
                 .preferredColorScheme(flags.appearance.colorScheme)
-                .onChange(of: scenePhase) { _, phase in keepPairingOnTheWayOut(phase) }
+                .onChange(of: scenePhase) { _, phase in sceneMoved(to: phase, syncing: false) }
         } else {
             shell
         }
@@ -103,17 +115,17 @@ struct TVShell: View {
             // The first sync finished before the fetch reported a total: the cards can open.
             if fetching { finishFetch() }
         }
-        .onChange(of: scenePhase) { _, phase in
-            // The node runs while the app is up; back from the background it syncs at once,
-            // rather than on its next round, so the TV carries what one peer left for another.
-            if phase == .active { Task { await devices.syncNow() } }
-            keepPairingOnTheWayOut(phase)
-        }
+        .onChange(of: scenePhase) { _, phase in sceneMoved(to: phase, syncing: true) }
     }
 
-    /// Into the background the kept pairing is brought up to date, in case the app is not back
-    /// before the cache is cleared.
-    private func keepPairingOnTheWayOut(_ phase: ScenePhase) {
+    /// The node runs while the app is up; back from the background it syncs at once, with
+    /// `syncing`, rather than on its next round, so the TV carries what one peer left for
+    /// another. A system overlay that only made the app inactive asks for nothing. Into the
+    /// background the kept pairing is brought up to date, in case the app is not back before the
+    /// cache is cleared. The launch fetch notes the phases too, and leaves the syncing to the
+    /// launch.
+    private func sceneMoved(to phase: ScenePhase, syncing: Bool) {
+        if foreground.moved(to: TVForeground.Phase(phase)), syncing { Task { await devices.syncNow() } }
         if phase == .background { devices.pairingMayHaveChanged() }
     }
 

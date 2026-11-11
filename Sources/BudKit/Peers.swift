@@ -172,6 +172,8 @@ public enum PeersError: Error, Equatable, Sendable {
     case nothingOffered
     /// The node has stopped and takes no more calls.
     case closed
+    /// A sync reached none of the peers it had.
+    case noPeerAnswered
 }
 
 /// How this node reaches peers that are not on the same network.
