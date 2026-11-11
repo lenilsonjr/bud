@@ -106,13 +106,22 @@ public final class DeviceStore: ObservableObject {
     private var scan = 0
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
+    /// Counts the starts, so one that finishes after a newer one began does not listen too.
+    private var starts = 0
     /// Ends the launch fetch when nothing has moved for a while.
     private var launchFetchTimer: Task<Void, Never>?
     private var launchPatience: TimeInterval = DeviceStore.launchFetchPatience
     /// How long the launch fetch waits with no progress before the cards open anyway, when the
-    /// app names no other time: twice the core's session timeout, so one slow session with a
-    /// peer that is there ends before the wait gives up. The app passes the core's own value.
+    /// app names no other time: what one peer and one more session take at the core's
+    /// one-minute session timeout. The app passes a time from the core's own value.
     nonisolated public static let launchFetchPatience: TimeInterval = 120
+
+    /// How long the launch fetch waits for a node that dials `peers` peers one after another,
+    /// each session given up after `sessionTimeout` seconds: all of them, and one more session,
+    /// so the last peer that is there still ends before the wait gives up.
+    nonisolated public static func launchFetchPatience(peers: Int, sessionTimeout: TimeInterval) -> TimeInterval {
+        TimeInterval(max(peers, 1) + 1) * sessionTimeout
+    }
 
     /// The store the apps use. It starts on this device alone, so Settings shows the invitation,
     /// and the app hands it the real node once that has started (`use`); pictures keep it alone.
@@ -147,11 +156,17 @@ public final class DeviceStore: ObservableObject {
     }
 
     /// Loads the devices and starts following what the node says.
+    /// Safe to call again while one is under way: only the latest start listens, and a stream
+    /// an older one opened is let go unheard.
     public func start() async {
+        starts += 1
+        let mine = starts
         listening?.cancel()
+        listening = nil
         let events = try? await peers.events()
+        guard mine == starts else { return }
         await refresh()
-        guard let events else { return }
+        guard let events, mine == starts else { return }
         listening = Task { [weak self] in
             for await event in events {
                 guard let self else { return }
@@ -161,6 +176,7 @@ public final class DeviceStore: ObservableObject {
     }
 
     public func stop() {
+        starts += 1
         listening?.cancel()
         listening = nil
         closeTicket()
@@ -343,6 +359,12 @@ public final class DeviceStore: ObservableObject {
     public func startLaunchFetchPatience(_ patience: TimeInterval = DeviceStore.launchFetchPatience) {
         launchPatience = patience
         waitForLaunchFetch()
+    }
+
+    /// The same, sized to the peers listed now, each given `sessionTimeout` seconds.
+    public func startLaunchFetchPatience(sessionTimeout: TimeInterval) {
+        let peers = devices.filter { !$0.isThisDevice }.count
+        startLaunchFetchPatience(Self.launchFetchPatience(peers: peers, sessionTimeout: sessionTimeout))
     }
 
     /// Something may have changed what this device keeps of its pairing, such as the app going

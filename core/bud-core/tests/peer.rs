@@ -1218,18 +1218,23 @@ fn a_restore_cut_short_after_its_rows_is_taken_again() {
 }
 
 #[test]
-fn a_kept_node_key_with_no_peers_takes_its_own_pairing_only() {
-    let (_a, b) = paired(None);
+fn a_node_key_with_no_peers_never_takes_a_kept_pairing() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
     let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
-    let key = std::fs::read(b.index.path().join("node.key")).unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let index = tempfile::tempdir().unwrap();
-    std::fs::write(index.path().join("node.key"), &key).unwrap();
-    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
-    assert!(vault.restore_pairing(&kept).unwrap(), "the same key");
-    assert_eq!(std::fs::read(index.path().join("node.key")).unwrap(), key);
+    assert!(Vault::pairing_is_usable(&kept));
+    assert!(!Vault::pairing_is_usable(&kept[..kept.len() / 2]));
+    // The person removed the last peer: the same key, no peers. That pairing stays gone.
+    b.node.forget_peer(&a.node.id()).unwrap();
+    assert!(b.node.peers().unwrap().is_empty());
+    let vault = b.vault.lock().unwrap();
+    assert!(!vault.takes_pairing(&kept).unwrap());
+    assert!(!vault.restore_pairing(&kept).unwrap());
+    drop(vault);
+    assert!(b.node.peers().unwrap().is_empty());
 
     // Another key with no peers: that device is someone else.
+    let dir = tempfile::tempdir().unwrap();
     let index = tempfile::tempdir().unwrap();
     std::fs::write(index.path().join("node.key"), [9u8; 32]).unwrap();
     let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();

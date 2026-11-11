@@ -60,6 +60,13 @@ final class VaultPathsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: tv.indexFile.path), "the index stays")
     }
 
+    func testANodeKeyLeftBehindIsNoClearedCache() throws {
+        let tv = temporary(.tvOS)
+        try FileManager.default.createDirectory(at: tv.indexFolder, withIntermediateDirectories: true)
+        try Data(count: 32).write(to: tv.nodeKeyFile)
+        XCTAssertFalse(tv.fetchesFromPeer())
+    }
+
     func testAClearedCacheFetches() {
         let tv = temporary(.tvOS)
         XCTAssertTrue(tv.fetchesFromPeer())

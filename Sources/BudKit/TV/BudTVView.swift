@@ -62,7 +62,7 @@ struct TVShell: View {
                 .focusable()
                 .onExitCommand { devices.endLaunchFetch() }
                 .preferredColorScheme(flags.appearance.colorScheme)
-                .task { await devices.start() }
+                .onChange(of: scenePhase) { _, phase in keepPairingOnTheWayOut(phase) }
         } else {
             shell
         }
@@ -107,10 +107,14 @@ struct TVShell: View {
             // The node runs while the app is up; back from the background it syncs at once,
             // rather than on its next round, so the TV carries what one peer left for another.
             if phase == .active { Task { await devices.syncNow() } }
-            // On the way out the kept pairing is brought up to date, in case the app is not
-            // back before the cache is cleared.
-            if phase != .active { devices.pairingMayHaveChanged() }
+            keepPairingOnTheWayOut(phase)
         }
+    }
+
+    /// Into the background the kept pairing is brought up to date, in case the app is not back
+    /// before the cache is cleared.
+    private func keepPairingOnTheWayOut(_ phase: ScenePhase) {
+        if phase == .background { devices.pairingMayHaveChanged() }
     }
 
     /// G18 while the vault comes over; the cards open on their own when it is done.

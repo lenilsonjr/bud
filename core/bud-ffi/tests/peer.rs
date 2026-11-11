@@ -2,8 +2,8 @@
 //! and sync over the loopback interface, with the relay off.
 
 use bud_ffi::{
-    open_vault, start_node, start_node_as, PeerEvent, PeerListener, PeerNode, RelaySetting, Vault,
-    VaultError,
+    open_vault, pairing_is_usable, start_node, start_node_as, PeerEvent, PeerListener, PeerNode,
+    RelaySetting, Vault, VaultError,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -376,6 +376,8 @@ fn a_kept_pairing_brings_a_cleared_device_back_as_itself() {
     b.node.sync_now().unwrap();
     assert!(a.vault.pairing().unwrap().is_some());
     let kept = b.vault.pairing().unwrap().unwrap();
+    assert!(pairing_is_usable(kept.clone()));
+    assert!(!pairing_is_usable(vec![1, 2, 3]));
     let id = b.node.id().unwrap();
     b.node.stop();
     drop(b);

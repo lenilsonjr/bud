@@ -48,6 +48,11 @@ public struct VaultPaths: Sendable, Equatable {
         indexFolder.appendingPathComponent("index.db")
     }
 
+    /// The node's key inside `indexFolder`, beside the index.
+    public var nodeKeyFile: URL {
+        indexFolder.appendingPathComponent("node.key")
+    }
+
     /// Whether a launch should fetch the vault from a peer before it shows cards: only where the
     /// vault is a cache, and only when the cache was cleared. The system clears Caches as a
     /// whole, so a missing index is the sign; an empty folder beside an index is a vault that is
@@ -56,9 +61,9 @@ public struct VaultPaths: Sendable, Equatable {
         platform == .tvOS && indexIsMissing
     }
 
-    /// The same, read from the disk.
+    /// The same, read from the disk: the index and the node key are both gone.
     public func fetchesFromPeer(_ files: FileManager = .default) -> Bool {
-        fetchesFromPeer(indexIsMissing: !files.fileExists(atPath: indexFile.path))
+        fetchesFromPeer(indexIsMissing: !files.fileExists(atPath: indexFile.path) && !files.fileExists(atPath: nodeKeyFile.path))
     }
 
     /// Clears what is left in the vault folder, keeping the folder: on the Apple TV, when the
