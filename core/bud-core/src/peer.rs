@@ -843,7 +843,10 @@ impl Vault {
         let fresh = key_path.with_extension("key.new");
         let _ = std::fs::remove_file(&fresh);
         write_private(&fresh, &pairing.node_key)?;
+        // On the disk before it takes the key's name, and the name on the disk after.
+        std::fs::File::open(&fresh)?.sync_all()?;
         std::fs::rename(&fresh, &key_path)?;
+        sync_dir(&self.index_dir);
         Ok(true)
     }
 }
@@ -1113,6 +1116,13 @@ fn node_key(path: &Path) -> Result<SecretKey> {
             Ok(SecretKey::from_bytes(&bytes))
         }
         Err(err) => Err(err.into()),
+    }
+}
+
+/// Make what a folder lists durable, where the system allows a folder to be synced.
+fn sync_dir(dir: &Path) {
+    if let Ok(folder) = std::fs::File::open(dir) {
+        let _ = folder.sync_all();
     }
 }
 

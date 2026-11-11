@@ -473,7 +473,8 @@ extension DeviceStoreTests {
     func testALaunchFetchWithNoProgressGivesUpAfterItsPatience() async {
         let (store, _, _) = await make()
         store.awaitLaunchFetch()
-        store.startLaunchFetchPatience(0.05)
+        // Four other devices in the fixtures: five sessions of 0.01 s.
+        store.startLaunchFetchPatience(sessionTimeout: 0.01)
         XCTAssertNotNil(store.launchFetch)
         await eventually { store.launchFetch == nil }
     }
@@ -488,7 +489,7 @@ extension DeviceStoreTests {
     func testProgressStartsThePatienceOver() async throws {
         let (store, peers, _) = await make()
         store.awaitLaunchFetch()
-        store.startLaunchFetchPatience(0.3)
+        store.startLaunchFetchPatience(sessionTimeout: 0.06)
         try await Task.sleep(nanoseconds: 200_000_000)
         await peers.emitFetchProgress(received: 0, total: 50)
         await eventually { store.launchFetch == LaunchFetch(received: 0, total: 50) }
@@ -499,12 +500,8 @@ extension DeviceStoreTests {
 
     func testPatienceWithNoWaitStartsNothing() async {
         let (store, _, _) = await make()
-        store.startLaunchFetchPatience(0.01)
+        store.startLaunchFetchPatience(sessionTimeout: 0.01)
         XCTAssertNil(store.launchFetch)
-    }
-
-    func testTheDefaultPatienceIsTwiceTheSessionTimeout() {
-        XCTAssertEqual(DeviceStore.launchFetchPatience, 2 * 60)
     }
 
     func testThePatienceGrowsWithThePeersTheNodeDials() {

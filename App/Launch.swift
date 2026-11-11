@@ -124,7 +124,10 @@ enum Launch {
     /// index the system may clear.
     private static var pairingKeeper: PairingKeeper? {
         #if os(tvOS)
-        return PairingKeeper(store: KeychainTokens(service: PairingKeeper.service))
+        let keeper = PairingKeeper(store: KeychainTokens(service: PairingKeeper.service))
+        // A copy kept by an install of the app that was deleted goes, rather than rejoining.
+        keeper.dropForeign()
+        return keeper
         #else
         return nil
         #endif
@@ -135,13 +138,14 @@ enum Launch {
 
     /// Keeps the pairing up to date while the app runs: now, after every change the devices or
     /// the node tell of, when the app leaves the foreground, and every few minutes besides.
-    /// One step at a time, so an older read never lands after a newer one.
+    /// One step at a time, so an older read never lands after a newer one. Nothing waits for
+    /// the first step: the launch fetch goes on beside it.
     private static func keepPairing(of vault: RustVault, in keeper: PairingKeeper, following devices: DeviceStore) async {
         let sync = PairingSync(keeper: keeper) { try vault.core.pairing() }
         pairingSync = sync
         devices.onPairingChanged = { Task { await sync.keep() } }
         devices.onUnpaired = { Task { await sync.forget() } }
-        await sync.keep()
+        Task { await sync.keep() }
         await sync.start(every: 5 * 60)
     }
 
