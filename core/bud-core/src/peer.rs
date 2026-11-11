@@ -86,6 +86,10 @@ const CLOSE_REMOVED: u32 = 2;
 /// How long an issued ticket can be redeemed.
 const TICKET_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
+/// How long a dialer whose session failed waits for the connection to say why: the stream can
+/// fail before the close of a peer that removed it lands.
+const CLOSE_WAIT: Duration = Duration::from_secs(2);
+
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -300,11 +304,14 @@ pub struct RotateReport {
 }
 
 /// How one peer fared in a key rotation: it confirmed the hand over, or the hand over did not
-/// come back and a probe said whether it holds the new key.
+/// come back and a probe said whether it holds the new key, or it said it removed this vault,
+/// in the hand over or the probe, and took nothing. A removed peer is not missed: it is let go
+/// (see [`NodeEvent::PeerRemoved`]), or stays only for a ticket of it this vault holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RotationOutcome {
     Confirmed,
     Probed { holds_key: bool },
+    Removed,
 }
 
 /// What a node tells its listeners as it goes, for the screens that show pairing and syncing.
@@ -643,14 +650,18 @@ impl Vault {
 
     /// Let go of a peer that said it removed this vault, without refusing it, so the two may
     /// pair again. A peer whose ticket this vault holds and has not redeemed stays, ticket and
-    /// all: the vault took a new ticket of that peer, which redeems once the peer lets it back
-    /// in. True when the peer went.
-    fn drop_removed(&self, id: &str) -> Result<bool> {
+    /// all, while the ticket can still be redeemed: the vault took a new ticket of that peer,
+    /// which redeems once the peer lets it back in. The peer does not say when it made the
+    /// ticket, so its `lifetime` counts from when this vault took it; a rotation voids it (see
+    /// [`Vault::replace_key`]). True when the peer went.
+    fn drop_removed(&self, id: &str, lifetime: Duration) -> Result<bool> {
         let conn = lock(&self.conn);
+        // A peer's row says when it was added in seconds, and the ticket came with it.
         let pending = conn
             .query_row(
-                "SELECT 1 FROM peer_ticket WHERE node = ?1",
-                params![id],
+                "SELECT 1 FROM peer_ticket JOIN peers ON peers.node = peer_ticket.node
+                 WHERE peer_ticket.node = ?1 AND peers.added * 1000 > ?2",
+                params![id, now_millis() - lifetime.as_millis() as i64],
                 |_| Ok(()),
             )
             .optional()?
@@ -735,7 +746,8 @@ impl Vault {
     }
 
     /// Replace the vault key and note the peers that still hold the old one, all at once: a key
-    /// that changed always comes with who missed it. Tickets issued under the old key are void.
+    /// that changed always comes with who missed it. Tickets issued under the old key are void,
+    /// this vault's and the ones it holds of its peers, which it took the old key from.
     fn replace_key(&self, key: &[u8; 32], missed: &[String]) -> Result<()> {
         let mut conn = lock(&self.conn);
         let tx = conn.transaction()?;
@@ -745,6 +757,7 @@ impl Vault {
             params![key.to_vec()],
         )?;
         tx.execute("DELETE FROM tickets_issued", [])?;
+        tx.execute("DELETE FROM peer_ticket", [])?;
         // Whoever took the new key is not on the old one any more.
         tx.execute("DELETE FROM peer_missed", [])?;
         for id in missed {
@@ -1280,6 +1293,11 @@ struct Shared {
     ticket_lifetime_ms: AtomicU64,
     /// How many confirmations of a new key to withhold; only tests make it more than zero.
     dropped_acks: AtomicUsize,
+    /// How many confirmations of a new key to withhold while removing the peer that sent it;
+    /// only tests make it more than zero.
+    removing_acks: AtomicUsize,
+    /// How many times this node dialed a peer, for tests that count them.
+    dials: AtomicUsize,
     /// How many sessions this node answers to end after applying the dialer's changes, without
     /// confirming them; only tests make it more than zero.
     dropped_dones: AtomicUsize,
@@ -1292,6 +1310,36 @@ struct Shared {
     /// Where the answer to the key on offer goes, while a session waits for it, under the secret
     /// of the request the key came to, so one session never clears another's offer.
     offer: Mutex<Option<([u8; 32], tokio::sync::oneshot::Sender<bool>)>>,
+}
+
+/// How a dial that did not fail ended: what the session gave, or the peer said it removed this
+/// vault.
+enum Dialed<T> {
+    Ran(T),
+    Removed,
+}
+
+/// Take one from a count a test set, when there is one to take.
+fn take_one(count: &AtomicUsize) -> bool {
+    if count.load(Ordering::SeqCst) == 0 {
+        return false;
+    }
+    count.fetch_sub(1, Ordering::SeqCst);
+    true
+}
+
+/// Whether a connection whose session failed was closed by a peer that removed this vault. A
+/// stream can fail before the close lands, so a connection that has no reason yet is given a
+/// moment to get one.
+async fn closed_as_removed(connection: &Connection) -> bool {
+    let reason = match connection.close_reason() {
+        Some(reason) => reason,
+        None => match tokio::time::timeout(CLOSE_WAIT, connection.closed()).await {
+            Ok(reason) => reason,
+            Err(_) => return false,
+        },
+    };
+    is_removal(&reason)
 }
 
 /// Counts a running session for as long as it lives.
@@ -1466,35 +1514,46 @@ impl Shared {
 
     /// Dial a peer and do `run` over the connection. A peer that closes it saying it removed
     /// this vault, while it connects or during `run`, is let go here (see
-    /// [`Vault::drop_removed`]) and its removal told.
+    /// [`Vault::drop_removed`]) and its removal told; the dial comes back as removed, whether
+    /// the peer went or stays for a ticket.
     async fn dial<T>(
         &self,
         peer: &PeerInfo,
         run: impl AsyncFnOnce(&Connection) -> Result<T>,
-    ) -> Result<T> {
+    ) -> Result<Dialed<T>> {
+        self.dials.fetch_add(1, Ordering::SeqCst);
         match self.endpoint.connect(self.address_of(peer)?, ALPN).await {
             Ok(connection) => match run(&connection).await {
-                Err(_) if connection.close_reason().is_some_and(|r| is_removal(&r)) => {}
-                done => return done,
+                Ok(done) => return Ok(Dialed::Ran(done)),
+                Err(err) if !closed_as_removed(&connection).await => return Err(err),
+                Err(_) => {}
             },
             Err(err) if connect_was_removal(&err) => {}
             Err(err) => return Err(peer_error(err)),
         }
-        if self.vault().drop_removed(&peer.id)? {
-            self.lost(&peer.id);
+        self.lost(&peer.id);
+        if self
+            .vault()
+            .drop_removed(&peer.id, self.ticket_lifetime())?
+        {
             self.emit(NodeEvent::PeerRemoved {
                 id: peer.id.clone(),
             });
         }
-        Err(peer_error("a peer removed this device"))
+        Ok(Dialed::Removed)
     }
 
     /// Dial a peer and run one session.
     async fn exchange(&self, peer: &PeerInfo) -> Result<SyncReport> {
-        self.dial(peer, async |connection| {
-            self.session(peer, connection).await
-        })
-        .await
+        match self
+            .dial(peer, async |connection| {
+                self.session(peer, connection).await
+            })
+            .await?
+        {
+            Dialed::Ran(report) => Ok(report),
+            Dialed::Removed => Err(peer_error("a peer removed this device")),
+        }
     }
 
     /// One session over a connection to a peer: heads, changes both ways, confirmation.
@@ -1552,43 +1611,30 @@ impl Shared {
         Ok(report)
     }
 
-    /// Hand a peer the new vault key over a session sealed with the old one.
-    async fn hand_over(&self, peer: &PeerInfo, old: &[u8; 32], new: &[u8; 32]) -> Result<()> {
-        self.dial(peer, async |connection| {
+    /// Send a peer `message` sealed with `key` and wait, a session at most, for it to confirm:
+    /// the new vault key handed over under the old one, or a probe under the new one of whether
+    /// the peer holds it.
+    async fn ask(&self, peer: &PeerInfo, key: &[u8; 32], message: &Message) -> Result<Dialed<()>> {
+        let asked = self.dial(peer, async |connection| {
             let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-            send_message(&mut send, old, Side::Dialer, &Message::Rotate(*new)).await?;
-            let Message::Done = read_message(&mut recv, old, Side::Answerer, MAX_FRAME).await?
-            else {
-                return Err(peer_error("a peer did not confirm the new key"));
-            };
-            send.finish().map_err(peer_error)?;
-            connection.close(0u32.into(), b"done");
-            Ok(())
-        })
-        .await
-    }
-
-    /// Ask a peer whether it holds `key`, over a session sealed with it. Used after a hand over
-    /// whose confirmation did not arrive, to tell a lost acknowledgement from a missed key.
-    async fn holds_key(&self, peer: &PeerInfo, key: &[u8; 32]) -> Result<()> {
-        self.dial(peer, async |connection| {
-            let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-            send_message(&mut send, key, Side::Dialer, &Message::Probe).await?;
+            send_message(&mut send, key, Side::Dialer, message).await?;
             let Message::Done = read_message(&mut recv, key, Side::Answerer, MAX_FRAME).await?
             else {
-                return Err(peer_error("a peer did not confirm the key"));
+                return Err(peer_error("a peer did not confirm"));
             };
             send.finish().map_err(peer_error)?;
             connection.close(0u32.into(), b"done");
             Ok(())
-        })
-        .await
+        });
+        tokio::time::timeout(SESSION_TIMEOUT, asked)
+            .await
+            .map_err(|_| peer_error("a peer did not answer"))?
     }
 
     /// Make a new vault key, give it to every peer, then take it. A peer is missed only when it
     /// still holds the old key: one whose confirmation was lost is asked once more with the new
-    /// key before it is listed. A peer that says it removed this vault is let go instead, told as
-    /// a step that did not take the key, and is neither reached nor missed.
+    /// key before it is listed. A peer that says it removed this vault, in the hand over or the
+    /// probe, is told as removed, is neither reached nor missed, and is not asked again.
     async fn rotate(&self) -> Result<RotateReport> {
         let _busy = Busy::new(&self.active);
         let old = self.vault().peer_key()?;
@@ -1600,30 +1646,31 @@ impl Shared {
             missed: Vec::new(),
         };
         for peer in &peers {
-            let handed = tokio::time::timeout(SESSION_TIMEOUT, self.hand_over(peer, &old, &new))
-                .await
-                .map_err(|_| peer_error("a peer did not answer"))
-                .and_then(|done| done);
-            let gone = handed.is_err() && !self.vault().is_peer(&peer.id)?;
-            let outcome = match handed {
-                Ok(()) => RotationOutcome::Confirmed,
-                Err(_) if gone => RotationOutcome::Probed { holds_key: false },
-                Err(_) => RotationOutcome::Probed {
-                    holds_key: tokio::time::timeout(SESSION_TIMEOUT, self.holds_key(peer, &new))
-                        .await
-                        .is_ok_and(|probe| probe.is_ok()),
+            let outcome = match self.ask(peer, &old, &Message::Rotate(new)).await {
+                Ok(Dialed::Ran(())) => RotationOutcome::Confirmed,
+                Ok(Dialed::Removed) => RotationOutcome::Removed,
+                Err(_) => match self.ask(peer, &new, &Message::Probe).await {
+                    Ok(Dialed::Ran(())) => RotationOutcome::Probed { holds_key: true },
+                    Ok(Dialed::Removed) => RotationOutcome::Removed,
+                    Err(_) => RotationOutcome::Probed { holds_key: false },
                 },
             };
             self.emit(NodeEvent::KeyRotation {
                 id: peer.id.clone(),
                 outcome,
             });
-            let took = !matches!(outcome, RotationOutcome::Probed { holds_key: false });
-            if took {
-                report.reached += 1;
-            } else if !gone {
-                self.lost(&peer.id);
-                report.missed.push(peer.id.clone());
+            match outcome {
+                RotationOutcome::Confirmed | RotationOutcome::Probed { holds_key: true } => {
+                    report.reached += 1;
+                }
+                RotationOutcome::Removed => {}
+                // A peer let go while it was asked has no row left to mark.
+                RotationOutcome::Probed { holds_key: false } => {
+                    if self.vault().is_peer(&peer.id)? {
+                        self.lost(&peer.id);
+                        report.missed.push(peer.id.clone());
+                    }
+                }
             }
         }
         self.vault().replace_key(&new, &report.missed)?;
@@ -1750,8 +1797,11 @@ impl Shared {
                 self.vault().replace_key(&new, &[])?;
                 self.emit(NodeEvent::PairingChanged);
                 self.reached(&remote_text);
-                if self.dropped_acks.load(Ordering::SeqCst) > 0 {
-                    self.dropped_acks.fetch_sub(1, Ordering::SeqCst);
+                let removing = take_one(&self.removing_acks);
+                if removing || take_one(&self.dropped_acks) {
+                    if removing {
+                        self.vault().forget(&remote_text)?;
+                    }
                     connection.close(1u32.into(), b"dropped");
                     return Ok(());
                 }
@@ -1874,6 +1924,8 @@ impl Node {
             active: AtomicUsize::new(0),
             ticket_lifetime_ms: AtomicU64::new(TICKET_LIFETIME.as_millis() as u64),
             dropped_acks: AtomicUsize::new(0),
+            removing_acks: AtomicUsize::new(0),
+            dials: AtomicUsize::new(0),
             dropped_dones: AtomicUsize::new(0),
             identity: options.identity,
             listeners: Mutex::new(Vec::new()),
@@ -1948,6 +2000,20 @@ impl Node {
     #[doc(hidden)]
     pub fn drop_next_key_acks(&self, count: usize) {
         self.shared.dropped_acks.store(count, Ordering::SeqCst);
+    }
+
+    /// Withhold the confirmation of the next `count` key hand overs this node answers, after it
+    /// took the key, and remove the node that sent each one, so its removal lands on the probe
+    /// that follows. For tests of a peer let go in the middle of a rotation.
+    #[doc(hidden)]
+    pub fn drop_next_key_acks_and_remove(&self, count: usize) {
+        self.shared.removing_acks.store(count, Ordering::SeqCst);
+    }
+
+    /// How many times this node dialed a peer, for tests that count them.
+    #[doc(hidden)]
+    pub fn dials(&self) -> usize {
+        self.shared.dials.load(Ordering::SeqCst)
     }
 
     /// End the next `count` sessions this node answers once the dialer's changes are applied,
