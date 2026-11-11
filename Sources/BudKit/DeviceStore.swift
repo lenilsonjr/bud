@@ -84,7 +84,8 @@ public final class DeviceStore: ObservableObject {
     /// Told when a key rotation is over, for the toast that says who missed it.
     public var onRotationFinished: ((RotationResult) -> Void)?
     /// Told when this device paired, or a peer was removed, renamed, let back in or given a new
-    /// key: for the copy of the pairing kept outside the vault.
+    /// key, or another device removed this one: for the copy of the pairing kept outside the
+    /// vault.
     public var onPairingChanged: (() -> Void)?
     /// Told when this device, which had other devices, has none left: removed here, or gone
     /// from the node's list any other way. The kept pairing goes.
@@ -477,6 +478,10 @@ public final class DeviceStore: ObservableObject {
             onSyncFinished?(summary)
             await refresh()
         case .pairingChanged:
+            onPairingChanged?()
+        case .deviceRemoved:
+            // Gone from the node's list: the last one gone unpairs this device.
+            await refresh()
             onPairingChanged?()
         case let .fetchProgress(received, total):
             fetched = (received, total)

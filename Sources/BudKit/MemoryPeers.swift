@@ -113,6 +113,15 @@ public actor MemoryPeers: Peers {
         emit(.pairingChanged)
     }
 
+    /// Another device removed this one: it leaves the list and every listener is told, as the
+    /// node does when a peer says so.
+    public func removedBy(_ id: String) {
+        guard let index = all.firstIndex(where: { $0.id == id && !$0.isThisDevice }) else { return }
+        all.remove(at: index)
+        missing.remove(id)
+        emit(.deviceRemoved(id: id))
+    }
+
     /// What reading or confirming a request fails with from now on; nil lets them work.
     public func setRequestFailure(_ error: RequestError?) { requestFailure = error }
 
