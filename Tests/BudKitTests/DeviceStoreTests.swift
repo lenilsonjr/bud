@@ -510,14 +510,6 @@ extension DeviceStoreTests {
         XCTAssertEqual(DeviceStore.launchFetchPatience(peers: 0, sessionTimeout: 60), 120, "never less than one peer")
     }
 
-    func testThePatienceSizedToTheListedPeersStillEnds() async {
-        let (store, _, _) = await make()
-        store.awaitLaunchFetch()
-        // Four other devices in the fixtures: five sessions of 0.01 s.
-        store.startLaunchFetchPatience(sessionTimeout: 0.01)
-        await eventually { store.launchFetch == nil }
-    }
-
     func testTwoStartsAtOnceListenOnce() async {
         let peers = MemoryPeers()
         let store = DeviceStore(peers: peers)

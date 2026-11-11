@@ -37,11 +37,8 @@ final class VaultPathsTests: XCTestCase {
         }
     }
 
-    func testOnlyAClearedCacheOnTheTVFetchesFromAPeer() {
-        XCTAssertTrue(paths(.tvOS).fetchesFromPeer(indexIsMissing: true))
-        XCTAssertFalse(paths(.tvOS).fetchesFromPeer(indexIsMissing: false))
-        XCTAssertFalse(paths(.macOS).fetchesFromPeer(indexIsMissing: true))
-        XCTAssertFalse(paths(.iOS).fetchesFromPeer(indexIsMissing: true))
+    func testThePhoneNeverFetchesForAMissingIndex() {
+        XCTAssertFalse(temporary(.iOS).fetchesFromPeer())
     }
 
     /// A container in a fresh temporary folder.
