@@ -1117,7 +1117,7 @@ fn a_dial_to_a_peer_that_drops_its_streams_stays_within_its_time() {
                     let _ = send.reset(0u32.into());
                     let _ = recv.stop(0u32.into());
                 }
-                tokio::time::sleep(Duration::from_secs(30)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
                 drop(connection);
             });
         }
@@ -1130,12 +1130,13 @@ fn a_dial_to_a_peer_that_drops_its_streams_stays_within_its_time() {
         addrs,
     };
     a.node.accept_ticket(&ticket.encode()).unwrap();
-    // Shorter than the wait for a close, which once came on top of a dial's time.
-    a.node.set_dial_timeout(Duration::from_millis(800));
+    // Far shorter than the wait for a close, which once came on top of a dial's time, so the
+    // bound below leaves room for a slow machine and still catches the wait coming back.
+    a.node.set_dial_timeout(Duration::from_millis(300));
     let start = Instant::now();
     assert!(a.node.sync_now().is_err());
     let took = start.elapsed();
-    assert!(took < Duration::from_millis(1500), "the dial took {took:?}");
+    assert!(took < Duration::from_millis(1800), "the dial took {took:?}");
     runtime.block_on(endpoint.close());
 }
 
