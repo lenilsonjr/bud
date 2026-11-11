@@ -35,7 +35,9 @@ use crate::{Error, Result, SyncReport, Vault};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use data_encoding::{BASE32_NOPAD, HEXLOWER};
-use iroh::endpoint::{presets, Connection, ConnectionError, Incoming, VarInt};
+use iroh::endpoint::{
+    presets, ConnectError, ConnectingError, Connection, ConnectionError, Incoming, VarInt,
+};
 use iroh::{Endpoint, EndpointAddr, PublicKey, RelayMode, RelayUrl, SecretKey};
 use iroh_mdns_address_lookup::MdnsAddressLookup;
 use rusqlite::{params, OptionalExtension};
@@ -94,14 +96,27 @@ fn peer_error(err: impl std::fmt::Display) -> Error {
     Error::Invalid(format!("peer: {err}"))
 }
 
-/// Whether the other side closed `connection` saying it removed this node. Any other close, a
-/// code this build does not know among them, is not.
-fn removed_by(connection: &Connection) -> bool {
+/// Whether a connection ended because the other side said it removed this node. Any other end,
+/// a code this build does not know among them, is not.
+fn is_removal(reason: &ConnectionError) -> bool {
     matches!(
-        connection.close_reason(),
-        Some(ConnectionError::ApplicationClosed(close))
+        reason,
+        ConnectionError::ApplicationClosed(close)
             if close.error_code == VarInt::from_u32(CLOSE_REMOVED)
     )
+}
+
+/// The same for a dial that failed before it connected: the close can land while the
+/// handshake is still under way.
+fn connect_was_removal(err: &ConnectError) -> bool {
+    match err {
+        ConnectError::Connection { source, .. } => is_removal(source),
+        ConnectError::Connecting {
+            source: ConnectingError::ConnectionError { source, .. },
+            ..
+        } => is_removal(source),
+        _ => false,
+    }
 }
 
 /// How a node reaches the others when they are not on the same network.
@@ -614,26 +629,35 @@ impl Vault {
 
     /// Forget a peer and refuse its node id from now on, even when it proves the vault key.
     fn forget(&self, id: &str) -> Result<()> {
-        if !self.drop_peer(id)? {
+        let conn = lock(&self.conn);
+        if !drop_peer_rows(&conn, id)? {
             return Err(Error::Invalid(format!("peer: no peer {id}")));
         }
-        lock(&self.conn).execute(
+        conn.execute(
             "INSERT OR IGNORE INTO peer_denied (node) VALUES (?1)",
             params![id],
         )?;
         Ok(())
     }
 
-    /// Let a peer go with everything kept about it, without refusing it: a peer that removed this
-    /// vault may pair with it again. False when it was not a peer.
-    fn drop_peer(&self, id: &str) -> Result<bool> {
+    /// Let go of a peer that said it removed this vault, without refusing it, so the two may
+    /// pair again. A peer whose ticket this vault holds and has not redeemed stays, ticket and
+    /// all: the vault took a new ticket of that peer, which redeems once the peer lets it back
+    /// in. True when the peer went.
+    fn drop_removed(&self, id: &str) -> Result<bool> {
         let conn = lock(&self.conn);
-        conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
-        conn.execute("DELETE FROM peer_ticket WHERE node = ?1", params![id])?;
-        conn.execute("DELETE FROM peer_missed WHERE node = ?1", params![id])?;
-        conn.execute("DELETE FROM peer_identity WHERE node = ?1", params![id])?;
-        conn.execute("DELETE FROM peer_label WHERE node = ?1", params![id])?;
-        Ok(conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? > 0)
+        let pending = conn
+            .query_row(
+                "SELECT 1 FROM peer_ticket WHERE node = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if pending {
+            return Ok(false);
+        }
+        drop_peer_rows(&conn, id)
     }
 
     /// Lift the refusal of a node this vault removed.
@@ -874,6 +898,16 @@ impl Vault {
         sync_dir(&self.index_dir);
         Ok(true)
     }
+}
+
+/// Delete a peer and everything kept about it, refusing nothing. False when it was not a peer.
+fn drop_peer_rows(conn: &rusqlite::Connection, id: &str) -> Result<bool> {
+    conn.execute("DELETE FROM peer_seen WHERE node = ?1", params![id])?;
+    conn.execute("DELETE FROM peer_ticket WHERE node = ?1", params![id])?;
+    conn.execute("DELETE FROM peer_missed WHERE node = ?1", params![id])?;
+    conn.execute("DELETE FROM peer_identity WHERE node = ?1", params![id])?;
+    conn.execute("DELETE FROM peer_label WHERE node = ?1", params![id])?;
+    Ok(conn.execute("DELETE FROM peers WHERE node = ?1", params![id])? > 0)
 }
 
 /// The shape of a kept pairing; a change to it moves the version.
@@ -1385,26 +1419,37 @@ impl Shared {
         Ok(addr)
     }
 
-    /// Dial a peer and run one session. A peer that ends it saying it removed this vault is let
-    /// go here too.
-    async fn exchange(&self, peer: &PeerInfo) -> Result<SyncReport> {
-        let connection = self
-            .endpoint
-            .connect(self.address_of(peer)?, ALPN)
-            .await
-            .map_err(peer_error)?;
-        match self.session(peer, &connection).await {
-            Err(_) if removed_by(&connection) => {
-                if self.vault().drop_peer(&peer.id)? {
-                    self.lost(&peer.id);
-                    self.emit(NodeEvent::PeerRemoved {
-                        id: peer.id.clone(),
-                    });
-                }
-                Err(peer_error("a peer removed this device"))
-            }
-            done => done,
+    /// Dial a peer and do `run` over the connection. A peer that closes it saying it removed
+    /// this vault, while it connects or during `run`, is let go here (see
+    /// [`Vault::drop_removed`]) and its removal told.
+    async fn dial<T>(
+        &self,
+        peer: &PeerInfo,
+        run: impl AsyncFnOnce(&Connection) -> Result<T>,
+    ) -> Result<T> {
+        match self.endpoint.connect(self.address_of(peer)?, ALPN).await {
+            Ok(connection) => match run(&connection).await {
+                Err(_) if connection.close_reason().is_some_and(|r| is_removal(&r)) => {}
+                done => return done,
+            },
+            Err(err) if connect_was_removal(&err) => {}
+            Err(err) => return Err(peer_error(err)),
         }
+        if self.vault().drop_removed(&peer.id)? {
+            self.lost(&peer.id);
+            self.emit(NodeEvent::PeerRemoved {
+                id: peer.id.clone(),
+            });
+        }
+        Err(peer_error("a peer removed this device"))
+    }
+
+    /// Dial a peer and run one session.
+    async fn exchange(&self, peer: &PeerInfo) -> Result<SyncReport> {
+        self.dial(peer, async |connection| {
+            self.session(peer, connection).await
+        })
+        .await
     }
 
     /// One session over a connection to a peer: heads, changes both ways, confirmation.
@@ -1464,42 +1509,41 @@ impl Shared {
 
     /// Hand a peer the new vault key over a session sealed with the old one.
     async fn hand_over(&self, peer: &PeerInfo, old: &[u8; 32], new: &[u8; 32]) -> Result<()> {
-        let connection = self
-            .endpoint
-            .connect(self.address_of(peer)?, ALPN)
-            .await
-            .map_err(peer_error)?;
-        let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-        send_message(&mut send, old, Side::Dialer, &Message::Rotate(*new)).await?;
-        let Message::Done = read_message(&mut recv, old, Side::Answerer, MAX_FRAME).await? else {
-            return Err(peer_error("a peer did not confirm the new key"));
-        };
-        send.finish().map_err(peer_error)?;
-        connection.close(0u32.into(), b"done");
-        Ok(())
+        self.dial(peer, async |connection| {
+            let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
+            send_message(&mut send, old, Side::Dialer, &Message::Rotate(*new)).await?;
+            let Message::Done = read_message(&mut recv, old, Side::Answerer, MAX_FRAME).await?
+            else {
+                return Err(peer_error("a peer did not confirm the new key"));
+            };
+            send.finish().map_err(peer_error)?;
+            connection.close(0u32.into(), b"done");
+            Ok(())
+        })
+        .await
     }
 
     /// Ask a peer whether it holds `key`, over a session sealed with it. Used after a hand over
     /// whose confirmation did not arrive, to tell a lost acknowledgement from a missed key.
     async fn holds_key(&self, peer: &PeerInfo, key: &[u8; 32]) -> Result<()> {
-        let connection = self
-            .endpoint
-            .connect(self.address_of(peer)?, ALPN)
-            .await
-            .map_err(peer_error)?;
-        let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
-        send_message(&mut send, key, Side::Dialer, &Message::Probe).await?;
-        let Message::Done = read_message(&mut recv, key, Side::Answerer, MAX_FRAME).await? else {
-            return Err(peer_error("a peer did not confirm the key"));
-        };
-        send.finish().map_err(peer_error)?;
-        connection.close(0u32.into(), b"done");
-        Ok(())
+        self.dial(peer, async |connection| {
+            let (mut send, mut recv) = connection.open_bi().await.map_err(peer_error)?;
+            send_message(&mut send, key, Side::Dialer, &Message::Probe).await?;
+            let Message::Done = read_message(&mut recv, key, Side::Answerer, MAX_FRAME).await?
+            else {
+                return Err(peer_error("a peer did not confirm the key"));
+            };
+            send.finish().map_err(peer_error)?;
+            connection.close(0u32.into(), b"done");
+            Ok(())
+        })
+        .await
     }
 
     /// Make a new vault key, give it to every peer, then take it. A peer is missed only when it
     /// still holds the old key: one whose confirmation was lost is asked once more with the new
-    /// key before it is listed.
+    /// key before it is listed. A peer that says it removed this vault is let go instead, told as
+    /// a step that did not take the key, and is neither reached nor missed.
     async fn rotate(&self) -> Result<RotateReport> {
         let _busy = Busy::new(&self.active);
         let old = self.vault().peer_key()?;
@@ -1515,8 +1559,10 @@ impl Shared {
                 .await
                 .map_err(|_| peer_error("a peer did not answer"))
                 .and_then(|done| done);
+            let gone = handed.is_err() && !self.vault().is_peer(&peer.id)?;
             let outcome = match handed {
                 Ok(()) => RotationOutcome::Confirmed,
+                Err(_) if gone => RotationOutcome::Probed { holds_key: false },
                 Err(_) => RotationOutcome::Probed {
                     holds_key: tokio::time::timeout(SESSION_TIMEOUT, self.holds_key(peer, &new))
                         .await
@@ -1530,7 +1576,7 @@ impl Shared {
             let took = !matches!(outcome, RotationOutcome::Probed { holds_key: false });
             if took {
                 report.reached += 1;
-            } else {
+            } else if !gone {
                 self.lost(&peer.id);
                 report.missed.push(peer.id.clone());
             }

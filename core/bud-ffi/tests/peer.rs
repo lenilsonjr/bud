@@ -196,7 +196,6 @@ fn a_removed_peer_syncs_again_once_allowed() {
     b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
     assert!(b.node.sync_now().is_err(), "the maker still refuses it");
     a.node.allow_peer(b_id).unwrap();
-    b.node.accept_ticket(a.node.ticket(true).unwrap()).unwrap();
     b.node.sync_now().unwrap();
     assert_eq!(a.node.peers().unwrap().len(), 1);
 }
