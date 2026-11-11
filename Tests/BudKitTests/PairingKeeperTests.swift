@@ -174,6 +174,26 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([1]), "what the Keychain holds, not what was asked")
     }
 
+    func testAReadThatFailedIsNotTakenForAnEmptyKeychain() throws {
+        let defaults = try freshDefaults()
+        let tokens = LockedTokens()
+        PairingKeeper(store: tokens, defaults: defaults).keep(Data([1, 2, 3]))
+        // The next launch reads before the first unlock: the Keychain gives nothing.
+        tokens.locked = true
+        let keeper = PairingKeeper(store: tokens, defaults: defaults)
+        keeper.dropForeign()
+        XCTAssertNil(keeper.kept)
+        tokens.locked = false
+        XCTAssertEqual(keeper.kept, Data([1, 2, 3]), "read again once it opens")
+        // A device removed by its peers lets the copy go, even when it read nothing at launch.
+        tokens.locked = true
+        let removed = PairingKeeper(store: tokens, defaults: defaults)
+        XCTAssertNil(removed.kept)
+        XCTAssertTrue(removed.forget())
+        tokens.locked = false
+        XCTAssertNil(tokens.token(for: PairingKeeper.account))
+    }
+
     func testToursAndPicturesBuildNoKeeper() throws {
         let tokens = CountingTokens([PairingKeeper.account: "another-install:AQID"])
         let defaults = try freshDefaults()
@@ -256,6 +276,18 @@ private final class RefusingTokens: TokenStore, @unchecked Sendable {
     func set(_ token: String?, for account: String) -> Bool {
         refusing ? false : inner.set(token, for: account)
     }
+}
+
+/// Tokens in memory that read as none while `locked`, as the Keychain does before the first
+/// unlock, and still take writes.
+private final class LockedTokens: TokenStore, @unchecked Sendable {
+    private let inner = MemoryTokens()
+    var locked = false
+
+    func token(for account: String) -> String? { locked ? nil : inner.token(for: account) }
+
+    @discardableResult
+    func set(_ token: String?, for account: String) -> Bool { inner.set(token, for: account) }
 }
 
 /// Tokens in memory that count their reads and writes.
