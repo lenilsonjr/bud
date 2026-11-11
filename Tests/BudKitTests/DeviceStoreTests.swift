@@ -567,6 +567,30 @@ extension DeviceStoreTests {
         XCTAssertEqual(unpaired, 1, "told once")
     }
 
+    func testATVRemovedByEveryOtherDeviceForgetsItsKeptPairing() async throws {
+        let (store, peers, _) = await make()
+        let others = store.devices.filter { !$0.isThisDevice }.map(\.id)
+        // The vault reads as paired while any other device is left, as the core's does.
+        let vault = PairedVault(peers: others.count)
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        let sync = PairingSync(keeper: keeper) { vault.pairing }
+        store.onPairingChanged = { Task { await sync.keep() } }
+        store.onUnpaired = { Task { await sync.forget() } }
+        await sync.keep()
+        XCTAssertNotNil(keeper.kept)
+        for (done, id) in others.enumerated() {
+            vault.drop()
+            await peers.removedBy(id)
+            await eventually { !store.devices.contains { $0.id == id } }
+            if done < others.count - 1 {
+                await sync.keep()
+                XCTAssertNotNil(keeper.kept, "other devices remain")
+            }
+        }
+        await eventually { keeper.kept == nil }
+        XCTAssertEqual(store.devices.map(\.isThisDevice), [true])
+    }
+
     func testAKeyHandedOverByAnotherDeviceTellsThePairingChanged() async {
         let (store, peers, _) = await make()
         var changes = 0
@@ -591,5 +615,23 @@ extension DeviceStoreTests {
         await store.join(text: ticket.text)
         // The join itself, and the event the node tells of the new device.
         await eventually { changes >= 2 }
+    }
+}
+
+/// A vault's pairing as the core reads it: some bytes while it has a peer, none after the last.
+private final class PairedVault: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peers: Int
+
+    init(peers: Int) { self.peers = peers }
+
+    var pairing: Data? {
+        lock.lock(); defer { lock.unlock() }
+        return peers > 0 ? Data([UInt8(peers)]) : nil
+    }
+
+    func drop() {
+        lock.lock(); defer { lock.unlock() }
+        peers -= 1
     }
 }

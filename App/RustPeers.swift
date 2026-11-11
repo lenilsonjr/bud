@@ -220,6 +220,8 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
             ))
         case .pairingChanged:
             return .pairingChanged
+        case let .peerRemoved(id):
+            return .deviceRemoved(id: id)
         case .keyRotation, .rotationDone:
             return nil
         }
