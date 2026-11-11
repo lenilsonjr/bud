@@ -574,21 +574,31 @@ extension DeviceStoreTests {
         let vault = PairedVault(peers: others.count)
         let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         let sync = PairingSync(keeper: keeper) { vault.pairing }
-        store.onPairingChanged = { Task { await sync.keep() } }
-        store.onUnpaired = { Task { await sync.forget() } }
+        var changes = 0
+        var unpaired = 0
+        store.onPairingChanged = { changes += 1; Task { await sync.keep() } }
+        store.onUnpaired = { unpaired += 1; Task { await sync.forget() } }
         await sync.keep()
         XCTAssertNotNil(keeper.kept)
+        // The cache was cleared: the cards wait for a fetch from devices that removed this one.
+        store.awaitLaunchFetch()
+        store.startLaunchFetchPatience(sessionTimeout: 60)
         for (done, id) in others.enumerated() {
             vault.drop()
             await peers.removedBy(id)
             await eventually { !store.devices.contains { $0.id == id } }
             if done < others.count - 1 {
+                await eventually { changes == done + 1 }
                 await sync.keep()
                 XCTAssertNotNil(keeper.kept, "other devices remain")
+                XCTAssertNotNil(store.launchFetch, "others may still answer")
             }
         }
         await eventually { keeper.kept == nil }
         XCTAssertEqual(store.devices.map(\.isThisDevice), [true])
+        XCTAssertNil(store.launchFetch, "no one is left to fetch from")
+        XCTAssertEqual(unpaired, 1)
+        XCTAssertEqual(changes, others.count - 1, "the last removal unpairs instead")
     }
 
     func testAKeyHandedOverByAnotherDeviceTellsThePairingChanged() async {
