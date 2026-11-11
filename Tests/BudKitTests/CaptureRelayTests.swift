@@ -14,14 +14,36 @@ final class CaptureRelayTests: XCTestCase {
         relay.send(.init(text: "Second", todo: true))
         XCTAssertEqual(relay.waiting, 2)
         var got: [CaptureRelay.Line] = []
-        relay.listen { got.append($0) }
+        let window = relay.listen { got.append($0) }
         XCTAssertEqual(got.map(\.text), ["First", "Second"])
         XCTAssertEqual(relay.waiting, 0)
         relay.send(.init(text: "Third"))
         XCTAssertEqual(got.map(\.text), ["First", "Second", "Third"], "Delivered at once while listening")
-        relay.stopListening()
+        relay.stopListening(window)
         relay.send(.init(text: "Fourth"))
         XCTAssertEqual(relay.waiting, 1, "Waits again once the window is gone")
+    }
+
+    func testClosingOneWindowLeavesTheOthersListening() async {
+        await MainActor.run { relayKeepsOtherWindows() }
+    }
+
+    @MainActor private func relayKeepsOtherWindows() {
+        let relay = CaptureRelay()
+        var first: [String] = []
+        var second: [String] = []
+        let one = relay.listen { first.append($0.text) }
+        let two = relay.listen { second.append($0.text) }
+        relay.send(.init(text: "To the newest"))
+        XCTAssertEqual(first, [])
+        XCTAssertEqual(second, ["To the newest"], "A line lands once, in the newest window")
+        relay.stopListening(two)
+        relay.send(.init(text: "Still heard"))
+        XCTAssertEqual(first, ["Still heard"], "The window left open keeps listening")
+        XCTAssertEqual(relay.waiting, 0)
+        relay.stopListening(one)
+        relay.send(.init(text: "Waits"))
+        XCTAssertEqual(relay.waiting, 1)
     }
 
     func testALineKnowsWhereItCameFrom() {

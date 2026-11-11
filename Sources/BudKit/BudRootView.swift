@@ -10,6 +10,8 @@ public struct BudRootView: View {
     /// Whether captures made outside the window land in this store: off for a picture, and for
     /// an app launched to draw pictures.
     private let listensForCaptures: Bool
+    /// This window's place among the windows that listen for captures.
+    @State private var listener: UUID?
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     private var compact: Bool { sizeClass == .compact }
@@ -72,8 +74,11 @@ public struct BudRootView: View {
         // Every keycap and key binding in the window reads the store's layout.
         .environment(\.keys, store.keys)
         .environment(\.goAnywhere, { store.perform(.goAnywhere) })
-        .onAppear { if listensForCaptures { CaptureRelay.shared.listen { line in store.capture(line) } } }
-        .onDisappear { if listensForCaptures { CaptureRelay.shared.stopListening() } }
+        .onAppear { if listensForCaptures { listener = CaptureRelay.shared.listen { line in store.capture(line) } } }
+        .onDisappear {
+            if let listener { CaptureRelay.shared.stopListening(listener) }
+            listener = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: BudStore.freshStartRequested)) { note in
             store.freshStart(sample: note.userInfo?["sample"] as? Bool ?? false)
         }
