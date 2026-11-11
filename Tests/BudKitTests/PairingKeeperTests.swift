@@ -11,12 +11,20 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([4, 5]))
     }
 
-    func testAVaultWithNoPeerNeverTakesTheKeptCopyAway() throws {
+    func testAnUnpairedVaultLetsTheKeptCopyGo() throws {
         let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         keeper.keep(Data([1, 2, 3]))
-        // A fresh key with no peers, after a restore that failed, reads as no pairing.
+        // Its node key and no peers: the person removed the last one.
         keeper.keep(nil)
-        XCTAssertEqual(keeper.kept, Data([1, 2, 3]))
+        XCTAssertNil(keeper.kept)
+    }
+
+    func testKeepingFindsAnUnpairedVaultOnItsOwn() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        keeper.keep(Data([1]))
+        let sync = PairingSync(keeper: keeper) { nil }
+        await sync.keep()
+        XCTAssertNil(keeper.kept)
     }
 
     func testOnlyForgetLetsItGo() throws {
@@ -39,7 +47,7 @@ final class PairingKeeperTests: XCTestCase {
         keeper.keep(Data([1, 2, 3]))
         keeper.keep(Data([1, 2, 3]))
         keeper.keep(nil)
-        keeper.forget()
+        keeper.keep(nil)
         keeper.forget()
         XCTAssertEqual(tokens.writes, 2)
     }

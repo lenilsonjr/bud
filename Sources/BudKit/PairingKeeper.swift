@@ -46,13 +46,14 @@ public struct PairingKeeper: Sendable {
         store.set(nil, for: Self.account)
     }
 
-    /// Keeps the vault's pairing as it is now. Nil, a vault with no peer, keeps the copy there
-    /// is: a restore that failed reads the same as no pairing, and only `forget` lets it go.
-    /// Writes only when it changed, so calling it often costs a read. False when the write
-    /// failed; the copy before stays.
+    /// Keeps the vault's pairing as it is now. Nil, a vault with its node key and no peer, is an
+    /// unpaired device, and the copy goes: a restore that failed starts no node and so makes no
+    /// key, and a vault with a key never takes a kept copy. Writes only when it changed, so
+    /// calling it often costs a read. False when the write failed; the copy before stays.
     @discardableResult
     public func keep(_ pairing: Data?) -> Bool {
-        guard let pairing, pairing != kept else { return true }
+        guard let pairing else { return forget() }
+        guard pairing != kept else { return true }
         return store.set(install + ":" + pairing.base64EncodedString(), for: Self.account)
     }
 
@@ -81,7 +82,8 @@ public actor PairingSync {
 
     deinit { timer?.cancel() }
 
-    /// Reads the pairing and keeps it. A pairing that cannot be read leaves the kept one alone.
+    /// Reads the pairing and keeps it; a vault that reads as unpaired lets the copy go. A pairing
+    /// that cannot be read leaves the kept one alone.
     public func keep() async {
         await run { [keeper, read] in
             do {
@@ -92,9 +94,9 @@ public actor PairingSync {
         }
     }
 
-    /// Lets the kept pairing go, but only when the vault still reads as unpaired: a forget that
-    /// runs after the device paired again leaves the new copy, so the order of the steps does
-    /// not matter.
+    /// Lets the kept pairing go at once, when the last other device was removed, but only when
+    /// the vault still reads as unpaired: a forget that runs after the device paired again leaves
+    /// the new copy, so the order of the steps does not matter. `keep` would find the same.
     public func forget() async {
         await run { [keeper, read] in
             // A vault that cannot be read is no sign the device is unpaired.
