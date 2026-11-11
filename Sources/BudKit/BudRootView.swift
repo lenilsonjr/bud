@@ -74,7 +74,12 @@ public struct BudRootView: View {
         // Every keycap and key binding in the window reads the store's layout.
         .environment(\.keys, store.keys)
         .environment(\.goAnywhere, { store.perform(.goAnywhere) })
-        .onAppear { if listensForCaptures && listener == nil { listener = CaptureRelay.shared.listen { line in store.capture(line) } } }
+        .onAppear {
+            guard listensForCaptures, listener == nil else { return }
+            // The store itself, not this view, which may be gone by the time a line comes.
+            let store = store
+            listener = CaptureRelay.shared.listen(for: store) { line in store.capture(line) }
+        }
         .onDisappear {
             if let listener { CaptureRelay.shared.stopListening(listener) }
             listener = nil

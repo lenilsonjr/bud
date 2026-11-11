@@ -26,34 +26,35 @@ public final class CaptureRelay {
     }
 
     private var queue: [Line] = []
-    /// Where lines go: the newest window's store. Every window of the app shows the same store.
-    private var sink: ((Line) -> Void)?
-    /// The windows listening. The sink stays until the last of them stops.
-    private var listeners: Set<UUID> = []
+    /// The stores listening, newest last, each with the windows that show it. A line goes to the
+    /// newest store that still has a window open, so it lands once.
+    private var stores: [(store: ObjectIdentifier, windows: Set<UUID>, sink: (Line) -> Void)] = []
 
     public init() {}
 
     public func send(_ line: Line) {
-        if let sink { sink(line) } else { queue.append(line) }
+        if let sink = stores.last?.sink { sink(line) } else { queue.append(line) }
     }
 
-    /// Starts delivering for one more window, beginning with whatever waited. Keep the answer to
-    /// stop that window alone.
+    /// Starts delivering into `store` for one more window, beginning with whatever waited. Keep
+    /// the answer to stop that window alone.
     @discardableResult
-    public func listen(_ sink: @escaping (Line) -> Void) -> UUID {
+    public func listen(for store: AnyObject, _ sink: @escaping (Line) -> Void) -> UUID {
         let id = UUID()
-        listeners.insert(id)
-        self.sink = sink
+        let key = ObjectIdentifier(store)
+        var windows: Set<UUID> = [id]
+        if let i = stores.firstIndex(where: { $0.store == key }) { windows.formUnion(stores.remove(at: i).windows) }
+        stores.append((key, windows, sink))
         let waiting = queue
         queue = []
         waiting.forEach(sink)
         return id
     }
 
-    /// Stops one window; while another listens, lines keep landing.
+    /// Stops one window. A store goes once its last window does; the others keep listening.
     public func stopListening(_ id: UUID) {
-        listeners.remove(id)
-        if listeners.isEmpty { sink = nil }
+        for i in stores.indices { stores[i].windows.remove(id) }
+        stores.removeAll { $0.windows.isEmpty }
     }
 
     /// How many lines wait for a listener.
