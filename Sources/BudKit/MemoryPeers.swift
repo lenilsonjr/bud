@@ -309,7 +309,7 @@ public actor MemoryPeers: Peers {
     }
 
     public func syncNow() async throws -> SyncSummary {
-        if syncFails { throw PeersError.noPeerAnswered }
+        if syncFails { throw AcceptError.unreachable }
         emit(.syncFinished(nextSummary))
         return nextSummary
     }
