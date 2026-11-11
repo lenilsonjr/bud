@@ -433,6 +433,10 @@ public final class DeviceStore: ObservableObject {
             case let .device(id, reached):
                 rotation?.done += 1
                 rotation?.reports[id] = reached
+            case let .removed(id):
+                // Not one to reach any more: it leaves the count and the list.
+                rotation?.total -= 1
+                devices.removeAll { $0.id == id }
             case let .done(result):
                 rotation?.result = result
                 if result.failed { rotation = nil }
@@ -481,10 +485,15 @@ public final class DeviceStore: ObservableObject {
             await refresh()
         case .pairingChanged:
             onPairingChanged?()
-        case .deviceRemoved:
+        case let .deviceRemoved(id):
             // Gone from the node's list. The last one gone unpairs this device, which the refresh
-            // tells, and leaves no one to wait for a launch fetch from.
+            // tells, and leaves no one to wait for a launch fetch from. A refresh that failed
+            // leaves the device listed, so it goes here all the same.
             await refresh()
+            if devices.contains(where: { $0.id == id }) {
+                devices.removeAll { $0.id == id }
+                if devices.allSatisfy(\.isThisDevice) { onUnpaired?() }
+            }
             if devices.contains(where: { !$0.isThisDevice }) {
                 onPairingChanged?()
             } else {

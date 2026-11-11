@@ -109,8 +109,8 @@ final class RustPeers: BudKit.Peers, @unchecked Sendable {
             let task = Task {
                 for await event in events {
                     switch event {
-                    case let .keyRotation(id, confirmed, holdsKey):
-                        continuation.yield(.device(id: id, reached: confirmed || holdsKey))
+                    case let .keyRotation(id, confirmed, holdsKey, removed):
+                        continuation.yield(removed ? .removed(id: id) : .device(id: id, reached: confirmed || holdsKey))
                     case let .rotationDone(reached, missed):
                         continuation.yield(.done(RotationResult(reached: Int(reached), missed: missed)))
                         continuation.finish()

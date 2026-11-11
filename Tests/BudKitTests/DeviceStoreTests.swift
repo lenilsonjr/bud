@@ -229,6 +229,21 @@ extension DeviceStoreTests {
         XCTAssertEqual(DevicesText.rotationCount(rotation), "4 of 5")
     }
 
+    func testARotationLeavesOutADeviceThatRemovedThisOne() async throws {
+        let (store, peers, _) = await make()
+        let gone = MemoryPeers.fixtures()[2].id
+        await peers.setRemoving([gone])
+        var finished: [RotationResult] = []
+        store.onRotationFinished = { finished.append($0) }
+        await store.rotateKey()
+        let rotation = try XCTUnwrap(store.rotation)
+        XCTAssertEqual(rotation.total, 3)
+        XCTAssertNil(rotation.reports[gone], "neither reached nor missed")
+        XCTAssertFalse(store.devices.contains { $0.id == gone })
+        XCTAssertEqual(finished, [RotationResult(reached: 3, missed: [])])
+        XCTAssertEqual(DevicesText.rotationCount(rotation), "4 of 4")
+    }
+
     func testARotationTheNodeCannotStartSaysItFailed() async {
         let (store, peers, _) = await make()
         await peers.setRotationFails(true)
@@ -578,6 +593,20 @@ extension DeviceStoreTests {
         XCTAssertEqual(unpaired, 1)
         await store.refresh()
         XCTAssertEqual(unpaired, 1, "told once")
+    }
+
+    func testARemovalLeavesTheListEvenWhenTheListCannotBeRead() async {
+        let (store, peers, _) = await make()
+        var unpaired = 0
+        store.onUnpaired = { unpaired += 1 }
+        await peers.setDevicesFail(true)
+        let others = store.devices.filter { !$0.isThisDevice }.map(\.id)
+        for id in others {
+            await peers.removedBy(id)
+            await eventually { !store.devices.contains { $0.id == id } }
+        }
+        XCTAssertEqual(store.devices.map(\.isThisDevice), [true])
+        XCTAssertEqual(unpaired, 1, "the last one gone unpairs")
     }
 
     func testATVRemovedByEveryOtherDeviceForgetsItsKeptPairing() async throws {
