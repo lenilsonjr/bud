@@ -110,11 +110,8 @@ public final class DeviceStore: ObservableObject {
     private var starts = 0
     /// Ends the launch fetch when nothing has moved for a while.
     private var launchFetchTimer: Task<Void, Never>?
-    private var launchPatience: TimeInterval = DeviceStore.launchFetchPatience
-    /// How long the launch fetch waits with no progress before the cards open anyway, when the
-    /// app names no other time: what one peer and one more session take at the core's
-    /// one-minute session timeout. The app passes a time from the core's own value.
-    nonisolated public static let launchFetchPatience: TimeInterval = 120
+    /// How long the launch fetch waits with no progress, once the node is up; nil before.
+    private var launchPatience: TimeInterval?
 
     /// How long the launch fetch waits for a node that dials `peers` peers one after another,
     /// each session given up after `sessionTimeout` seconds: all of them, and one more session,
@@ -350,21 +347,18 @@ public final class DeviceStore: ObservableObject {
     /// The patience starts once the node is up (`startLaunchFetchPatience`), so a slow start
     /// does not eat into it.
     public func awaitLaunchFetch() {
+        launchPatience = nil
         launchFetch = LaunchFetch(received: 0, total: nil)
     }
 
-    /// The node is up: the wait ends after `patience` seconds with nothing arriving, so a peer
-    /// that is not around never holds the screen. Each bit of progress starts it over; the core
+    /// The node is up: the wait ends after a while with nothing arriving, so a peer that is not
+    /// around never holds the screen. The while is sized to the peers listed now, each given
+    /// `sessionTimeout` seconds, the core's own. Each bit of progress starts it over; the core
     /// tells no session before it ends, so that is the only sign of life there is.
-    public func startLaunchFetchPatience(_ patience: TimeInterval = DeviceStore.launchFetchPatience) {
-        launchPatience = patience
-        waitForLaunchFetch()
-    }
-
-    /// The same, sized to the peers listed now, each given `sessionTimeout` seconds.
     public func startLaunchFetchPatience(sessionTimeout: TimeInterval) {
         let peers = devices.filter { !$0.isThisDevice }.count
-        startLaunchFetchPatience(Self.launchFetchPatience(peers: peers, sessionTimeout: sessionTimeout))
+        launchPatience = Self.launchFetchPatience(peers: peers, sessionTimeout: sessionTimeout)
+        waitForLaunchFetch()
     }
 
     /// Something may have changed what this device keeps of its pairing, such as the app going
@@ -383,8 +377,7 @@ public final class DeviceStore: ObservableObject {
     /// Starts the patience over, after progress.
     private func waitForLaunchFetch() {
         launchFetchTimer?.cancel()
-        guard launchFetch != nil else { return }
-        let patience = launchPatience
+        guard launchFetch != nil, let patience = launchPatience else { return }
         launchFetchTimer = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(patience * 1_000_000_000))
             guard !Task.isCancelled else { return }

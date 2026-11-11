@@ -2,8 +2,8 @@ import XCTest
 @testable import BudKit
 
 final class PairingKeeperTests: XCTestCase {
-    func testItKeepsAPairingAndGivesItBack() {
-        let keeper = PairingKeeper(store: MemoryTokens())
+    func testItKeepsAPairingAndGivesItBack() throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         XCTAssertNil(keeper.kept)
         keeper.keep(Data([1, 2, 3]))
         XCTAssertEqual(keeper.kept, Data([1, 2, 3]))
@@ -11,31 +11,31 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([4, 5]))
     }
 
-    func testAVaultWithNoPeerNeverTakesTheKeptCopyAway() {
-        let keeper = PairingKeeper(store: MemoryTokens())
+    func testAVaultWithNoPeerNeverTakesTheKeptCopyAway() throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         keeper.keep(Data([1, 2, 3]))
         // A fresh key with no peers, after a restore that failed, reads as no pairing.
         keeper.keep(nil)
         XCTAssertEqual(keeper.kept, Data([1, 2, 3]))
     }
 
-    func testOnlyForgetLetsItGo() {
+    func testOnlyForgetLetsItGo() throws {
         let tokens = MemoryTokens()
-        let keeper = PairingKeeper(store: tokens)
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
         keeper.keep(Data([1, 2, 3]))
         keeper.forget()
         XCTAssertNil(keeper.kept)
         XCTAssertNil(tokens.token(for: PairingKeeper.account))
     }
 
-    func testADamagedCopyReadsAsNone() {
+    func testADamagedCopyReadsAsNone() throws {
         let tokens = MemoryTokens([PairingKeeper.account: "not base64 at all!"])
-        XCTAssertNil(PairingKeeper(store: tokens).kept)
+        XCTAssertNil(PairingKeeper(store: tokens, defaults: try freshDefaults()).kept)
     }
 
-    func testTheSamePairingIsNotWrittenAgain() {
+    func testTheSamePairingIsNotWrittenAgain() throws {
         let tokens = CountingTokens()
-        let keeper = PairingKeeper(store: tokens)
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
         keeper.keep(Data([1, 2, 3]))
         keeper.keep(Data([1, 2, 3]))
         keeper.keep(nil)
@@ -44,9 +44,9 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(tokens.writes, 2)
     }
 
-    func testAFailedWriteSaysSoAndLeavesTheCopyBefore() {
+    func testAFailedWriteSaysSoAndLeavesTheCopyBefore() throws {
         let tokens = RefusingTokens()
-        let keeper = PairingKeeper(store: tokens)
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
         XCTAssertTrue(keeper.keep(Data([1])))
         tokens.refusing = true
         XCTAssertFalse(keeper.keep(Data([2])))
@@ -54,8 +54,73 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([1]))
     }
 
-    func testStepsRunOneAtATimeSoTheLastReadIsWhatStays() async {
-        let keeper = PairingKeeper(store: MemoryTokens())
+    func testTheSameInstallFindsItsCopyOnTheNextLaunch() throws {
+        let tokens = MemoryTokens()
+        let defaults = try freshDefaults()
+        PairingKeeper(store: tokens, defaults: defaults).keep(Data([1, 2, 3]))
+        XCTAssertEqual(PairingKeeper(store: tokens, defaults: defaults).kept, Data([1, 2, 3]))
+    }
+
+    func testAnAppInstalledAgainNeverRejoinsWithTheOldCopy() throws {
+        // The Keychain outlives the app; its defaults do not.
+        let tokens = MemoryTokens()
+        PairingKeeper(store: tokens, defaults: try freshDefaults()).keep(Data([1, 2, 3]))
+        let reinstalled = PairingKeeper(store: tokens, defaults: try freshDefaults())
+        XCTAssertNil(reinstalled.kept)
+        reinstalled.dropForeign()
+        XCTAssertNil(tokens.token(for: PairingKeeper.account))
+    }
+
+    func testACopyWithNoInstallIdIsDropped() throws {
+        let tokens = MemoryTokens([PairingKeeper.account: Data([1, 2, 3]).base64EncodedString()])
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
+        XCTAssertNil(keeper.kept)
+        keeper.dropForeign()
+        XCTAssertNil(tokens.token(for: PairingKeeper.account))
+    }
+
+    func testDroppingLeavesThisInstallsOwnCopy() throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        keeper.keep(Data([1]))
+        keeper.dropForeign()
+        XCTAssertEqual(keeper.kept, Data([1]))
+    }
+
+    func testForgetDeletesADamagedCopyToo() throws {
+        let tokens = MemoryTokens([PairingKeeper.account: "garbled"])
+        let keeper = PairingKeeper(store: tokens, defaults: try freshDefaults())
+        XCTAssertTrue(keeper.forget())
+        XCTAssertNil(tokens.token(for: PairingKeeper.account))
+    }
+
+    func testAStaleForgetLeavesAPairingMadeSince() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        // The device paired again before the forget asked when it had none ran.
+        let sync = PairingSync(keeper: keeper) { Data([2]) }
+        await sync.keep()
+        await sync.forget()
+        XCTAssertEqual(keeper.kept, Data([2]))
+    }
+
+    func testForgetLetsGoWhenTheVaultIsStillUnpaired() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        keeper.keep(Data([1]))
+        let sync = PairingSync(keeper: keeper) { nil }
+        await sync.forget()
+        XCTAssertNil(keeper.kept)
+    }
+
+    func testForgetLeavesTheCopyWhenTheVaultCannotBeRead() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
+        keeper.keep(Data([1]))
+        struct Locked: Error {}
+        let sync = PairingSync(keeper: keeper) { throw Locked() }
+        await sync.forget()
+        XCTAssertEqual(keeper.kept, Data([1]))
+    }
+
+    func testStepsRunOneAtATimeSoTheLastReadIsWhatStays() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         let vault = CountingVault()
         let sync = PairingSync(keeper: keeper) { vault.next() }
         await withTaskGroup(of: Void.self) { group in
@@ -64,8 +129,8 @@ final class PairingKeeperTests: XCTestCase {
         XCTAssertEqual(keeper.kept, Data([50]))
     }
 
-    func testAPairingThatCannotBeReadLeavesTheKeptOne() async {
-        let keeper = PairingKeeper(store: MemoryTokens())
+    func testAPairingThatCannotBeReadLeavesTheKeptOne() async throws {
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         keeper.keep(Data([7]))
         struct Locked: Error {}
         let sync = PairingSync(keeper: keeper) { throw Locked() }
@@ -74,7 +139,7 @@ final class PairingKeeperTests: XCTestCase {
     }
 
     func testTheTimerKeepsUntilStopped() async throws {
-        let keeper = PairingKeeper(store: MemoryTokens())
+        let keeper = PairingKeeper(store: MemoryTokens(), defaults: try freshDefaults())
         let vault = CountingVault()
         let sync = PairingSync(keeper: keeper) { vault.next() }
         await sync.start(every: 0.01)
