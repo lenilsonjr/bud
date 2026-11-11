@@ -37,16 +37,18 @@ enum Launch {
     /// and the store reloads and Settings follows the node when they are done. A vault that will
     /// not open leaves the app on the JSON file, as before; a node that will not start leaves the
     /// vault unsynced, alone in Settings. A tour starts no node; an app launched for pictures
-    /// opens its vault and does none of the rest: no node, no trigger, no old file.
+    /// opens its vault and does none of the rest: no node, no source, no trigger, no old file.
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
         guard let vault = try? RustVault(paths: paths) else { return BudStore() }
         let store = BudStore(vault: vault)
         #if !os(tvOS)
-        // The TV shows no soil, only the source rows of buds planted elsewhere.
-        store.follow(SourceStore.shared)
-        // The TV keeps a copy of the vault and fires no trigger of its own.
-        if !forPictures { store.startTriggers() }
+        // The TV shows no soil, only the source rows of buds planted elsewhere, and keeps a copy
+        // of the vault that fires no trigger of its own. Pictures poll no source either.
+        if !forPictures {
+            store.follow(SourceStore.shared)
+            store.startTriggers()
+        }
         #endif
         let devices = store.devices
         let platform = platform

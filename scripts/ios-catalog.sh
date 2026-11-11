@@ -31,6 +31,8 @@
 #
 # Needs a Mac with Xcode, XcodeGen and the core built once (scripts/build-core.sh).
 set -euo pipefail
+# One collation for sort and comm, whatever the shell's locale.
+export LC_ALL=C
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 references="$root/Tests/BudKitSnapshots/__Snapshots__/CatalogTests"
