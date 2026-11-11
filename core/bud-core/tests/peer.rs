@@ -9,6 +9,7 @@ use bud_core::{
 };
 use common::{copy_dir, fingerprint, fixture};
 use pretty_assertions::assert_eq;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -983,6 +984,159 @@ fn a_peer_that_kept_the_old_key_is_missed_and_marked() {
     assert_eq!(b.node.ticket().unwrap().key, old);
     let peers = a.node.peers().unwrap();
     assert!(peers[0].missed);
+}
+
+/// `a` holds the fixture vault; `b` and `c` each accepted a ticket of it and synced once.
+fn paired_twice() -> (Peer, Peer, Peer) {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    (a, b, c)
+}
+
+#[test]
+fn a_check_that_fails_during_a_rotation_still_lets_the_vault_take_the_confirmed_key() {
+    let (a, b, c) = paired_twice();
+    let old = a.node.ticket().unwrap().key;
+    // c no longer knows a, without refusing it, so it turns the new key away and a checks it.
+    c.node.forget_peer(&a.node.id()).unwrap();
+    c.node.allow_peer(&a.node.id()).unwrap();
+    a.node.fail_next_peer_checks(1);
+    let heard = Recorder::listening(&a.node);
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 1);
+    assert_eq!(report.missed, vec![c.node.id()], "unknown, so missed");
+    let key = a.node.ticket().unwrap().key;
+    assert_ne!(key, old);
+    assert_eq!(b.node.ticket().unwrap().key, key);
+    assert_eq!(
+        heard.events().last(),
+        Some(&NodeEvent::RotationDone(report))
+    );
+    b.node.sync_now().unwrap();
+}
+
+#[test]
+fn a_peer_that_removed_this_vault_is_not_probed_when_letting_it_go_fails() {
+    let (a, b, c) = paired_twice();
+    c.node.forget_peer(&a.node.id()).unwrap();
+    a.node.fail_next_drops(1);
+    let heard = Recorder::listening(&a.node);
+    let before = a.node.dials();
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(a.node.dials() - before, 2, "c heard as removed, not probed");
+    assert_eq!(report.reached, 1);
+    assert!(report.missed.is_empty());
+    // The hand over could not let c go; the rotation does once the new key is in.
+    let ids: Vec<String> = a.node.peers().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![b.node.id()]);
+    let events = heard.events();
+    assert!(events.contains(&NodeEvent::PeerRemoved { id: c.node.id() }));
+    assert_eq!(events.last(), Some(&NodeEvent::RotationDone(report)));
+}
+
+#[test]
+fn a_clean_up_that_fails_after_the_new_key_is_in_does_not_fail_the_rotation() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    let old = b.node.ticket().unwrap().key;
+    // Letting a go fails on the hand over that hears the removal and once the new key is in.
+    b.node.fail_next_drops(2);
+    let heard = Recorder::listening(&b.node);
+    let report = b.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 0);
+    assert!(report.missed.is_empty());
+    assert_eq!(
+        heard.events(),
+        vec![
+            NodeEvent::KeyRotation {
+                id: a.node.id(),
+                outcome: RotationOutcome::Removed,
+            },
+            NodeEvent::RotationDone(report),
+        ]
+    );
+    assert_ne!(b.node.ticket().unwrap().key, old, "the new key is in");
+    // a stays listed until a later dial hears its removal again.
+    assert_eq!(b.node.peers().unwrap().len(), 1);
+}
+
+/// A peer that takes the first message and drops its streams, leaving the connection open, so
+/// the dialer hears no reason for the failure.
+#[test]
+fn a_dial_to_a_peer_that_drops_its_streams_stays_within_its_time() {
+    use iroh::endpoint::presets;
+    let a = Peer::new(Some(&fixture()), None);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let endpoint = runtime.block_on(async {
+        iroh::Endpoint::builder(presets::Minimal)
+            .relay_mode(iroh::RelayMode::Disabled)
+            .alpns(vec![b"bud/sync/1".to_vec()])
+            .bind()
+            .await
+            .unwrap()
+    });
+    let addrs = endpoint
+        .bound_sockets()
+        .into_iter()
+        .map(|bound| match bound.ip() {
+            IpAddr::V4(ip) if ip.is_unspecified() => {
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), bound.port())
+            }
+            IpAddr::V6(ip) if ip.is_unspecified() => {
+                SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), bound.port())
+            }
+            _ => bound,
+        })
+        .collect();
+    let serving = endpoint.clone();
+    runtime.spawn(async move {
+        while let Some(incoming) = serving.accept().await {
+            let Ok(connection) = incoming.await else {
+                continue;
+            };
+            tokio::spawn(async move {
+                if let Ok((mut send, mut recv)) = connection.accept_bi().await {
+                    let _ = recv.read(&mut [0u8; 64]).await;
+                    let _ = send.reset(0u32.into());
+                    let _ = recv.stop(0u32.into());
+                }
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                drop(connection);
+            });
+        }
+    });
+    let ticket = Ticket {
+        node: *endpoint.id().as_bytes(),
+        id: [7; 16],
+        relay: Relay::Off,
+        key: a.node.ticket().unwrap().key,
+        addrs,
+    };
+    a.node.accept_ticket(&ticket.encode()).unwrap();
+    // Shorter than the wait for a close, which once came on top of a dial's time.
+    a.node.set_dial_timeout(Duration::from_millis(800));
+    let start = Instant::now();
+    assert!(a.node.sync_now().is_err());
+    let took = start.elapsed();
+    assert!(took < Duration::from_millis(1500), "the dial took {took:?}");
+    runtime.block_on(endpoint.close());
 }
 
 /// A stranger that dials the node and says nothing it can open is dropped, and the node goes on.

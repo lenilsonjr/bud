@@ -101,16 +101,9 @@ fn peer_error(err: impl std::fmt::Display) -> Error {
     Error::Invalid(format!("peer: {err}"))
 }
 
-/// What a failure of the connection or a stream on it says first, as against one of this node's
-/// own, such as a message that does not open.
-const LINK_FAILED: &str = "peer: the link failed: ";
-
+/// A failure of the connection or a stream on it, as against one of this node's own.
 fn link_error(err: impl std::fmt::Display) -> Error {
-    Error::Invalid(format!("{LINK_FAILED}{err}"))
-}
-
-fn is_link_error(err: &Error) -> bool {
-    matches!(err, Error::Invalid(message) if message.starts_with(LINK_FAILED))
+    Error::Link(err.to_string())
 }
 
 /// Whether a connection ended because the other side said it removed this node. Any other end,
@@ -1310,6 +1303,14 @@ struct Shared {
     /// How many sessions this node answers to end after applying the dialer's changes, without
     /// confirming them; only tests make it more than zero.
     dropped_dones: AtomicUsize,
+    /// How many checks of whether a peer is still listed a rotation fails, as a broken index
+    /// would; only tests make it more than zero.
+    failed_peer_checks: AtomicUsize,
+    /// How many times letting go of a peer that removed this vault fails, as a broken index
+    /// would; only tests make it more than zero.
+    failed_drops: AtomicUsize,
+    /// How long a dial gets, in milliseconds: a session's time but in tests.
+    dial_timeout_ms: AtomicU64,
     /// What this node tells its peers it is.
     identity: Identity,
     /// Who hears what happens.
@@ -1328,7 +1329,8 @@ enum Dialed<T> {
     Removed,
 }
 
-/// Take one from a count a test set, when there is one to take.
+/// Take one from a count a test set, when there is one to take. A loop by hand: the method that
+/// does it is named differently on older and newer toolchains.
 fn take_one(count: &AtomicUsize) -> bool {
     let mut left = count.load(Ordering::SeqCst);
     while left > 0 {
@@ -1342,13 +1344,18 @@ fn take_one(count: &AtomicUsize) -> bool {
 
 /// Whether a connection whose session failed with `err` was closed by a peer that removed this
 /// vault. A stream can fail before the close lands, so when the link is what failed, a
-/// connection that has no reason yet is given a moment to get one; a failure of this node's
-/// own is not waited on.
-async fn closed_as_removed(connection: &Connection, err: &Error) -> bool {
+/// connection that has no reason yet is given a moment to get one, never past the dial's
+/// `deadline`; a failure of this node's own is not waited on.
+async fn closed_as_removed(
+    connection: &Connection,
+    err: &Error,
+    deadline: tokio::time::Instant,
+) -> bool {
+    let until = deadline.min(tokio::time::Instant::now() + CLOSE_WAIT);
     let reason = match connection.close_reason() {
         Some(reason) => reason,
-        None if !is_link_error(err) => return false,
-        None => match tokio::time::timeout(CLOSE_WAIT, connection.closed()).await {
+        None if !matches!(err, Error::Link(_)) => return false,
+        None => match tokio::time::timeout_at(until, connection.closed()).await {
             Ok(reason) => reason,
             Err(_) => return false,
         },
@@ -1379,6 +1386,41 @@ impl Shared {
 
     fn ticket_lifetime(&self) -> Duration {
         Duration::from_millis(self.ticket_lifetime_ms.load(Ordering::SeqCst))
+    }
+
+    fn dial_timeout(&self) -> Duration {
+        Duration::from_millis(self.dial_timeout_ms.load(Ordering::SeqCst))
+    }
+
+    /// Whether `id` is still a peer, for a rotation that asked it. The answer can fail, and a test
+    /// can make it fail.
+    fn still_peer(&self, id: &str) -> Result<bool> {
+        if take_one(&self.failed_peer_checks) {
+            return Err(peer_error("the index did not answer"));
+        }
+        self.vault().is_peer(id)
+    }
+
+    /// The same, with a check that failed noted and read as listed.
+    fn checked_peer(&self, id: &str) -> bool {
+        self.still_peer(id).unwrap_or_else(|err| {
+            eprintln!("bud-core: a rotation could not check a peer: {err}");
+            true
+        })
+    }
+
+    /// Let go of a peer that said it removed this vault (see [`Vault::drop_removed`]), its
+    /// pending ticket first when `void_ticket`, for a ticket that can no longer be redeemed. True
+    /// when the peer went. A test can make it fail.
+    fn let_go(&self, id: &str, void_ticket: bool) -> Result<bool> {
+        if take_one(&self.failed_drops) {
+            return Err(peer_error("the index did not answer"));
+        }
+        let vault = self.vault();
+        if void_ticket {
+            vault.clear_pending_ticket(id)?;
+        }
+        vault.drop_removed(id, self.ticket_lifetime())
     }
 
     fn reached(&self, id: &str) {
@@ -1526,7 +1568,9 @@ impl Shared {
     /// Dial a peer and do `run` over the connection. A peer that closes it saying it removed
     /// this vault, while it connects or during `run`, is let go here (see
     /// [`Vault::drop_removed`]) and its removal told; the dial comes back as removed, whether
-    /// the peer went or stays for a ticket. Connecting and `run` get a session's time together.
+    /// the peer went or stays for a ticket, and even when letting it go failed, since a dial
+    /// that heard the removal must not be tried again. Connecting, `run` and the look at why
+    /// `run` failed get a session's time together.
     async fn dial<T>(
         &self,
         peer: &PeerInfo,
@@ -1534,8 +1578,7 @@ impl Shared {
     ) -> Result<Dialed<T>> {
         self.dials.fetch_add(1, Ordering::SeqCst);
         let addr = self.address_of(peer)?;
-        // A session gets its time; the look at why it failed comes after, outside it.
-        let deadline = tokio::time::Instant::now() + SESSION_TIMEOUT;
+        let deadline = tokio::time::Instant::now() + self.dial_timeout();
         let late = || peer_error("a peer did not answer");
         let connected = tokio::time::timeout_at(deadline, self.endpoint.connect(addr, ALPN))
             .await
@@ -1547,7 +1590,9 @@ impl Shared {
                     .unwrap_or_else(|_| Err(late()));
                 match ran {
                     Ok(done) => return Ok(Dialed::Ran(done)),
-                    Err(err) if !closed_as_removed(&connection, &err).await => return Err(err),
+                    Err(err) if !closed_as_removed(&connection, &err, deadline).await => {
+                        return Err(err)
+                    }
                     Err(_) => {}
                 }
             }
@@ -1555,13 +1600,14 @@ impl Shared {
             Err(err) => return Err(peer_error(err)),
         }
         self.lost(&peer.id);
-        if self
-            .vault()
-            .drop_removed(&peer.id, self.ticket_lifetime())?
-        {
-            self.emit(NodeEvent::PeerRemoved {
+        match self.let_go(&peer.id, false) {
+            Ok(true) => self.emit(NodeEvent::PeerRemoved {
                 id: peer.id.clone(),
-            });
+            }),
+            Ok(false) => {}
+            Err(err) => {
+                eprintln!("bud-core: could not let go of a peer that removed this vault: {err}")
+            }
         }
         Ok(Dialed::Removed)
     }
@@ -1657,7 +1703,8 @@ impl Shared {
     /// key before it is listed. A peer that says it removed this vault, in the hand over or the
     /// probe, is told as removed, is neither reached nor missed, and is not asked again; one
     /// that stayed for a ticket of its own goes once the new key is taken, since the ticket
-    /// came with the old one.
+    /// came with the old one. Once the peers were asked, the new key is always taken: a check or
+    /// a clean up that fails along the way is noted and passed over, never the rotation's end.
     async fn rotate(&self) -> Result<RotateReport> {
         let _busy = Busy::new(&self.active);
         let old = self.vault().peer_key()?;
@@ -1688,14 +1735,17 @@ impl Shared {
                 RotationOutcome::Confirmed | RotationOutcome::Probed { holds_key: true } => {
                     report.reached += 1;
                 }
+                // One that cannot be told gone is cleaned up once the new key is in, which
+                // looks again.
                 RotationOutcome::Removed => {
-                    if self.vault().is_peer(&peer.id)? {
+                    if self.checked_peer(&peer.id) {
                         kept.push(peer.id.clone());
                     }
                 }
-                // A peer let go while it was asked has no row left to mark.
+                // A peer let go while it was asked has no row left to mark. One that cannot be
+                // told gone is missed: listed or not, it did not take the key.
                 RotationOutcome::Probed { holds_key: false } => {
-                    if self.vault().is_peer(&peer.id)? {
+                    if self.checked_peer(&peer.id) {
                         self.lost(&peer.id);
                         report.missed.push(peer.id.clone());
                     }
@@ -1704,15 +1754,13 @@ impl Shared {
         }
         self.vault().replace_key(&new, &report.missed)?;
         // Their ticket came with the old key, which this vault no longer seals with, so it can
-        // never be redeemed: nothing keeps them now.
+        // never be redeemed: nothing keeps them now. The key is in, so a clean up that fails is
+        // noted, and the peer goes on a later dial that hears its removal.
         for id in &kept {
-            let dropped = {
-                let vault = self.vault();
-                vault.clear_pending_ticket(id)?;
-                vault.drop_removed(id, self.ticket_lifetime())?
-            };
-            if dropped {
-                self.emit(NodeEvent::PeerRemoved { id: id.clone() });
+            match self.let_go(id, true) {
+                Ok(true) => self.emit(NodeEvent::PeerRemoved { id: id.clone() }),
+                Ok(false) => {}
+                Err(err) => eprintln!("bud-core: a rotation could not let go of a peer: {err}"),
             }
         }
         self.emit(NodeEvent::RotationDone(report.clone()));
@@ -1968,6 +2016,9 @@ impl Node {
             removing_acks: AtomicUsize::new(0),
             dials: AtomicUsize::new(0),
             dropped_dones: AtomicUsize::new(0),
+            failed_peer_checks: AtomicUsize::new(0),
+            failed_drops: AtomicUsize::new(0),
+            dial_timeout_ms: AtomicU64::new(SESSION_TIMEOUT.as_millis() as u64),
             identity: options.identity,
             listeners: Mutex::new(Vec::new()),
             request: Mutex::new(None),
@@ -2049,6 +2100,32 @@ impl Node {
     #[doc(hidden)]
     pub fn drop_next_key_acks_and_remove(&self, count: usize) {
         self.shared.removing_acks.store(count, Ordering::SeqCst);
+    }
+
+    /// Change how long a dial gets, connecting, its session and the look at why it failed
+    /// together; a session's time by default. For tests, which cannot wait that long.
+    #[doc(hidden)]
+    pub fn set_dial_timeout(&self, timeout: Duration) {
+        self.shared
+            .dial_timeout_ms
+            .store(timeout.as_millis() as u64, Ordering::SeqCst);
+    }
+
+    /// Fail the next `count` checks a rotation makes of whether a peer it asked is still listed,
+    /// as a broken index would. For tests of a rotation whose bookkeeping fails.
+    #[doc(hidden)]
+    pub fn fail_next_peer_checks(&self, count: usize) {
+        self.shared
+            .failed_peer_checks
+            .store(count, Ordering::SeqCst);
+    }
+
+    /// Fail the next `count` times this node lets go of a peer that removed it, on the dial that
+    /// heard it or once a rotation's new key is in, as a broken index would. For tests of a
+    /// rotation whose bookkeeping fails.
+    #[doc(hidden)]
+    pub fn fail_next_drops(&self, count: usize) {
+        self.shared.failed_drops.store(count, Ordering::SeqCst);
     }
 
     /// How many times this node dialed a peer, for tests that count them.
