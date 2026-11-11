@@ -141,23 +141,24 @@ enum Launch {
     private static func keepPairing(of vault: RustVault, in keeper: PairingKeeper, following devices: DeviceStore) async {
         let sync = PairingSync(keeper: keeper) { try vault.core.pairing() }
         pairingSync = sync
-        devices.onPairingChanged = { keep(sync) }
-        devices.onUnpaired = { Task { await sync.forget() } }
+        devices.onPairingChanged = { finishing { await sync.keep() } }
+        devices.onUnpaired = { finishing { await sync.forget() } }
         Task { await sync.keep() }
         await sync.start(every: 5 * 60)
     }
 
-    /// Keeps the pairing now. On the Apple TV the step runs under a background task, so a keep
-    /// asked for on the way into the background finishes before the app is suspended.
-    private static func keep(_ sync: PairingSync) {
+    /// Runs a step of the pairing sync now, a keep or a forget. On the Apple TV it runs under a
+    /// background task, so a step asked for on the way into the background finishes before the
+    /// app is suspended.
+    private static func finishing(_ step: @escaping @Sendable () async -> Void) {
         #if os(tvOS)
         let task = BackgroundTask(named: "Keep the pairing")
         Task {
-            await sync.keep()
+            await step()
             task.end()
         }
         #else
-        Task { await sync.keep() }
+        Task { await step() }
         #endif
     }
 
