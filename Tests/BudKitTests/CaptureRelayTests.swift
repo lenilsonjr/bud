@@ -29,21 +29,23 @@ final class CaptureRelayTests: XCTestCase {
     }
 
     @MainActor private func relayKeepsOtherWindows() {
+        // Every window shows the same store, so one list stands for it.
         let relay = CaptureRelay()
-        var first: [String] = []
-        var second: [String] = []
-        let one = relay.listen { first.append($0.text) }
-        let two = relay.listen { second.append($0.text) }
-        relay.send(.init(text: "To the newest"))
-        XCTAssertEqual(first, [])
-        XCTAssertEqual(second, ["To the newest"], "A line lands once, in the newest window")
+        var landed: [String] = []
+        let one = relay.listen { landed.append($0.text) }
+        let two = relay.listen { landed.append($0.text) }
+        relay.send(.init(text: "Once"))
+        XCTAssertEqual(landed, ["Once"], "A line lands once, however many windows listen")
         relay.stopListening(two)
         relay.send(.init(text: "Still heard"))
-        XCTAssertEqual(first, ["Still heard"], "The window left open keeps listening")
-        XCTAssertEqual(relay.waiting, 0)
+        XCTAssertEqual(landed, ["Once", "Still heard"], "The window left open keeps listening")
+        relay.stopListening(two)
+        relay.stopListening(UUID())
+        relay.send(.init(text: "Not lost to a stale stop"))
+        XCTAssertEqual(landed.last, "Not lost to a stale stop", "Stopping an id twice, or one never given, stops nothing")
         relay.stopListening(one)
         relay.send(.init(text: "Waits"))
-        XCTAssertEqual(relay.waiting, 1)
+        XCTAssertEqual(relay.waiting, 1, "Waits once the last window is gone")
     }
 
     func testALineKnowsWhereItCameFrom() {
