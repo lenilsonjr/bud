@@ -246,6 +246,25 @@ extension DeviceStoreTests {
         await eventually { !store.devices.contains { $0.id == gone } }
     }
 
+    func testARotationOnAStaleListNeverCountsBelowTheDevicesStillToAnswer() async throws {
+        let clock = TestClock()
+        let peers = MemoryPeers(now: { clock.now })
+        let others = MemoryPeers.fixtures(now: clock.now).filter { !$0.isThisDevice }.map(\.id)
+        // The list could not be read, so the rotation counts no device to begin with.
+        await peers.setDevicesFail(true)
+        let store = DeviceStore(peers: peers, now: { clock.now })
+        await store.start()
+        XCTAssertTrue(store.devices.isEmpty)
+        // Two it never counted say they removed this one; the two others take the key.
+        await peers.setRemoving([others[1], others[2]])
+        await store.rotateKey()
+        let rotation = try XCTUnwrap(store.rotation)
+        XCTAssertEqual(rotation.total, 2)
+        XCTAssertEqual(rotation.done, 2)
+        XCTAssertEqual(rotation.removed, [others[1], others[2]])
+        XCTAssertEqual(DevicesText.rotationCount(rotation), "3 of 3")
+    }
+
     func testTheLastDeviceRemovedInARotationUnpairsOnce() async {
         for failing in [false, true] {
             let (store, peers, _) = await make()

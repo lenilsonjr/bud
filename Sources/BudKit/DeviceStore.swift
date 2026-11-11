@@ -112,6 +112,9 @@ public final class DeviceStore: ObservableObject {
     private var scan = 0
     private var withAddresses = false
     private var fetched: (received: Int, total: Int?) = (0, nil)
+    /// The devices the rotation under way counts: the other devices listed when it began, with
+    /// any it reports that the list did not have, less those that said they removed this one.
+    private var rotating: Set<String> = []
     /// Counts the starts, so one that finishes after a newer one began does not listen too.
     private var starts = 0
     /// Ends the launch fetch when nothing has moved for a while.
@@ -188,13 +191,17 @@ public final class DeviceStore: ObservableObject {
 
     /// Reads the devices and the sync state again.
     public func refresh() async {
-        if let list = try? await peers.devices() {
-            let hadOthers = devices.contains { !$0.isThisDevice }
-            devices = list
-            if hadOthers && list.allSatisfy(\.isThisDevice) { onUnpaired?() }
-        }
+        if let list = try? await peers.devices() { show(list) }
         if let state = try? await peers.state() { syncState = state }
         if let setting = try? await peers.relay() { relay = setting }
+    }
+
+    /// Puts `list` up as the devices. The last other device gone unpairs this one, which is told
+    /// here and nowhere else.
+    private func show(_ list: [Device]) {
+        let hadOthers = devices.contains { !$0.isThisDevice }
+        devices = list
+        if hadOthers && list.allSatisfy(\.isThisDevice) { onUnpaired?() }
     }
 
     public func setRelay(_ setting: RelaySetting) async {
@@ -426,8 +433,8 @@ public final class DeviceStore: ObservableObject {
     }
 
     public func rotateKey() async {
-        let total = devices.filter { !$0.isThisDevice }.count
-        rotation = RotationProgress(total: total)
+        rotating = Set(devices.filter { !$0.isThisDevice }.map(\.id))
+        rotation = RotationProgress(total: rotating.count)
         guard let steps = try? await peers.rotateKey() else {
             rotation = nil
             onRotationFinished?(RotationResult(reached: 0, missed: [], failed: true))
@@ -436,12 +443,19 @@ public final class DeviceStore: ObservableObject {
         for await step in steps {
             switch step {
             case let .device(id, reached):
+                // A list read before the device joined did not count it; it counts now.
+                rotating.insert(id)
+                rotation?.total = rotating.count
                 rotation?.done += 1
                 rotation?.reports[id] = reached
             case let .removed(id):
-                // Not one to reach any more: it leaves the dialog's count and lines. The list
-                // follows the node, which tells when it lets the device go.
-                rotation?.total -= 1
+                // Not one to reach any more: it leaves the dialog's count and lines. Only a
+                // device that was counted and has not answered comes off, so a list that was
+                // out of date never takes the count below the devices still to answer. The
+                // list follows the node, which tells when it lets the device go.
+                if rotation?.reports[id] == nil, rotating.remove(id) != nil {
+                    rotation?.total = rotating.count
+                }
                 rotation?.removed.insert(id)
             case let .done(result):
                 rotation?.result = result
@@ -492,13 +506,12 @@ public final class DeviceStore: ObservableObject {
         case .pairingChanged:
             onPairingChanged?()
         case let .deviceRemoved(id):
-            // Gone from the node's list. The last one gone unpairs this device, which the refresh
-            // tells, and leaves no one to wait for a launch fetch from. A refresh that failed
-            // leaves the device listed, so it goes here all the same.
+            // Gone from the node's list. The last one gone unpairs this device and leaves no one
+            // to wait for a launch fetch from. A refresh that failed leaves the device listed, so
+            // it goes here all the same.
             await refresh()
             if devices.contains(where: { $0.id == id }) {
-                devices.removeAll { $0.id == id }
-                if devices.allSatisfy(\.isThisDevice) { onUnpaired?() }
+                show(devices.filter { $0.id != id })
             }
             if devices.contains(where: { !$0.isThisDevice }) {
                 onPairingChanged?()
