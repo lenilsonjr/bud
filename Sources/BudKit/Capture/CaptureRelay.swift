@@ -1,7 +1,7 @@
 import Foundation
 
-/// The bridge from a capture made outside the window (the ⌥Space panel) to the store inside it.
-/// Lines sent before a window listens wait in order and land when one does.
+/// The bridge from a capture made outside the window (the ⌥Space panel) to a store. Lines sent
+/// before anything listens wait in order and land when something does.
 @MainActor
 public final class CaptureRelay {
     public static let shared = CaptureRelay()

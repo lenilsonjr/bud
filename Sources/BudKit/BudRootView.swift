@@ -7,8 +7,8 @@ public struct BudRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: BudStore
     @ObservedObject private var flags: Flags
-    /// Whether captures made outside the window land in this store: off for a picture, and for
-    /// an app that listens once for the store all its windows share.
+    /// Whether captures made outside the window land in this store. Only a window with a store
+    /// of its own asks for it; an app whose windows share one store listens once for it.
     private let listensForCaptures: Bool
     /// This window's place among the windows that listen for captures.
     @State private var listener: UUID?
@@ -27,7 +27,7 @@ public struct BudRootView: View {
 
     /// A store the caller already holds: the app's, over the vault on disk, or one for pictures.
     /// A picture brings choices of its own, so the person's appearance never reaches it.
-    @MainActor public init(store: BudStore, flags: Flags = .shared, listensForCaptures: Bool = true) {
+    @MainActor public init(store: BudStore, flags: Flags = .shared, listensForCaptures: Bool = false) {
         _store = StateObject(wrappedValue: store)
         self.flags = flags
         self.listensForCaptures = listensForCaptures

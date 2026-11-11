@@ -4,7 +4,6 @@ import XCTest
 /// Not a `@MainActor` class: the Linux test runner's discovery cannot cast isolated test
 /// methods, so each test hops onto the main actor itself.
 final class CaptureRelayTests: XCTestCase {
-
     func testLinesWaitUntilAWindowListensThenArriveInOrder() async {
         await MainActor.run { relayKeepsOrder() }
     }
