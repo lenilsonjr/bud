@@ -17,10 +17,12 @@ import UIKit
 /// second window is resized to the scene whatever size it is given, so neither will do. The
 /// scroll views draw here, so no picture lays its lists out flat as the Mac's do.
 ///
-/// A shot is only as big as the screen can show: the shots that fit the screen as it stands are
-/// taken first, then the screen turns the other way and the ones that fit now are taken, and
-/// the rest are skipped with the reason in the manifest, which is every Mac window and, on a
-/// screen that will not turn, the landscape iPad.
+/// A shot is only as big as the screen can show. Each test starts with the screen upright,
+/// whatever an earlier test or run left: the shots that fit are taken, then the screen turns
+/// to landscape and the ones that fit now are taken, and the rest are skipped with the reason in
+/// the manifest, which is every Mac window and, on a screen that will not turn, the landscape
+/// iPad. The screen is turned upright again at the end. Each shot carries the safe area of the
+/// device its window is named for, in place of the simulator's own.
 ///
 /// Nothing is compared: every picture lands in `catalog` inside `BUD_SNAPSHOT_DIR`, beside
 /// `manifest.txt`, which is the Mac's folder layout, and is attached to the test result as well.
@@ -38,9 +40,10 @@ final class IOSCatalogTests: XCTestCase {
         let shots = Catalog.screens.flatMap { screen in screen.shots.map { (screen: screen, shot: $0) } }
         for (screen, shot) in shots { try Catalog.note(screen.name(shot), .planned, in: out) }
         var left = shots
-        var room = try self.room()
+        var room = try orient(.portrait)
+        defer { _ = try? orient(.portrait) }
         for turned in [false, true] where !left.isEmpty {
-            if turned { room = try turn(from: room) }
+            if turned { room = try orient(.landscapeRight) }
             let now = left.filter { Self.fits($0.shot.window.size, in: room) }
             left = left.filter { !Self.fits($0.shot.window.size, in: room) }
             for (screen, shot) in now {
@@ -50,7 +53,9 @@ final class IOSCatalogTests: XCTestCase {
                     store.sidebar = SidebarVisibility(followsWindow: shot.window.followsWindow)
                     try screen.prepare(store)
                     let root = BudRootView(store: store, flags: stillFlags(shot.scheme), listensForCaptures: false)
-                    let image = try picture(of: root, size: shot.window.size, compact: shot.window.compact, scheme: shot.scheme)
+                    let image = try picture(
+                        of: root, size: shot.window.size, safeArea: shot.window.safeArea,
+                        compact: shot.window.compact, scheme: shot.scheme)
                     try keep(image, named: name, in: out)
                 } catch {
                     try Catalog.note(name, .failed, in: out)
@@ -68,7 +73,7 @@ final class IOSCatalogTests: XCTestCase {
         let out = try pictureFolder("catalog")
         let names = Catalog.phonePalette
         for (_, name) in names { try Catalog.note("modal.\(name)", .planned, in: out) }
-        let room = try self.room()
+        let room = try orient(.portrait)
         let store = stillStore()
         store.sidebar = SidebarVisibility(followsWindow: true)
         for (scheme, name) in names {
@@ -76,7 +81,9 @@ final class IOSCatalogTests: XCTestCase {
                 try Catalog.note("modal.\(name)", .skipped, because: Self.misfit(Catalog.phonePaletteSize, in: room), in: out)
                 continue
             }
-            let image = try picture(of: Catalog.phonePaletteSheet(store), size: Catalog.phonePaletteSize, compact: true, scheme: scheme)
+            let image = try picture(
+                of: Catalog.phonePaletteSheet(store), size: Catalog.phonePaletteSize, safeArea: EdgeInsets(),
+                compact: true, scheme: scheme)
             try keep(image, named: "modal.\(name)", in: out)
         }
     }
@@ -115,16 +122,19 @@ final class IOSCatalogTests: XCTestCase {
         try Self.parent().view.bounds.size
     }
 
-    /// Turns the screen the other way from `room` and waits for the app's view to follow. A
-    /// screen that will not turn keeps its room, and what did not fit stays skipped.
-    private func turn(from room: CGSize) throws -> CGSize {
+    /// Turns the screen to `orientation` and waits for the app's view to take its shape, then
+    /// gives the room it has. A screen that will not turn keeps its room, and what does not fit
+    /// it is skipped.
+    private func orient(_ orientation: UIInterfaceOrientationMask) throws -> CGSize {
         let scene = try XCTUnwrap(Self.parent().view.window?.windowScene, "The app's window has no scene")
-        let other: UIInterfaceOrientationMask = room.width < room.height ? .landscapeRight : .portrait
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: other)) { error in
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
             NSLog("The screen did not turn: \(error)")
         }
+        let upright = orientation == .portrait
         let deadline = Date(timeIntervalSinceNow: Self.turning)
-        while Date() < deadline, try self.room() == room {
+        while Date() < deadline {
+            let room = try self.room()
+            if (room.height >= room.width) == upright { break }
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
         }
         RunLoop.main.run(until: Date(timeIntervalSinceNow: Self.settle))
@@ -134,10 +144,12 @@ final class IOSCatalogTests: XCTestCase {
     // MARK: Rendering
 
     /// One shot of `content`: a view of exactly `size` points on the app's own view, its
-    /// controller a child of the app's, hosting the content with the size class and appearance
-    /// the shot asks for, read back at one pixel per point once it has settled. The view and
-    /// its controller leave again whatever happens.
-    private func picture(of content: some View, size: CGSize, compact: Bool, scheme: ColorScheme) throws -> UIImage {
+    /// controller a child of the app's, hosting the content with the safe area, size class and
+    /// appearance the shot asks for, read back at one pixel per point once it has settled. The
+    /// view and its controller leave again whatever happens.
+    private func picture(
+        of content: some View, size: CGSize, safeArea: EdgeInsets, compact: Bool, scheme: ColorScheme
+    ) throws -> UIImage {
         let parent = try Self.parent()
         let host = UIHostingController(rootView: AnyView(
             content
@@ -157,6 +169,13 @@ final class IOSCatalogTests: XCTestCase {
             host.removeFromParent()
         }
 
+        // The insets the view picks up where it overlaps the simulator's own, made up to the
+        // named device's: what it inherits plus what is added is the safe area the shot asks for.
+        host.view.layoutIfNeeded()
+        let inherited = host.view.safeAreaInsets
+        host.additionalSafeAreaInsets = UIEdgeInsets(
+            top: safeArea.top - inherited.top, left: safeArea.leading - inherited.left,
+            bottom: safeArea.bottom - inherited.bottom, right: safeArea.trailing - inherited.right)
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: Self.settle))
