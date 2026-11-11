@@ -26,12 +26,26 @@ impl Peer {
     }
 
     fn new_as(seed: Option<&Path>, interval: Option<Duration>, identity: Identity) -> Peer {
+        Peer::start(seed, interval, identity, None)
+    }
+
+    /// A node on a fresh folder and index, seeded from `seed`, and back on the pairing `kept`
+    /// before it starts when there is one.
+    fn start(
+        seed: Option<&Path>,
+        interval: Option<Duration>,
+        identity: Identity,
+        kept: Option<(&[u8], SystemTime)>,
+    ) -> Peer {
         let dir = tempfile::tempdir().unwrap();
         if let Some(seed) = seed {
             copy_dir(seed, dir.path());
         }
         let index = tempfile::tempdir().unwrap();
         let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
+        if let Some((kept, at)) = kept {
+            assert!(vault.restore_pairing_at(kept, at).unwrap());
+        }
         let vault = Arc::new(Mutex::new(vault));
         let options = NodeOptions {
             relay: Relay::Off,
@@ -145,26 +159,7 @@ fn restored(kept: &[u8]) -> Peer {
 
 /// The same, with the pairing brought back as if at `at`.
 fn restored_at(kept: &[u8], at: SystemTime) -> Peer {
-    let dir = tempfile::tempdir().unwrap();
-    let index = tempfile::tempdir().unwrap();
-    let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
-    assert!(vault.restore_pairing_at(kept, at).unwrap());
-    let vault = Arc::new(Mutex::new(vault));
-    let node = Node::start_with(
-        Arc::clone(&vault),
-        NodeOptions {
-            relay: Relay::Off,
-            interval: None,
-            identity: Identity::default(),
-        },
-    )
-    .unwrap();
-    Peer {
-        vault,
-        dir,
-        index,
-        node,
-    }
+    Peer::start(None, None, Identity::default(), Some((kept, at)))
 }
 
 /// `a` holds the fixture vault, `b` an empty folder that accepted a's ticket.
@@ -562,6 +557,114 @@ fn a_rotation_lets_go_of_a_peer_that_removed_this_vault() {
     assert!(heard
         .events()
         .contains(&NodeEvent::PeerRemoved { id: c.node.id() }));
+}
+
+#[test]
+fn a_rotation_tells_a_removed_peer_apart_and_does_not_probe_it() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    c.node.forget_peer(&a.node.id()).unwrap();
+    let heard = Recorder::listening(&a.node);
+    let before = a.node.dials();
+    a.node.rotate_key().unwrap();
+    // One dial each: c's hand over was refused as removed, so it is not probed.
+    assert_eq!(a.node.dials() - before, 2);
+    let steps: Vec<(String, RotationOutcome)> = heard
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            NodeEvent::KeyRotation { id, outcome } => Some((id.clone(), *outcome)),
+            _ => None,
+        })
+        .collect();
+    assert!(steps.contains(&(c.node.id(), RotationOutcome::Removed)));
+    assert!(steps.contains(&(b.node.id(), RotationOutcome::Confirmed)));
+}
+
+#[test]
+fn a_peer_that_removes_this_vault_during_the_probe_is_not_missed() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    // b takes the new key without confirming it and removes a, so a hears it on the probe.
+    b.node.drop_next_key_acks_and_remove(1);
+    let heard = Recorder::listening(&a.node);
+    let report = a.node.rotate_key().unwrap();
+    assert_eq!(report.reached, 0);
+    assert!(report.missed.is_empty(), "let go, not missed");
+    assert!(a.node.peers().unwrap().is_empty());
+    assert_eq!(
+        heard.events(),
+        vec![
+            NodeEvent::PeerRemoved { id: b.node.id() },
+            NodeEvent::KeyRotation {
+                id: b.node.id(),
+                outcome: RotationOutcome::Removed,
+            },
+            NodeEvent::RotationDone(report),
+        ]
+    );
+}
+
+#[test]
+fn a_rotation_does_not_probe_a_removed_peer_kept_for_its_ticket_and_voids_the_ticket() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    let heard = Recorder::listening(&b.node);
+    let before = b.node.dials();
+    let report = b.node.rotate_key().unwrap();
+    assert_eq!(b.node.dials() - before, 1, "the hand over only");
+    assert_eq!(report.reached, 0);
+    assert!(report.missed.is_empty());
+    assert_eq!(
+        heard.events(),
+        vec![
+            NodeEvent::KeyRotation {
+                id: a.node.id(),
+                outcome: RotationOutcome::Removed,
+            },
+            NodeEvent::RotationDone(report),
+        ]
+    );
+    // The ticket kept a for now, but the rotation voided it: the next refusal lets a go.
+    assert_eq!(b.node.peers().unwrap().len(), 1);
+    assert!(b.node.sync_now().is_err());
+    assert!(b.node.peers().unwrap().is_empty());
+    assert!(heard
+        .events()
+        .contains(&NodeEvent::PeerRemoved { id: a.node.id() }));
+}
+
+#[test]
+fn an_expired_ticket_does_not_keep_a_peer_that_removed_this_vault() {
+    let (a, b) = paired(None);
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    assert!(b.node.sync_now().is_err());
+    b.node
+        .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+        .unwrap();
+    b.node.set_ticket_lifetime(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(1200));
+    let heard = Recorder::listening(&b.node);
+    assert!(b.node.sync_now().is_err());
+    assert!(b.node.peers().unwrap().is_empty(), "the ticket expired");
+    assert_eq!(
+        heard.events(),
+        vec![NodeEvent::PeerRemoved { id: a.node.id() }]
+    );
 }
 
 #[test]

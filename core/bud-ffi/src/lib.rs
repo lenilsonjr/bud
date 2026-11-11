@@ -325,11 +325,13 @@ pub enum PeerEvent {
         words: Vec<String>,
     },
     /// One peer's part of a key rotation: `confirmed` when it took the new key in the hand over,
-    /// else `holds_key` says what a probe found.
+    /// else `holds_key` says what a probe found. `removed` when the peer said it removed this
+    /// vault instead: it took nothing and is not missed, and both others are false.
     KeyRotation {
         id: String,
         confirmed: bool,
         holds_key: bool,
+        removed: bool,
     },
     /// The rotation is over, with the ids of the peers that still hold the old key.
     RotationDone { reached: u64, missed: Vec<String> },
@@ -365,14 +367,16 @@ impl From<bud_core::NodeEvent> for PeerEvent {
                 words,
             },
             NodeEvent::KeyRotation { id, outcome } => {
-                let (confirmed, holds_key) = match outcome {
-                    RotationOutcome::Confirmed => (true, true),
-                    RotationOutcome::Probed { holds_key } => (false, holds_key),
+                let (confirmed, holds_key, removed) = match outcome {
+                    RotationOutcome::Confirmed => (true, true, false),
+                    RotationOutcome::Probed { holds_key } => (false, holds_key, false),
+                    RotationOutcome::Removed => (false, false, true),
                 };
                 PeerEvent::KeyRotation {
                     id,
                     confirmed,
                     holds_key,
+                    removed,
                 }
             }
             NodeEvent::RotationDone(report) => PeerEvent::RotationDone {
