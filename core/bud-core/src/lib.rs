@@ -35,7 +35,7 @@ pub use attachments::Attachment;
 pub use links::{Embed, Link};
 pub use peer::{
     Identity, JoinRequest, Node, NodeEvent, NodeListener, NodeOptions, NodeState, PeerInfo, Qr,
-    Relay, RotateReport, RotationOutcome, Ticket, SESSION_TIMEOUT,
+    Relay, RotateReport, RotationOutcome, Ticket, NODE_KEY_FILE, SESSION_TIMEOUT,
 };
 pub use query::{Counts, Hit, Lens, Row};
 pub use sync::{Heads, SyncReport, Updates};

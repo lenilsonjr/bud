@@ -11,7 +11,7 @@ use common::{copy_dir, fingerprint, fixture};
 use pretty_assertions::assert_eq;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 struct Peer {
     vault: Arc<Mutex<Vault>>,
@@ -140,10 +140,15 @@ fn eventually(what: &str, mut check: impl FnMut() -> bool) {
 
 /// A device whose folder and index were cleared, back on the pairing it kept, its node running.
 fn restored(kept: &[u8]) -> Peer {
+    restored_at(kept, SystemTime::now())
+}
+
+/// The same, with the pairing brought back as if at `at`.
+fn restored_at(kept: &[u8], at: SystemTime) -> Peer {
     let dir = tempfile::tempdir().unwrap();
     let index = tempfile::tempdir().unwrap();
     let vault = Vault::open(dir.path(), index.path().join("index.db")).unwrap();
-    assert!(vault.restore_pairing(kept).unwrap());
+    assert!(vault.restore_pairing_at(kept, at).unwrap());
     let vault = Arc::new(Mutex::new(vault));
     let node = Node::start_with(
         Arc::clone(&vault),
@@ -1290,6 +1295,66 @@ fn a_device_that_lost_its_folder_and_index_comes_back_with_its_kept_pairing() {
     eventually("the edit reaches a", || {
         a.read(name) == Some(edited.clone())
     });
+}
+
+#[test]
+fn the_same_pairing_encodes_the_same_whatever_the_order_of_its_rows() {
+    let a = Peer::new(Some(&fixture()), None);
+    let b = Peer::new(None, None);
+    let c = Peer::new(None, None);
+    a.node.sync_now().unwrap();
+    for p in [&b, &c] {
+        p.node
+            .accept_ticket(&a.node.ticket_with_addresses().unwrap().encode())
+            .unwrap();
+        p.node.sync_now().unwrap();
+    }
+    a.node.rename_peer(&b.node.id(), Some("Den")).unwrap();
+    a.node.rename_peer(&c.node.id(), Some("Studio")).unwrap();
+    let first = a.vault.lock().unwrap().pairing().unwrap().unwrap();
+    // The same label again, its row now after the other.
+    a.node.rename_peer(&b.node.id(), None).unwrap();
+    a.node.rename_peer(&b.node.id(), Some("Den")).unwrap();
+    let second = a.vault.lock().unwrap().pairing().unwrap().unwrap();
+    assert_eq!(first, second);
+}
+
+#[test]
+fn a_copy_taken_before_the_first_session_still_redeems_its_ticket() {
+    let (a, b) = paired(None);
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    let id = b.node.id();
+    // The cache is cleared before b ever reached a.
+    drop(b);
+    let c = restored(&kept);
+    c.node.sync_now().unwrap();
+    assert_eq!(
+        a.node.peers().unwrap()[0].id,
+        id,
+        "a let it in on the ticket"
+    );
+}
+
+#[test]
+fn a_ticket_spent_by_the_first_session_does_not_come_back_with_an_older_copy() {
+    let (a, b) = paired(None);
+    // Taken while the ticket was still to redeem; the first session spends it after.
+    let kept = b.vault.lock().unwrap().pairing().unwrap().unwrap();
+    b.node.sync_now().unwrap();
+    a.node.forget_peer(&b.node.id()).unwrap();
+    drop(b);
+    // Brought back once the ticket could no longer be redeemed anyway.
+    let later = SystemTime::now() + Duration::from_secs(11 * 60);
+    let c = restored_at(&kept, later);
+    let heard = Recorder::listening(&c.node);
+    // With no ticket held for a, the device lets go of the peer that removed it, rather than
+    // waiting for a ticket that will never redeem.
+    assert!(c.node.sync_now().is_err());
+    assert!(c.node.peers().unwrap().is_empty());
+    assert_eq!(
+        heard.events(),
+        vec![NodeEvent::PeerRemoved { id: a.node.id() }]
+    );
 }
 
 #[test]
