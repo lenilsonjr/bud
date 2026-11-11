@@ -106,6 +106,10 @@ struct TVShell: View {
         .fullScreenCover(isPresented: $searching) { TVSearchScreen(store: store, close: { searching = false }) }
         .preferredColorScheme(flags.appearance.colorScheme)
         .task { await devices.start() }
+        .onAppear {
+            // The launch fetch is over: a return from the background it held syncs now.
+            if foreground.resume() { Task { await devices.syncNow() } }
+        }
         .onChange(of: devices.joinPhase) { _, phase in
             guard case let .joined(_, received, total) = phase else { return }
             joining = false
@@ -122,10 +126,10 @@ struct TVShell: View {
     /// `syncing`, rather than on its next round, so the TV carries what one peer left for
     /// another. A system overlay that only made the app inactive asks for nothing. Into the
     /// background the kept pairing is brought up to date, in case the app is not back before the
-    /// cache is cleared. The launch fetch notes the phases too, and leaves the syncing to the
-    /// launch.
+    /// cache is cleared. The launch fetch notes the phases too and holds a return for when it is
+    /// over, leaving the syncing meanwhile to the launch.
     private func sceneMoved(to phase: ScenePhase, syncing: Bool) {
-        if foreground.moved(to: TVForeground.Phase(phase)), syncing { Task { await devices.syncNow() } }
+        if foreground.moved(to: TVForeground.Phase(phase), syncing: syncing) { Task { await devices.syncNow() } }
         if phase == .background { devices.pairingMayHaveChanged() }
     }
 

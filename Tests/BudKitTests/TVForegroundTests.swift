@@ -30,6 +30,29 @@ final class TVForegroundTests: XCTestCase {
         }
     }
 
+    func testAReturnDuringTheLaunchFetchSyncsOnceItIsOver() {
+        var foreground = TVForeground()
+        _ = foreground.moved(to: .background, syncing: false)
+        XCTAssertFalse(foreground.moved(to: .active, syncing: false), "the fetch leaves it to the launch")
+        XCTAssertTrue(foreground.resume())
+        XCTAssertFalse(foreground.resume(), "once")
+        XCTAssertFalse(foreground.moved(to: .active))
+    }
+
+    func testAFetchThatEndsInTheBackgroundLeavesTheSyncToTheReturn() {
+        var foreground = TVForeground()
+        _ = foreground.moved(to: .background, syncing: false)
+        XCTAssertFalse(foreground.resume(), "still away")
+        XCTAssertTrue(foreground.moved(to: .active))
+    }
+
+    func testTheEndOfAFetchWithNoTripAsksForNoSync() {
+        var foreground = TVForeground()
+        _ = foreground.moved(to: .inactive, syncing: false)
+        _ = foreground.moved(to: .active, syncing: false)
+        XCTAssertFalse(foreground.resume())
+    }
+
     func testTheLaunchItselfAsksForNoSync() {
         var foreground = TVForeground()
         XCTAssertFalse(foreground.moved(to: .active))
