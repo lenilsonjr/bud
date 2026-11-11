@@ -77,9 +77,9 @@ enum Launch {
         let name = deviceName
         guard !forPictures else { return store }
         Task.detached(priority: .userInitiated) {
-            if bringOldBuds(into: vault, platform: platform) { await store.reload() }
-            // After the old file: it plants only into an empty vault, and a capture landing
-            // first would keep it out. Lines captured meanwhile wait in the relay.
+            if await bringOldBuds(into: vault, platform: platform) { await store.reload() }
+            // After the old file, so its buds come in before the first capture. Lines captured
+            // meanwhile wait in the relay.
             await listenForCaptures(into: store)
             guard !onTour else { return }
             var restored = restoring
@@ -155,40 +155,10 @@ enum Launch {
         await sync.start(every: 5 * 60)
     }
 
-    /// Plants the buds a device kept in the old JSON file into its empty vault, once, and sets
-    /// the file aside. The Apple TV's vault is a cache its peers fill, and a file that only holds
-    /// the untouched sample world is left out: two devices planting it would collide when they
-    /// pair. A sample that was ticked, pinned, written in, moved or scheduled is the person's own
-    /// and is planted.
-    /// Returns whether anything was planted.
-    nonisolated static func bringOldBuds(into vault: RustVault, platform: VaultPlatform) -> Bool {
-        guard platform != .tvOS, let file = BudStore.defaultFile, let data = try? Data(contentsOf: file),
-              let tree = try? JSONDecoder().decode(Tree.self, from: data),
-              (try? vault.core.snapshot().isEmpty) == true
-        else { return false }
-        let planted = shape(of: tree) != shape(of: Tree.seed())
-        if planted { vault.plant(tree.records()) }
-        do {
-            try FileManager.default.moveItem(at: file, to: file.deletingPathExtension().appendingPathExtension("imported.json"))
-        } catch {
-            NSLog("Bud: the old buds file stays where it was: \(error)")
-        }
-        return planted
-    }
-
-    /// What tells a person's buds from the untouched sample world: each bud's title, where it
-    /// is (its place and the title above it), state, pin, body, and whether it has a day or a
-    /// due date. The dates themselves are left out, since the sample's are set from the day it
-    /// was made.
-    private nonisolated static func shape(of tree: Tree) -> Set<String> {
-        let records = tree.records().filter { $0.place != .trash }
-        let titles = Dictionary(records.map { ($0.path, $0.title) }, uniquingKeysWith: { first, _ in first })
-        return Set(records.map { record in
-            [
-                record.title, record.place.rawValue, record.parent.flatMap { titles[$0] } ?? "",
-                record.state?.rawValue ?? "note", String(record.pinned), record.body,
-                String(record.when != nil), String(record.due != nil),
-            ].joined(separator: "\u{1F}")
-        })
+    /// Plants the buds a device kept in the old JSON file into its vault, once, and sets the file
+    /// aside; `OldBuds` decides what comes in. Returns whether anything was planted.
+    nonisolated static func bringOldBuds(into vault: RustVault, platform: VaultPlatform) async -> Bool {
+        guard let file = BudStore.defaultFile else { return false }
+        return await OldBuds.bring(from: file, platform: platform) { _ = vault.plant($0) }
     }
 }
