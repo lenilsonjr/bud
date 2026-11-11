@@ -40,7 +40,11 @@ enum Launch {
     /// opens its vault and does none of the rest: no node, no source, no trigger, no old file.
     static func store() -> BudStore {
         let paths = VaultPaths(platform: platform, base: URL(fileURLWithPath: NSHomeDirectory()))
-        guard let vault = try? RustVault(paths: paths) else { return BudStore() }
+        guard let vault = try? RustVault(paths: paths) else {
+            let store = BudStore()
+            if !forPictures { listenForCaptures(into: store) }
+            return store
+        }
         let store = BudStore(vault: vault)
         #if !os(tvOS)
         // The TV shows no soil, only the source rows of buds planted elsewhere, and keeps a copy
@@ -50,11 +54,6 @@ enum Launch {
             store.startTriggers()
         }
         #endif
-        #if !os(tvOS)
-        // Every window shows this one store, so captures made outside a window land in it while
-        // the app runs, whichever windows come and go.
-        if !forPictures { CaptureRelay.shared.listen { line in store.capture(line) } }
-        #endif
         let devices = store.devices
         let platform = platform
         let kind = BudStore.platformSource
@@ -63,6 +62,9 @@ enum Launch {
         let onTour = ProcessInfo.processInfo.arguments.contains { $0.hasPrefix("-bud") }
         Task.detached(priority: .userInitiated) {
             if bringOldBuds(into: vault, platform: platform) { await store.reload() }
+            // After the old file: it plants only into an empty vault, and a capture landing
+            // first would keep it out. Lines captured meanwhile wait in the relay.
+            await listenForCaptures(into: store)
             guard !onTour else { return }
             do {
                 let peers = try RustPeers(vault: vault, kind: kind, name: name)
@@ -72,6 +74,14 @@ enum Launch {
             }
         }
         return store
+    }
+
+    /// Captures made outside a window land in the store every window shows while the app runs,
+    /// whichever windows come and go.
+    private static func listenForCaptures(into store: BudStore) {
+        #if !os(tvOS)
+        CaptureRelay.shared.listen { line in store.capture(line) }
+        #endif
     }
 
     /// Plants the buds a device kept in the old JSON file into its empty vault, once, and sets
